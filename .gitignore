@@ -4,6 +4,7 @@
 dist
 tmp
 out-tsc
+install-state.gz
 
 # dependencies
 node_modules
@@ -43,3 +44,8 @@ Thumbs.db
 .nx/migrate-runs
 .claude/worktrees
 .claude/settings.local.json
+
+# Next.js
+.next
+out
+test-output
