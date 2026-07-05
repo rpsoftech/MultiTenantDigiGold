@@ -1,0 +1,10 @@
+{
+  "search.exclude": {
+    ".yarn/**": true,
+    "**/dist": true,
+    "**/node_modules": true,
+    "**/bower_components": true,
+    "**/*.code-search": true
+  },
+  "cSpell.words": ["Digi", "libpeerconnection", "testem", "worktrees"]
+}

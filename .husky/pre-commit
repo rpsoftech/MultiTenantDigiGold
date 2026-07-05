@@ -1,0 +1,2 @@
+yarn nx affected:lint --fix
+yarn lint-staged
