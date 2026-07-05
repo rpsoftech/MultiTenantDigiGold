@@ -5,6 +5,12 @@
   "references": [
     {
       "path": "./packages/apps/DigiGold"
+    },
+    {
+      "path": "./packages/libs/core"
+    },
+    {
+      "path": "./packages/servers/MainServer"
     }
   ]
 }
