@@ -8,6 +8,7 @@
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.0",
     "@next/eslint-plugin-next": "^16.1.6",
+    "@nx-go/nx-go": "^4.1.1",
     "@nx/eslint": "23.0.1",
     "@nx/eslint-plugin": "23.0.1",
     "@nx/jest": "23.0.1",
@@ -78,15 +79,13 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.ts": [
-      "eslint --fix",
+    "*.{ts,js}": [
       "prettier --write"
     ],
-    "*.js": [
-      "eslint --fix",
-      "prettier --write"
+    "*.go": [
+      "gofmt -w"
     ],
-    "*.{json,md}": [
+    "*.{json,md,yaml,yml}": [
       "prettier --write"
     ]
   }
