@@ -1,28 +1,37 @@
 @use '@/styles/mixins' as *;
 
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
-// Compact bar — mobile only (back button + brand mark), per the mobile reference.
-.mobileBar {
+.inner {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: space-between;
+  gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
+  max-width: 1280px;
+  margin-inline: auto;
 
-  @include md {
-    display: none;
+  @include lg {
+    padding-inline: var(--space-8);
   }
 }
 
-.mobileBarHidden {
-  display: none;
+.leading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
 }
 
 .backButton {
   display: flex;
+  flex-shrink: 0;
   color: var(--color-text-primary);
 
   &:focus-visible {
@@ -30,74 +39,44 @@
   }
 }
 
-.mobileBrand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-headline);
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--brand-primary);
-}
-
-// Full marketing header — desktop (md+) only.
-.inner {
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-4);
-  max-width: 1280px;
-  margin-inline: auto;
-
-  @include md {
-    display: flex;
-  }
-
-  @include lg {
-    padding-inline: var(--space-8);
-  }
-}
-
 .logoLink {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   font-size: 1.125rem;
-}
-
-.nav {
-  display: none;
-  align-items: center;
-  gap: var(--space-6);
-
-  @include md {
-    display: flex;
-  }
-}
-
-.navLink {
-  font-family: var(--font-body);
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-
-  &:hover {
-    color: var(--brand-primary);
-  }
 
   &:focus-visible {
     @include focus-ring;
   }
 }
 
-.actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
+.logoImage {
+  display: block;
+  width: auto;
+  height: 28px;
 }
 
-.signIn {
+.logoText {
+  font-family: var(--font-headline);
+  font-weight: 700;
+  color: var(--brand-primary);
+  white-space: nowrap;
+}
+
+.actions {
+  display: none;
+  align-items: center;
+  gap: var(--space-4);
+
+  @include md {
+    display: flex;
+  }
+}
+
+.actionLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   font-family: var(--font-body);
   font-size: 0.875rem;
   font-weight: 600;
@@ -108,13 +87,41 @@
   }
 }
 
-.openAccount {
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
+  font-family: var(--font-body);
   font-size: 0.8125rem;
-  border-color: var(--brand-primary);
+  font-weight: 600;
   color: var(--brand-primary);
+  border: 1px solid var(--brand-primary);
   border-radius: var(--radius-sm);
-  &:hover:not(:disabled) {
+
+  &:hover {
     background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
   }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.hamburger {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--color-text-primary);
+
+  @include md {
+    display: none;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.hamburgerHidden {
+  visibility: hidden;
 }

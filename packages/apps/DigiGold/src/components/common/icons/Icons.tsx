@@ -145,3 +145,62 @@ export function UserIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function MenuIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </svg>
+  );
+}
+
+export function CloseIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M18 6L6 18" />
+      <path d="M6 6l12 12" />
+    </svg>
+  );
+}
+
+export function HomeIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M3 11l9-8 9 8" />
+      <path d="M5 10v10h14V10" />
+    </svg>
+  );
+}
+
+export function WalletIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v3" />
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M16 13h3" />
+    </svg>
+  );
+}
+
+export function CoinsIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <ellipse cx="9" cy="7" rx="6" ry="3" />
+      <path d="M3 7v5c0 1.66 2.69 3 6 3s6-1.34 6-3V7" />
+      <path d="M9 12v5c0 1.66 2.69 3 6 3s6-1.34 6-3v-5" />
+      <ellipse cx="15" cy="12" rx="6" ry="3" />
+    </svg>
+  );
+}
+
+export function GemIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M6 3h12l3 5-9 13L3 8z" />
+      <path d="M3 8h18" />
+      <path d="M9 3l-2 5 5 13 5-13-2-5" />
+    </svg>
+  );
+}
