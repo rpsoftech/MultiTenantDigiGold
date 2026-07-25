@@ -1,5 +1,7 @@
-// BottomNav + full app shell land here with the Home Dashboard step (Phase 1 build-order
-// item 5) — not built yet, so this just passes children through for now.
+import { MainShell } from '@/components/main/MainShell/MainShell';
+
+// BottomNav lands in a future step — the Header/Footer shell is wired now with the Home
+// Dashboard build-order item.
 export default function MainLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <MainShell>{children}</MainShell>;
 }

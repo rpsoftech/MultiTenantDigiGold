@@ -1,5 +1,11 @@
-import { HomePlaceholder } from '@/components/dashboard/HomePlaceholder/HomePlaceholder';
+import { DashboardEssentials } from '@/components/dashboard/DashboardEssentials/DashboardEssentials';
+import { TrendingJewelry } from '@/components/dashboard/TrendingJewelry/TrendingJewelry';
 
 export default function HomePage() {
-  return <HomePlaceholder />;
+  return (
+    <>
+      <DashboardEssentials />
+      <TrendingJewelry />
+    </>
+  );
 }
