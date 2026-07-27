@@ -31,6 +31,8 @@ const (
 	ColUserDocumentJSON     = "user_document_json"
 	ColUserERPUniqueID      = "user_erp_unique_id"
 	ColUserVaultBalance     = "user_total_vault_balance"
+	ColUserCreatedAt        = "user_created_at"
+	ColUserModifiedAt       = "user_modified_at"
 )
 
 // Tenant User Logins (Admin Staff) Columns
@@ -44,4 +46,6 @@ const (
 	ColTURole            = "tu_role"
 	ColTUIsActive        = "tu_is_active"
 	ColTUPermissionsJSON = "tu_permissions_json"
+	ColTUCreatedAt       = "tu_created_at"
+	ColTUModifiedAt      = "tu_modified_at"
 )

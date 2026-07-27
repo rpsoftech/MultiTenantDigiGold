@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"packages/servers/MainServerGo/interfaces"
 	"packages/servers/MainServerGo/internal/models"
 	"packages/servers/MainServerGo/internal/schema"
 	"packages/servers/MainServerGo/utility/postgres"
@@ -33,6 +34,7 @@ type TenantRepository struct {
 	stmtUpdateTenant *sql.Stmt
 
 	tenantCacheKeys *TenantRepoCacheKeys
+	tenantUUIDtoID  map[string]int64
 }
 
 type TenantRepoCacheKeys struct {
@@ -158,6 +160,7 @@ func GetTenantRepository() *TenantRepository {
 			stmtGetFullByShort:     stmtFullShort,
 			stmtCreateTenant:       stmtCreate,
 			stmtUpdateTenant:       stmtUpdate,
+			tenantUUIDtoID:         make(map[string]int64),
 			tenantCacheKeys: &TenantRepoCacheKeys{
 				FullUUID:   fmt.Sprintf("tenant/full/%s/", schema.ColTenantUUID),
 				FullDomain: fmt.Sprintf("tenant/full/%s/", schema.ColTenantDomain),
@@ -232,6 +235,19 @@ func (r *TenantRepository) scanFullRetrieval(row *sql.Row) (*models.Tenant, erro
 	return &t, nil
 }
 
+func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (*int64, error) {
+	id, ok := r.tenantUUIDtoID[uuid]
+	if !ok {
+		entity, err := r.GetFullTenantByUUID(ctx, uuid)
+		if err != nil {
+			return nil, err
+		}
+		id = entity.ID
+		r.tenantUUIDtoID[uuid] = id
+	}
+	return &id, nil
+}
+
 // ==========================================
 // WRITE OPERATIONS
 // ==========================================
@@ -284,7 +300,7 @@ func (r *TenantRepository) GetFullTenantByUUID(ctx context.Context, uuid string)
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByUUID.QueryRowContext(ctx, uuid))
 	if err != nil {
-		return nil, err
+		return nil, interfaces.ErrTenantNotFound
 	}
 
 	go r.createTenantCaches(context.Background(), t)
@@ -304,7 +320,7 @@ func (r *TenantRepository) GetFullTenantByShortName(ctx context.Context, shortNa
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByShort.QueryRowContext(ctx, shortName))
 	if err != nil {
-		return nil, err
+		return nil, interfaces.ErrTenantNotFound
 	}
 
 	go r.createTenantCaches(context.Background(), t)
@@ -323,7 +339,7 @@ func (r *TenantRepository) GetFullTenantByDomain(ctx context.Context, domain str
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByDomain.QueryRowContext(ctx, domain))
 	if err != nil {
-		return nil, err
+		return nil, interfaces.ErrTenantNotFound
 	}
 
 	go r.createTenantCaches(context.Background(), t)
