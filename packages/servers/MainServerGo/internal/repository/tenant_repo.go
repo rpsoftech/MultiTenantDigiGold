@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"packages/servers/MainServerGo/interfaces"
-	"packages/servers/MainServerGo/internal/models"
-	"packages/servers/MainServerGo/internal/schema"
-	"packages/servers/MainServerGo/utility/postgres"
-	redis_client "packages/servers/MainServerGo/utility/redis"
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/schema"
+	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
+	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
 type TenantRepository struct {

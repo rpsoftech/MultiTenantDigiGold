@@ -2,7 +2,8 @@ package interfaces
 
 import (
 	"fmt"
-	"packages/servers/MainServerGo/validator"
+
+	"github.com/rpsoftech/DigiGold/MainServerGo/validator"
 )
 
 const (

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"packages/servers/MainServerGo/env"
-	"packages/servers/MainServerGo/events"
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
+	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 
 	"github.com/redis/go-redis/v9"
 )

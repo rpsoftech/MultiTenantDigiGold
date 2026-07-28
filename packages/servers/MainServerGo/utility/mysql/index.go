@@ -3,9 +3,10 @@ package mysqldb
 import (
 	"database/sql"
 	"fmt"
-	"packages/servers/MainServerGo/env"
 	"strconv"
 	"time"
+
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 
 	_ "github.com/go-sql-driver/mysql"
 )

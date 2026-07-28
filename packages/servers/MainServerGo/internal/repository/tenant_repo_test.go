@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"packages/servers/MainServerGo/internal/models"
-	"packages/servers/MainServerGo/utility/postgres"
-	redis_client "packages/servers/MainServerGo/utility/redis"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
+	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
+	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
 // TestMain acts as the global setup/teardown for this test package.

@@ -1,8 +1,9 @@
 package env
 
 import (
-	"packages/servers/MainServerGo/validator"
 	"strings"
+
+	"github.com/rpsoftech/DigiGold/MainServerGo/validator"
 )
 
 type AppEnv string

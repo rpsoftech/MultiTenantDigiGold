@@ -2,8 +2,9 @@ package utility_functions
 
 import (
 	"net/http"
-	"packages/servers/MainServerGo/interfaces"
-	"packages/servers/MainServerGo/validator"
+
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
+	"github.com/rpsoftech/DigiGold/MainServerGo/validator"
 )
 
 func ValidateReqInput(body any) (err *interfaces.RequestError) {

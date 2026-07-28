@@ -3,8 +3,9 @@ package events
 import (
 	"encoding/json"
 	"fmt"
-	utility_functions "packages/servers/MainServerGo/utility/functions"
 	"time"
+
+	utility_functions "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions"
 )
 
 type BaseEventInterface interface {
@@ -13,16 +14,18 @@ type BaseEventInterface interface {
 }
 
 type BaseEvent struct {
-	ObjId     string `bson:"_id" json:"_id"`
-	Id        string `bson:"id" json:"id"`
-	KeyId     string `bson:"key" json:"key"`
-	EventName string `bson:"eventName" json:"eventName"`
-	// IsProcessed bool        `bson:"isProcessed" json:"isProcessed"`
-	ParentNames []string    `bson:"parentNames" json:"parentNames"`
-	Payload     interface{} `bson:"payload" json:"payload"`
-	AdminId     string      `bson:"adminId,omitempty" json:"adminId,omitempty"`
-	OccurredAt  time.Time   `bson:"occurredAt" json:"occurredAt"`
-	DataString  string      `bson:"-" json:"-"`
+	ObjId                  string      `bson:"_id" json:"_id"`
+	Id                     string      `bson:"id" json:"id"`
+	KeyId                  string      `bson:"key" json:"key"`
+	TenantId               string      `bson:"tenantId" json:"tenantId"`
+	EventName              string      `bson:"eventName" json:"eventName"`
+	IsProcessed            bool        `bson:"isProcessed" json:"isProcessed"`
+	ParentNames            []string    `bson:"parentNames" json:"parentNames"`
+	Payload                interface{} `bson:"payload" json:"payload"`
+	IpAddressAOccurredFrom string      `bson:"ipAddressAOccurredFrom,omitempty" json:"ipAddressAOccurredFrom,omitempty"`
+	AdminId                string      `bson:"adminId,omitempty" json:"adminId,omitempty"`
+	OccurredAt             time.Time   `bson:"occurredAt" json:"occurredAt"`
+	DataString             string      `bson:"-" json:"-"`
 }
 
 func (base *BaseEvent) CreateBaseEvent() *BaseEvent {
@@ -41,5 +44,5 @@ func (base *BaseEvent) GetPayloadString() string {
 	return string(payload)
 }
 func (base *BaseEvent) GetEventName() string {
-	return fmt.Sprintf("event/%s/%s", base.EventName, base.Id)
+	return fmt.Sprintf("event/%s/%s/%s", base.TenantId, base.EventName, base.Id)
 }

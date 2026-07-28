@@ -93,3 +93,36 @@ CREATE TABLE users (
     CONSTRAINT unique_tenant_user_phone UNIQUE (user_tenant_id, user_phone_number),
     CONSTRAINT unique_tenant_user_erp UNIQUE (user_tenant_id, user_erp_unique_id)
 );
+
+-- Create the Master Table (Partitioned by Date)
+CREATE TABLE system_events (
+    event_id VARCHAR(36) NOT NULL,                  -- Maps to Id / ObjId
+    key_id VARCHAR(255),                            -- Maps to KeyId
+    tenant_id VARCHAR(255) NOT NULL,                -- Maps to TenantId (String based on your struct)
+    event_name VARCHAR(100) NOT NULL,               -- Maps to EventName
+    is_processed BOOLEAN DEFAULT FALSE,             -- Maps to IsProcessed
+    parent_names TEXT[],                            -- Maps to ParentNames (PostgreSQL Array)
+    payload JSONB NOT NULL,                         -- Maps to Payload interface{}
+    ip_address_occurred_from VARCHAR(45),           -- Maps to IpAddressAOccurredFrom (45 chars for IPv6)
+    admin_id VARCHAR(36),                           -- Maps to AdminId
+    occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,  -- Maps to OccurredAt
+
+    PRIMARY KEY (event_id, occurred_at)
+) PARTITION BY RANGE (occurred_at);
+
+-- 1. GIN Index: Allows you to instantly search inside the dynamic JSONB payload
+CREATE INDEX idx_system_events_payload ON system_events USING GIN (payload);
+
+-- 2. Tenant Index: For fetching audit logs strictly isolated to a specific retailer
+CREATE INDEX idx_system_events_tenant ON system_events (tenant_id, occurred_at);
+
+-- 3. The "Outbox" Partial Index: CRITICAL for background workers. 
+-- This index ONLY stores rows where is_processed is false, making queue lookups take <1 millisecond.
+CREATE INDEX idx_system_events_unprocessed ON system_events (is_processed) WHERE is_processed = false;
+
+-- Create the partitions for the current and upcoming months
+CREATE TABLE system_events_2026_07 PARTITION OF system_events
+    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
+
+CREATE TABLE system_events_2026_08 PARTITION OF system_events
+    FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');

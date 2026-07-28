@@ -10,7 +10,7 @@ import (
 	"time"
 
 	// pgx is the modern, high-performance Postgres driver for Go
-	"packages/servers/MainServerGo/env"
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )

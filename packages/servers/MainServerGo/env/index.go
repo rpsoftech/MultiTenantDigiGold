@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"packages/servers/MainServerGo/validator"
 	"slices"
 	"strconv"
+
+	"github.com/rpsoftech/DigiGold/MainServerGo/validator"
 
 	"github.com/joho/godotenv"
 )
