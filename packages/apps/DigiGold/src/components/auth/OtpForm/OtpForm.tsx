@@ -19,9 +19,11 @@ const RESEND_COOLDOWN_SECONDS = 30;
 
 export type OtpFormProps = {
   mobileNumber: string;
+  successRoute?: string;
+  loginRoute?: string;
 };
 
-export function OtpForm({ mobileNumber }: OtpFormProps) {
+export function OtpForm({ mobileNumber, successRoute, loginRoute = ROUTES.login }: OtpFormProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const verifyOtp = useVerifyOtp();
@@ -36,7 +38,9 @@ export function OtpForm({ mobileNumber }: OtpFormProps) {
   const handleVerify = async () => {
     try {
       const result = await verifyOtp.mutateAsync({ mobileNumber, otp });
-      router.push(result.user.isNewUser ? ROUTES.profileSetup : ROUTES.home);
+      router.push(
+        successRoute ?? (result.user.isNewUser ? ROUTES.profileSetup : ROUTES.home)
+      );
     } catch {
       showToast({
         variant: 'danger',
@@ -73,7 +77,7 @@ export function OtpForm({ mobileNumber }: OtpFormProps) {
         <button
           type="button"
           className={styles.editButton}
-          onClick={() => router.push(ROUTES.login)}
+          onClick={() => router.push(loginRoute)}
           aria-label="Edit mobile number"
         >
           <PencilIcon width={14} height={14} />

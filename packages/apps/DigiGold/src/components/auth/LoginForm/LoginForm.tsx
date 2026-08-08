@@ -31,7 +31,11 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export function LoginForm() {
+export type LoginFormProps = {
+  otpRoute?: string;
+};
+
+export function LoginForm({ otpRoute = ROUTES.otp }: LoginFormProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const requestOtp = useRequestOtp();
@@ -49,7 +53,7 @@ export function LoginForm() {
   const onSubmit = async ({ mobileNumber }: LoginFormValues) => {
     try {
       await requestOtp.mutateAsync({ mobileNumber });
-      router.push(`${ROUTES.otp}?mobile=${mobileNumber}`);
+      router.push(`${otpRoute}?mobile=${mobileNumber}`);
     } catch {
       showToast({
         variant: 'danger',

@@ -13,4 +13,7 @@ export const ROUTES = {
   termsOfService: '/terms-of-service',
   helpCenter: '/help-center',
   contactSupport: '/contact-support',
+  adminLogin: '/admin/login',
+  adminOtp: '/admin/otp',
+  adminDashboard: '/admin/dashboard',
 } as const;
