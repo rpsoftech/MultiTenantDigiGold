@@ -167,8 +167,9 @@ func (r *TenantUserLoginRepository) scanFullRetrieval(row *sql.Row) (*models.Ten
 // WRITE OPERATIONS
 // ==========================================
 
-func (r *TenantUserLoginRepository) CreateFullAdmin(ctx context.Context, a *models.TenantUserLogin) error {
-	err := r.stmtCreateAdmin.QueryRowContext(ctx,
+// CreateFullAdminWithTx allows the Service Layer to execute the insert within an ACID transaction
+func (r *TenantUserLoginRepository) CreateFullAdminWithTx(ctx context.Context, tx *sql.Tx, a *models.TenantUserLogin) error {
+	err := tx.StmtContext(ctx, r.stmtCreateAdmin).QueryRowContext(ctx,
 		a.UUID, a.TenantID, a.Username, a.PhoneNumber,
 		a.PasswordHash, a.Role, a.IsActive, a.PermissionsJSON,
 	).Scan(&a.ID, &a.CreatedAt, &a.ModifiedAt)
@@ -177,7 +178,25 @@ func (r *TenantUserLoginRepository) CreateFullAdmin(ctx context.Context, a *mode
 		return err
 	}
 
+	// Safely update the cache in the background only if the database write succeeds
 	go r.createAdminCaches(context.Background(), a)
+	return nil
+}
+
+// UpdateFullAdminWithTx allows the Service Layer to update RBAC permissions within an ACID transaction
+func (r *TenantUserLoginRepository) UpdateFullAdminWithTx(ctx context.Context, tx *sql.Tx, a *models.TenantUserLogin) error {
+	err := tx.StmtContext(ctx, r.stmtUpdateAdmin).QueryRowContext(ctx,
+		a.Username, a.PhoneNumber, a.PasswordHash,
+		a.Role, a.IsActive, a.PermissionsJSON,
+		a.TenantID, a.UUID, // WHERE clause variables
+	).Scan(&a.ModifiedAt)
+
+	if err != nil {
+		return err
+	}
+
+	// CRITICAL: Bust the cache instantly so revoked permissions take immediate effect
+	go r.invalidateAdminCaches(context.Background(), a)
 	return nil
 }
 
@@ -214,10 +233,6 @@ func (r *TenantUserLoginRepository) GetFullAdminByUUID(ctx context.Context, tena
 
 	a, err := r.scanFullRetrieval(r.stmtGetFullUUID.QueryRowContext(ctx, tenantID, uuid))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// FIXED: Return the Sentinel Error
-			return nil, interfaces.ErrUserNotFound
-		}
 		return nil, err
 	}
 

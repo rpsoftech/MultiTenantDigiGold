@@ -4,7 +4,9 @@
     "outDir": "./out-tsc/jest",
     "types": ["jest", "node"],
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    "ignoreDeprecations": "6.0",
+    "rootDir": "."
   },
   "include": [
     "jest.config.ts",

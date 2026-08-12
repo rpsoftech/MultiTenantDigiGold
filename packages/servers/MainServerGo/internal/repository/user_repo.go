@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -140,7 +141,10 @@ func (r *UserRepository) scanFullRetrieval(row *sql.Row) (*models.User, error) {
 		&u.CreatedAt, &u.ModifiedAt,
 	)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, interfaces.ErrUserNotFound // Translates safely
+		}
+		return nil, err // Returns connection timeouts/drops safely
 	}
 	return &u, nil
 }
@@ -149,6 +153,34 @@ func (r *UserRepository) scanFullRetrieval(row *sql.Row) (*models.User, error) {
 // OPERATIONS
 // ==========================================
 
+func (r *UserRepository) CreateFullUserWithTx(ctx context.Context, tx *sql.Tx, u *models.User) error {
+	err := tx.StmtContext(ctx, r.stmtCreateUser).QueryRowContext(ctx,
+		u.UUID, u.TenantID, u.FullName, u.PhoneNumber,
+		u.EmailID, u.KYCStatus, u.DocumentJSON, u.ERPUniqueID,
+	).Scan(&u.ID, &u.CreatedAt, &u.ModifiedAt)
+
+	if err != nil {
+		return err
+	}
+	go r.createUserCaches(context.Background(), u)
+	return nil
+}
+
+func (r *UserRepository) UpdateFullUserWithTx(ctx context.Context, tx *sql.Tx, u *models.User) error {
+	err := tx.StmtContext(ctx, r.stmtUpdateUser).QueryRowContext(ctx,
+		u.FullName, u.PhoneNumber, u.EmailID, u.KYCStatus,
+		u.StatusApprovedBy, u.DocumentJSON, u.ERPUniqueID,
+		u.TenantID, u.UUID,
+	).Scan(&u.ModifiedAt)
+
+	if err != nil {
+		return err
+	}
+	go r.invalidateUserCaches(context.Background(), u)
+	return nil
+}
+
+// @deprecated
 func (r *UserRepository) CreateFullUser(ctx context.Context, u *models.User) error {
 	err := r.stmtCreateUser.QueryRowContext(ctx,
 		u.UUID, u.TenantID, u.FullName, u.PhoneNumber,
@@ -188,7 +220,7 @@ func (r *UserRepository) GetFullUserByPhone(ctx context.Context, tenantID int64,
 
 	u, err := r.scanFullRetrieval(r.stmtGetFullPhone.QueryRowContext(ctx, tenantID, phone))
 	if err != nil {
-		return nil, interfaces.ErrUserNotFound
+		return nil, err // Let the helper do the talking!
 	}
 	go r.createUserCaches(context.Background(), u)
 	return u, nil

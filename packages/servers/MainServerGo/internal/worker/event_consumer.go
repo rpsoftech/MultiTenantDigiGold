@@ -14,6 +14,7 @@ type EventConsumer struct {
 	Redis      *redis_client.RedisClientStruct
 	EventRepo  *repository.EventRepository
 	TenantRepo *repository.TenantRepository
+	ConfigRepo *repository.TenantConfigRepository
 }
 
 // StartEventConsumer should be called in a goroutine from your main.go
@@ -22,6 +23,7 @@ func StartEventConsumer(ctx context.Context) {
 		Redis:      redis_client.InitRedisClient(),
 		EventRepo:  repository.GetEventRepository(),
 		TenantRepo: repository.GetTenantRepository(),
+		ConfigRepo: repository.GetTenantConfigRepository(),
 	}
 
 	// 1. PSubscribe catches ALL events matching the pattern

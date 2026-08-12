@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"sync"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -18,41 +19,56 @@ type TenantConfigService struct {
 	EventRepo  *repository.EventRepository
 }
 
-func GetTenantConfigService() *TenantConfigService {
+var (
+	tenantConfigServiceInstance *TenantConfigService
+	tenantConfigServiceOnce     sync.Once
+)
 
+func GetTenantConfigService() *TenantConfigService {
+	tenantConfigServiceOnce.Do(func() {
+		tenantConfigServiceInstance = &TenantConfigService{
+			DB:         postgres.GetPostgresDB(),
+			ConfigRepo: repository.GetTenantConfigRepository(),
+			TenantRepo: repository.GetTenantRepository(),
+			EventRepo:  repository.GetEventRepository(),
+		}
+	})
+	return tenantConfigServiceInstance
 }
 
 func (s *TenantConfigService) CreateTenant(ctx context.Context, tenant *models.Tenant, adminUUID string) error {
-
-	// 1. Initiate the ACID Transaction using the active HTTP context
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-
-	// 2. Guarantee a rollback if the function exits before tx.Commit() is called
 	defer tx.Rollback()
+
 	if tenant.UUID == "" {
 		tenant.UUID = utility_functions.GenerateNewUUID()
 	}
-	s.TenantRepo.CreateFullTenant()
+
+	// 1. CRITICAL FIX: Check the error when creating the Tenant
+	if err := s.TenantRepo.CreateFullTenantWithTX(ctx, tx, tenant); err != nil {
+		return err
+	}
+
+	// 2. NEW: Generate and save the TenantCreated Audit Event
+	tenantCreatedEvent := events.CreateNewTenantCreated(tenant, adminUUID)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, tenantCreatedEvent.BaseEvent); err != nil {
+		return err
+	}
+
+	// 3. Initialize default internal config
 	newConfig := &models.TenantInternalConfig{
 		TenantID: tenant.ID,
-
-		// 	ID             int64              `json:"-"` // Hidden from frontend
-		// UUID           string             `json:"uuid"`
-		// TenantID       int64              `json:"-"`
-		// WhatsAppConfig WhatsAppConfigJSON `json:"whatsapp_config"`
-		// PaymentConfig  PaymentConfigJSON  `json:"payment_config"`
-		// OthersConfig   OthersConfigJSON   `json:"other_config"`
-		// CreatedAt      time.Time          `json:"created_at"`
-		// ModifiedAt     time.Time          `json:"modified_at"`
 	}
-	// 3. Step 1: Save the configuration
+
+	// 4. Create the config AND generate the TenantConfigUpdated event
 	if err := s.updateTenantConfigTx(ctx, tx, newConfig, adminUUID, tenant.UUID); err != nil {
 		return err
 	}
-	// 5. Commit both actions to PostgreSQL simultaneously
+
+	// 5. Commit all records (Tenant, Config, and both Events) atomically
 	return tx.Commit()
 }
 

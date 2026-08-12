@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq" // Required for PostgreSQL Array types
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/schema"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 
 	// Ensure this import matches your actual Redis utility path
@@ -33,39 +34,51 @@ var (
 )
 
 // GetEventRepository implements Thread-Safe Lazy Initialization
+// GetEventRepository implements Thread-Safe Lazy Initialization
 func GetEventRepository() *EventRepository {
 	eventRepoOnce.Do(func() {
 		db := postgres.GetPostgresDB()
-		rdb := redis_client.InitRedisClient() // 2. INITIALIZE REDIS
+		rdb := redis_client.InitRedisClient()
 
-		// 1. INSERT QUERY (Saving the BaseEvent)
-		queryInsert := `
-            INSERT INTO system_events (
-                event_id, key_id, tenant_id, event_name, is_processed, 
-                parent_names, payload, ip_address_occurred_from, admin_id, occurred_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+		// 1. INSERT QUERY (Using Schema Constants)
+		queryInsert := fmt.Sprintf(`
+            INSERT INTO %s (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			schema.TableSystemEvents,
+			schema.ColEventId, schema.ColKeyId, schema.ColTenantId, schema.ColEventName, schema.ColIsProcessed,
+			schema.ColParentNames, schema.ColPayload, schema.ColIpAddressOccurredFrom, schema.ColAdminId, schema.ColOccurredAt,
+		)
 
 		stmtInsert, err := db.Db.Prepare(queryInsert)
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare InsertEvent: %v", err))
 		}
 
-		// 2. MARK AS PROCESSED
-		queryMark := `UPDATE system_events SET is_processed = true WHERE event_id = $1`
+		// 2. MARK AS PROCESSED (Using Schema Constants)
+		queryMark := fmt.Sprintf(`UPDATE %s SET %s = true WHERE %s = $1`,
+			schema.TableSystemEvents, schema.ColIsProcessed, schema.ColEventId,
+		)
+
 		stmtMark, err := db.Db.Prepare(queryMark)
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare MarkEventProcessed: %v", err))
 		}
 
-		// 3. FETCH UNPROCESSED
-		queryFetch := `
+		// 3. FETCH UNPROCESSED (Using Schema Constants)
+		queryFetch := fmt.Sprintf(`
             SELECT 
-                event_id, key_id, tenant_id, event_name, parent_names, 
-                payload, ip_address_occurred_from, admin_id, occurred_at 
-            FROM system_events 
-            WHERE is_processed = false AND occurred_at < NOW() - INTERVAL '1 minute'
-            ORDER BY occurred_at ASC 
-            LIMIT 100`
+                %s, %s, %s, %s, %s, %s, %s, %s, %s 
+            FROM %s 
+            WHERE %s = false AND %s < NOW() - INTERVAL '1 minute'
+            ORDER BY %s ASC 
+            LIMIT 100`,
+			schema.ColEventId, schema.ColKeyId, schema.ColTenantId, schema.ColEventName, schema.ColParentNames,
+			schema.ColPayload, schema.ColIpAddressOccurredFrom, schema.ColAdminId, schema.ColOccurredAt,
+			schema.TableSystemEvents,
+			schema.ColIsProcessed, schema.ColOccurredAt,
+			schema.ColOccurredAt,
+		)
 
 		stmtFetch, err := db.Db.Prepare(queryFetch)
 		if err != nil {
@@ -74,7 +87,7 @@ func GetEventRepository() *EventRepository {
 
 		eventRepoInstance = &EventRepository{
 			DB:                   db,
-			Redis:                rdb, // 3. MAP REDIS TO THE INSTANCE
+			Redis:                rdb,
 			stmtInsertEvent:      stmtInsert,
 			stmtMarkProcessed:    stmtMark,
 			stmtFetchUnprocessed: stmtFetch,

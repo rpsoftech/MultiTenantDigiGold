@@ -1,2 +1,2 @@
-yarn nx affected -t lint --fix
+yarn nx affected -t lint
 yarn lint-staged

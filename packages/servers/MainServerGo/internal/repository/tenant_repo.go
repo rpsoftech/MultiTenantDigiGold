@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ type TenantRepository struct {
 
 	tenantCacheKeys *TenantRepoCacheKeys
 	tenantUUIDtoID  map[string]int64
+	uuidMapMutex    sync.RWMutex // ADD THIS
 }
 
 type TenantRepoCacheKeys struct {
@@ -237,14 +239,19 @@ func (r *TenantRepository) scanFullRetrieval(row *sql.Row) (*models.Tenant, erro
 }
 
 func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (*int64, error) {
+	r.uuidMapMutex.RLock()
 	id, ok := r.tenantUUIDtoID[uuid]
+	r.uuidMapMutex.RUnlock()
 	if !ok {
 		entity, err := r.GetFullTenantByUUID(ctx, uuid)
 		if err != nil {
 			return nil, err
 		}
 		id = entity.ID
+		r.uuidMapMutex.Lock()
 		r.tenantUUIDtoID[uuid] = id
+		r.uuidMapMutex.RUnlock()
+
 	}
 	return &id, nil
 }
@@ -267,7 +274,7 @@ func (r *TenantRepository) CreateFullTenant(ctx context.Context, t *models.Tenan
 	go r.createTenantCaches(context.Background(), t)
 	return nil
 }
-func (r *TenantRepository) CreateFullTenantWithTX(ctx context.Context, t *models.Tenant, tx *sql.Tx) error {
+func (r *TenantRepository) CreateFullTenantWithTX(ctx context.Context, tx *sql.Tx, t *models.Tenant) error {
 	err := tx.StmtContext(ctx, r.stmtCreateTenant).QueryRowContext(ctx,
 		t.UUID, t.FullName, t.ShortName, t.Domain, t.Subdomain,
 		t.DomainExpiry, t.PlanExpiry, t.RenewalCost, t.KYCMode,
@@ -298,6 +305,23 @@ func (r *TenantRepository) UpdateFullTenant(ctx context.Context, t *models.Tenan
 	return nil
 }
 
+func (r *TenantRepository) UpdateFullTenantWithTX(ctx context.Context, tx *sql.Tx, t *models.Tenant) error {
+	err := tx.StmtContext(ctx, r.stmtUpdateTenant).QueryRowContext(ctx,
+		t.FullName, t.ShortName, t.Domain, t.Subdomain,
+		t.DomainExpiry, t.PlanExpiry, t.RenewalCost, t.KYCMode,
+		t.MarkupPercentage, t.UIJSONConfig,
+		t.UUID,
+	).Scan(&t.ModifiedAt)
+
+	if err != nil {
+		return err
+	}
+
+	// Instantly invalidate old config data
+	go r.invalidateTenantCaches(context.Background(), t)
+	return nil
+}
+
 // ==========================================
 // READ OPERATIONS (FULL ENTITY)
 // ==========================================
@@ -315,7 +339,10 @@ func (r *TenantRepository) GetFullTenantByUUID(ctx context.Context, uuid string)
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByUUID.QueryRowContext(ctx, uuid))
 	if err != nil {
-		return nil, interfaces.ErrTenantNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, interfaces.ErrTenantNotFound // Safe translation
+		}
+		return nil, err // Safe pass-through for real DB errors
 	}
 
 	go r.createTenantCaches(context.Background(), t)
@@ -335,7 +362,10 @@ func (r *TenantRepository) GetFullTenantByShortName(ctx context.Context, shortNa
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByShort.QueryRowContext(ctx, shortName))
 	if err != nil {
-		return nil, interfaces.ErrTenantNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, interfaces.ErrTenantNotFound // Safe translation
+		}
+		return nil, err // Safe pass-through for real DB errors
 	}
 
 	go r.createTenantCaches(context.Background(), t)
@@ -354,7 +384,10 @@ func (r *TenantRepository) GetFullTenantByDomain(ctx context.Context, domain str
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByDomain.QueryRowContext(ctx, domain))
 	if err != nil {
-		return nil, interfaces.ErrTenantNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, interfaces.ErrTenantNotFound // Safe translation
+		}
+		return nil, err // Safe pass-through for real DB errors
 	}
 
 	go r.createTenantCaches(context.Background(), t)

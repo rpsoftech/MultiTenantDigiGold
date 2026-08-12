@@ -15,6 +15,7 @@
     "libpeerconnection",
     "stdlib",
     "testem",
+    "TICUUID",
     "TUID",
     "UIJSON",
     "Voltra",
