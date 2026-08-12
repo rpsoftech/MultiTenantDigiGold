@@ -126,6 +126,9 @@ func (r *RedisClientStruct) RemoveKey(ctx context.Context, key ...string) error 
 	return r.Client.Del(ctx, key...).Err()
 }
 
+func (r *RedisClientStruct) SetStringDataKeepTTL(ctx context.Context, key string, value string) error {
+	return r.Client.Set(ctx, key, value, redis.KeepTTL).Err()
+}
 func (r *RedisClientStruct) SetStringData(ctx context.Context, key string, value string, expiresIn int) error {
 	return r.SetStringDataWithExpiry(ctx, key, value, time.Duration(expiresIn)*time.Second)
 }

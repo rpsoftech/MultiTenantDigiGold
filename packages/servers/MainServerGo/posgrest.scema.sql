@@ -126,3 +126,24 @@ CREATE TABLE system_events_2026_07 PARTITION OF system_events
 
 CREATE TABLE system_events_2026_08 PARTITION OF system_events
     FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+
+CREATE TABLE tenant_internal_configs (
+    tic_id BIGSERIAL PRIMARY KEY,                     -- Internal fast joining ID
+    tic_uuid VARCHAR(36) UNIQUE NOT NULL,             -- Public-facing UUID
+    tic_tenant_id BIGINT UNIQUE NOT NULL,             -- 1:1 relationship with tenants table
+    
+    -- JSONB Configuration Columns
+    tic_whatsapp_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tic_payment_gateway_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tic_other_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    
+    -- Standard Timestamps
+    tic_created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    tic_modified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign Key Constraint (Strict relation to the main tenant)
+    CONSTRAINT fk_tic_tenant FOREIGN KEY (tic_tenant_id) REFERENCES tenants(tenant_id) ON DELETE RESTRICT
+);
+
+-- Index for lightning-fast lookups when the worker needs credentials
+CREATE INDEX idx_tic_tenant_id ON tenant_internal_configs(tic_tenant_id);

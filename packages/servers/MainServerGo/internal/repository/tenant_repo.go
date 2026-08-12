@@ -16,9 +16,9 @@ import (
 )
 
 type TenantRepository struct {
-	DB    *postgres.PostgresDBStruct
-	Redis *redis_client.RedisClientStruct
-
+	DB        *postgres.PostgresDBStruct
+	Redis     *redis_client.RedisClientStruct
+	EventRepo *EventRepository
 	// Partial Statements (8 Columns - Highly Optimized)
 	stmtGetPartialByUUID   *sql.Stmt
 	stmtGetPartialByDomain *sql.Stmt
@@ -55,7 +55,7 @@ func GetTenantRepository() *TenantRepository {
 	tenantRepoOnce.Do(func() {
 		db := postgres.GetPostgresDB()
 		rdb := redis_client.InitRedisClient()
-
+		eventRepo := GetEventRepository()
 		// ==========================================
 		// 1. PARTIAL QUERIES (8 Columns)
 		// ==========================================
@@ -152,6 +152,7 @@ func GetTenantRepository() *TenantRepository {
 		tenantRepoInstance = &TenantRepository{
 			DB:                     db,
 			Redis:                  rdb,
+			EventRepo:              eventRepo,
 			stmtGetPartialByUUID:   stmtPartialUUID,
 			stmtGetPartialByDomain: stmtPartialDomain,
 			stmtGetPartialByShort:  stmtPartialShort,
@@ -254,6 +255,20 @@ func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (*in
 
 func (r *TenantRepository) CreateFullTenant(ctx context.Context, t *models.Tenant) error {
 	err := r.stmtCreateTenant.QueryRowContext(ctx,
+		t.UUID, t.FullName, t.ShortName, t.Domain, t.Subdomain,
+		t.DomainExpiry, t.PlanExpiry, t.RenewalCost, t.KYCMode,
+		t.MarkupPercentage, t.UIJSONConfig,
+	).Scan(&t.ID, &t.CreatedAt, &t.ModifiedAt)
+
+	if err != nil {
+		return err
+	}
+
+	go r.createTenantCaches(context.Background(), t)
+	return nil
+}
+func (r *TenantRepository) CreateFullTenantWithTX(ctx context.Context, t *models.Tenant, tx *sql.Tx) error {
+	err := tx.StmtContext(ctx, r.stmtCreateTenant).QueryRowContext(ctx,
 		t.UUID, t.FullName, t.ShortName, t.Domain, t.Subdomain,
 		t.DomainExpiry, t.PlanExpiry, t.RenewalCost, t.KYCMode,
 		t.MarkupPercentage, t.UIJSONConfig,

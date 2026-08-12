@@ -47,6 +47,32 @@ func ParseDBError(err error) *RequestError {
 			Name:          "ERROR_INVALID_TOKEN",
 			LogTheDetails: false,
 		}
+	case errors.Is(err, ErrRecentOTPReqExist):
+		return &RequestError{
+			StatusCode:    429, // 429 Too Many Requests (Industry standard for rate limiting)
+			Code:          ERROR_RECENT_OTP_REQ_EXIST,
+			Message:       "Please wait 30 seconds before requesting a new OTP.",
+			Name:          "ERROR_RECENT_OTP_REQ_EXIST",
+			LogTheDetails: false, // Normal user behavior, do not spam your server logs
+		}
+
+	case errors.Is(err, ErrOTPReqNotFound):
+		return &RequestError{
+			StatusCode:    404, // 404 Not Found
+			Code:          ERROR_OTP_REQ_NOT_FOUND,
+			Message:       "Your OTP has expired or was not found. Please request a new one.",
+			Name:          "ERROR_OTP_REQ_NOT_FOUND",
+			LogTheDetails: false,
+		}
+
+	case errors.Is(err, ErrOTPInvalid):
+		return &RequestError{
+			StatusCode:    401, // 401 Unauthorized
+			Code:          ERROR_OTP_INVALID,
+			Message:       "The OTP you entered is incorrect.",
+			Name:          "ERROR_OTP_INVALID",
+			LogTheDetails: false, // Users make typos all the time, keep logs clean
+		}
 	}
 
 	// 2. Fallback for actual database crashes (Connection dropped, syntax error, etc.)
