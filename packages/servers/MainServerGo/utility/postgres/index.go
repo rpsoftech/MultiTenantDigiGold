@@ -21,6 +21,7 @@ type PostgresConfig struct {
 	PG_USERNAME string `validate:"required"`
 	PG_PASSWORD string `validate:"required"`
 	PG_DATABASE string `validate:"required"`
+	PG_SCHEMA   string `validate:"required"`
 }
 
 type PostgresDBStruct struct {
@@ -37,28 +38,30 @@ func InitPostgresDB() *PostgresDBStruct {
 	postgresOnce.Do(func() {
 		fmt.Println("PostgreSQL Initializing...")
 
-		port, err := strconv.Atoi(env.Env.GetEnv(env.MYSQL_PORT_KEY)) // Assuming you update this to PG_PORT_KEY
+		port, err := strconv.Atoi(env.Env.GetEnv(env.PG_PORT_KEY)) // Assuming you update this to PG_PORT_KEY
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Invalid PostgreSQL Port: %v", err))
 		}
 
 		config := &PostgresConfig{
-			PG_HOST:     env.Env.GetEnv(env.MYSQL_HOST_KEY),
+			PG_HOST:     env.Env.GetEnv(env.PG_HOST_KEY),
 			PG_PORT:     port,
-			PG_USERNAME: env.Env.GetEnv(env.MYSQL_USERNAME_KEY),
-			PG_PASSWORD: env.Env.GetEnv(env.MYSQL_PASSWORD_KEY),
-			PG_DATABASE: env.Env.GetEnv(env.MYSQL_DATABASE_KEY),
+			PG_USERNAME: env.Env.GetEnv(env.PG_USERNAME_KEY),
+			PG_PASSWORD: env.Env.GetEnv(env.PG_PASSWORD_KEY),
+			PG_DATABASE: env.Env.GetEnv(env.PG_DATABASE_KEY),
+			PG_SCHEMA:   env.Env.GetEnv(env.PG_SCHEMA_KEY),
 		}
 
 		// env.ValidateEnv(config) // Call your validator here
 
 		// PostgreSQL DSN Format
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable&search_path=\"%s\"",
 			config.PG_USERNAME,
 			config.PG_PASSWORD,
 			config.PG_HOST,
 			config.PG_PORT,
 			config.PG_DATABASE,
+			config.PG_SCHEMA,
 		)
 
 		// 1. Open the connection pool (Does NOT ping the DB)

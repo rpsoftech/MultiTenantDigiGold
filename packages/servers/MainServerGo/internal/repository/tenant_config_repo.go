@@ -43,7 +43,7 @@ func GetTenantConfigRepository() *TenantConfigRepository {
 		// 1. FULL QUERY BASE (Using Schema Constants)
 		querySelectBase := fmt.Sprintf(`SELECT %s, %s, %s, %s, %s, %s, %s, %s FROM %s`,
 			schema.ColTICId, schema.ColTICUUID, schema.ColTICTenantID,
-			schema.ColTICWhatsappJSON, schema.ColTICPaymentGatewayJSON, schema.ColTICWebhookJSON,
+			schema.ColTICWhatsappJSON, schema.ColTICPaymentGatewayJSON, schema.ColTICOthersJSON,
 			schema.ColTICCreatedAt, schema.ColTICModifiedAt,
 			schema.TableTenantConfigs,
 		)
@@ -70,11 +70,11 @@ func GetTenantConfigRepository() *TenantConfigRepository {
                 %s = EXCLUDED.%s,
                 %s = CURRENT_TIMESTAMP
             RETURNING %s, %s, %s, %s`,
-			schema.TableTenantConfigs, schema.ColTICUUID, schema.ColTICTenantID, schema.ColTICWhatsappJSON, schema.ColTICPaymentGatewayJSON, schema.ColTICWebhookJSON,
+			schema.TableTenantConfigs, schema.ColTICUUID, schema.ColTICTenantID, schema.ColTICWhatsappJSON, schema.ColTICPaymentGatewayJSON, schema.ColTICOthersJSON,
 			schema.ColTICTenantID, // The conflict target
 			schema.ColTICWhatsappJSON, schema.ColTICWhatsappJSON,
 			schema.ColTICPaymentGatewayJSON, schema.ColTICPaymentGatewayJSON,
-			schema.ColTICWebhookJSON, schema.ColTICWebhookJSON,
+			schema.ColTICOthersJSON, schema.ColTICOthersJSON,
 			schema.ColTICModifiedAt,
 			schema.ColTICId, schema.ColTICUUID, schema.ColTICCreatedAt, schema.ColTICModifiedAt,
 		)

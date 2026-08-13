@@ -6,73 +6,98 @@ import (
 	"os"
 	"slices"
 	"strconv"
-
-	"github.com/rpsoftech/DigiGold/MainServerGo/validator"
+	"sync"
 
 	"github.com/joho/godotenv"
+	"github.com/rpsoftech/DigiGold/MainServerGo/validator" // Ensure this path matches your project
 )
 
-type EnvInterface struct {
-	APP_ENV AppEnv `json:"APP_ENV" validate:"required,enum=AppEnv"`
-	PORT    int    `json:"PORT" validate:"required,port"`
-	// DB_URL                string `json:"DB_URL" validate:"required,url"`
-	// DB_NAME               string `json:"DB_NAME_KEY" validate:"required,min=3"`
+const ENV_FILE_NAME = "digiGold.env"
 
+type EnvInterface struct {
+	APP_ENV           AppEnv `json:"APP_ENV" validate:"required"` // Assumes your validator supports enum or oneof
+	PORT              int    `json:"PORT" validate:"required"`
 	ACCESS_TOKEN_KEY  string `json:"ACCESS_TOKEN_KEY" validate:"required,min=100"`
 	REFRESH_TOKEN_KEY string `json:"REFRESH_TOKEN_KEY" validate:"required,min=100"`
-	// FIREBASE_JSON_STRING  string `json:"FIREBASE_JSON_STRING" validate:"required"`
-	// FIREBASE_DATABASE_URL string `json:"FIREBASE_DATABASE_URL" validate:"required"`
+
 	internalData map[string]string
+	mu           sync.RWMutex // CRITICAL: Mutex for thread-safe map access
 }
 
-var Env *EnvInterface
+var (
+	Env     *EnvInterface
+	IsDev   = false
+	envOnce sync.Once
+)
 
-var IsDev = false
-
+// GetEnv fetches variables safely using a Read/Write Mutex
 func (e *EnvInterface) GetEnv(key string) string {
-	if val, ok := e.internalData[key]; ok {
+	// 1. Safe Read Lock
+	e.mu.RLock()
+	val, ok := e.internalData[key]
+	e.mu.RUnlock()
+
+	if ok {
 		return val
 	}
-	if val := os.Getenv(key); val != "" {
+
+	// 2. Fetch from the OS in-memory registry
+	val = os.Getenv(key)
+	if val != "" {
+		// 3. Safe Write Lock
+		e.mu.Lock()
 		e.internalData[key] = val
-		return val
+		e.mu.Unlock()
 	}
-	return ""
+
+	return val
 }
 
 func ValidateEnv(env any) {
 	errs := validator.Validator.Validate(env)
 	if len(errs) > 0 {
-		errsJson, _ := json.Marshal(errs)
-		fmt.Printf("%s", errsJson)
-		panic(errs[0])
+		// Beautifully format the JSON error so developers can immediately spot the missing variable
+		errsJson, _ := json.MarshalIndent(errs, "", "  ")
+		panic(fmt.Sprintf("FATAL: Environment Validation Failed:\n%s", string(errsJson)))
 	}
 }
 
+// LoadEnv guarantees the environment is parsed exactly once
 func LoadEnv(filename string) {
-	godotenv.Load(filename)
-	IsDev = slices.Contains(os.Args, "--dev")
-	appEnv, _ := parseAppEnv(os.Getenv(app_ENV_KEY))
-	PORT, err := strconv.Atoi(Env.GetEnv(PORT_KEY))
-	if err != nil {
-		panic("Please Pass Valid Port")
-	}
-	Env = &EnvInterface{
-		APP_ENV: appEnv,
-		internalData: map[string]string{
-			"APP_ENV": os.Getenv(app_ENV_KEY),
-		},
-		PORT: PORT,
-		// DB_NAME:               os.Getenv(db_NAME_KEY),
-		// DB_URL:                os.Getenv(db_URL_KEY),
-		// REDIS_DB_PORT:         redis_DB_PORT,
-		// REDIS_DB_HOST:         os.Getenv(redis_DB_HOST_KEY),
-		// REDIS_DB_PASSWORD:     os.Getenv(redis_DB_PASSWORD_KEY),
-		// REDIS_DB_DATABASE:     redis_DB_DATABASE,
-		// ACCESS_TOKEN_KEY:      os.Getenv(access_TOKEN_KEY),
-		// REFRESH_TOKEN_KEY:     os.Getenv(refresh_TOKEN_KEY),
-		// FIREBASE_JSON_STRING:  os.Getenv(firebase_JSON_STRING_KEY),
-		// FIREBASE_DATABASE_URL: os.Getenv(firebase_DATABASE_URL_KEY),
-	}
-	ValidateEnv(Env)
+	envOnce.Do(func() {
+		appEnvStr := os.Getenv(app_ENV_KEY)
+		IsDev = slices.Contains(os.Args, "--dev") || appEnvStr == string(APP_ENV_DEVELOP)
+		// 1. Graceful Loading: Do not crash if the .env file is missing (e.g., in Docker)
+		if err := godotenv.Load(filename); err != nil {
+			if IsDev {
+				fmt.Printf("⚠️  Warning: %s not found. Falling back to system environment variables.\n", filename)
+			}
+		}
+		// Extract raw strings
+		portStr := os.Getenv(PORT_KEY)
+		appEnvStr = os.Getenv(app_ENV_KEY)
+		IsDev = slices.Contains(os.Args, "--dev") || appEnvStr == string(APP_ENV_DEVELOP)
+		// Parse the Port
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Invalid PORT provided: '%s'", portStr))
+		}
+
+		// 2. Hydrate the struct
+		Env = &EnvInterface{
+			APP_ENV:           AppEnv(appEnvStr),
+			PORT:              port,
+			ACCESS_TOKEN_KEY:  os.Getenv(ACCESS_TOKEN_KEY),
+			REFRESH_TOKEN_KEY: os.Getenv(REFRESH_TOKEN_KEY),
+			internalData:      make(map[string]string),
+		}
+
+		// 3. Pre-cache known keys
+		Env.internalData["APP_ENV"] = appEnvStr
+		Env.internalData["PORT"] = portStr
+
+		// 4. Validate all strictly typed constraints
+		ValidateEnv(Env)
+		fmt.Println("✅ Environment Variables successfully loaded and validated.")
+	})
 }

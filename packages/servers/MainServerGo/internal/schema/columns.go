@@ -85,7 +85,7 @@ const (
 	ColTICTenantID           = "tic_tenant_id"
 	ColTICWhatsappJSON       = "tic_whatsapp_json"
 	ColTICPaymentGatewayJSON = "tic_payment_gateway_json"
-	ColTICWebhookJSON        = "tic_webhook_json"
+	ColTICOthersJSON         = "tic_other_json"
 	ColTICCreatedAt          = "tic_created_at"
 	ColTICModifiedAt         = "tic_modified_at"
 )
