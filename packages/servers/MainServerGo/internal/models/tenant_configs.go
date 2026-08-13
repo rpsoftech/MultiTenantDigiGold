@@ -13,19 +13,50 @@ type TenantInternalConfig struct {
 	CreatedAt      time.Time           `json:"created_at"`
 	ModifiedAt     time.Time           `json:"modified_at"`
 }
+type WhatsappConfigProviderType string
+
+const (
+	DEFAULTWhatsappConfigProvider WhatsappConfigProviderType = "DEFAULT"
+	OFFICIAL                      WhatsappConfigProviderType = "OFFICIAL"
+	UNOFFICIAL                    WhatsappConfigProviderType = "UNOFFICIAL"
+)
+
+type WhatsappMessageTemplateType string
+
+const (
+	OTPRequest WhatsappMessageTemplateType = "OTP_REQUEST"
+)
+
+type WhatsappProviderApiEndpoint struct {
+	// API Credentials (Blank if using "DEFAULT")
+	APIEndpoint string `json:"api_endpoint" validate:"required"`
+	AuthToken   string `json:"auth_token" validate:"required"`
+}
+
+type WhatsappUnofficialTemplateConfig struct {
+	*WhatsappProviderApiEndpoint
+}
+type WhatsappOfficialTemplateConfig struct {
+	*WhatsappProviderApiEndpoint
+	PhoneNumberID string `json:"phone_number_id" validate:"required"`
+}
+
+type WhatsappMessageTemplate struct {
+	Name     string `json:"name" validate:"required"`
+	Body     string `json:"body" validate:"required"`
+	Language string `json:"language" validate:"required"`
+	// Optional: "language": {"code": "en"}
+}
 
 // WhatsAppConfigJSON defines the dynamic rules for sending messages
 type WhatsAppConfigJSON struct {
 	// ProviderType can be "DEFAULT" (Voltra), "OFFICIAL" (Meta), or "UNOFFICIAL" (Custom)
-	ProviderType string `json:"provider_type"`
-
-	// API Credentials (Blank if using "DEFAULT")
-	APIEndpoint string `json:"api_endpoint,omitempty"`
-	AuthToken   string `json:"auth_token,omitempty"`
-
+	ProviderType     WhatsappConfigProviderType        `json:"provider_type" validate:"required"`
+	OfficialConfig   *WhatsappOfficialTemplateConfig   `json:"official_config,omitempty"`
+	UnofficialConfig *WhatsappUnofficialTemplateConfig `json:"unofficial_config,omitempty"`
 	// Template Mappings: Maps internal event names to the provider's specific template IDs
 	// e.g., {"login_otp": "template_xyz123", "payment_success": "template_abc987"}
-	TemplateMappings map[string]string `json:"template_mappings,omitempty"`
+	TemplateMappings map[WhatsappMessageTemplateType]WhatsappMessageTemplate `json:"template_mappings,omitempty"`
 }
 
 // PaymentConfigJSON handles custom Razorpay / PayU credentials
@@ -44,3 +75,11 @@ type WebhooksConfigJSON struct {
 	WebhookURL    string `json:"webhook_url,omitempty"`
 	WebhookSecret string `json:"webhook_secret,omitempty"` // For calculating HMAC signatures
 }
+
+const (
+	MESSAGE_REQUEST_VARIABLE_TENANT_ID   = "tenant_id"
+	MESSAGE_REQUEST_VARIABLE_TENANT_NAME = "tenant_name"
+	MESSAGE_REQUEST_VARIABLE_PHONE       = "phone"
+	MESSAGE_REQUEST_VARIABLE_NAME        = "name"
+	MESSAGE_REQUEST_VARIABLE_OTP_CODE    = "otp_code"
+)

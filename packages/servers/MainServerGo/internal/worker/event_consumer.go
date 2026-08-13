@@ -3,18 +3,22 @@ package workers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
 type EventConsumer struct {
-	Redis      *redis_client.RedisClientStruct
-	EventRepo  *repository.EventRepository
-	TenantRepo *repository.TenantRepository
-	ConfigRepo *repository.TenantConfigRepository
+	Redis               *redis_client.RedisClientStruct
+	EventRepo           *repository.EventRepository
+	TenantRepo          *repository.TenantRepository
+	ConfigRepo          *repository.TenantConfigRepository
+	DefaultTenantConfig *models.TenantInternalConfig
+	DefaultTenant       *models.Tenant
 }
 
 // StartEventConsumer should be called in a goroutine from your main.go
@@ -25,6 +29,19 @@ func StartEventConsumer(ctx context.Context) {
 		TenantRepo: repository.GetTenantRepository(),
 		ConfigRepo: repository.GetTenantConfigRepository(),
 	}
+	defaultTenant, err := consumer.TenantRepo.GetFullTenantByShortName(ctx, "default")
+	if err != nil {
+		log.Printf("CRITICAL: Failed to fetch default tenant: %v\n", err)
+		consumer.handleCriticalError("default", "Initial Config", fmt.Errorf("Default Tenant Not Found"))
+	}
+	consumer.DefaultTenant = defaultTenant
+
+	defaultTenantConfig, err := consumer.ConfigRepo.GetConfigByTenantUUID(ctx, defaultTenant.UUID)
+	if err != nil {
+		log.Printf("CRITICAL: Failed to fetch default tenant config: %v\n", err)
+		consumer.handleCriticalError("default", "Initial Config", fmt.Errorf("Default Tenant Config Not Found"))
+	}
+	consumer.DefaultTenantConfig = defaultTenantConfig
 
 	// 1. PSubscribe catches ALL events matching the pattern
 	pubsub := consumer.Redis.Client.PSubscribe(ctx, "event/*")
