@@ -146,20 +146,22 @@ func (c *EventConsumer) sendMetaOfficialAPI(creds *models.WhatsappOfficialTempla
 
 	// Meta's endpoint requires the Phone Number ID in the URL
 	endpoint := fmt.Sprintf("%s/%s/messages", creds.APIEndpoint, creds.PhoneNumberID)
-	return c.executeHTTPRequest(endpoint, creds.AuthToken, payload)
+	// req.Header.Set("Authorization", "Bearer "+token``,token)
+
+	return c.executeHTTPRequest(endpoint, "Authorization", "Bearer "+creds.AuthToken, payload)
 }
 func (c *EventConsumer) sendWhatsappTextMessage(endpoint string, token string, payload *UnofficialWhatsappSendTextBody) error {
-	return c.executeHTTPRequest(endpoint, token, payload)
+	return c.executeHTTPRequest(endpoint, "X-Api-Token", token, payload)
 }
 
 // executeHTTPRequest is a reusable HTTP client with strict timeouts
-func (c *EventConsumer) executeHTTPRequest(endpoint string, token string, payload any) error {
+func (c *EventConsumer) executeHTTPRequest(endpoint string, tokenKey string, token string, payload any) error {
 	jsonPayload, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonPayload))
 
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set(tokenKey, token)
 	}
 
 	// Strict 10-second circuit breaker. Never let a 3rd party API hang your workers.

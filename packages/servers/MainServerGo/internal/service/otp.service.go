@@ -24,8 +24,10 @@ type OTPCacheSession struct {
 }
 
 type OTPService struct {
-	Redis     *redis_client.RedisClientStruct
-	EventRepo *repository.EventRepository
+	Redis      *redis_client.RedisClientStruct
+	EventRepo  *repository.EventRepository
+	UserRepo   *repository.UserRepository
+	tenantRepo *repository.TenantRepository
 }
 
 var (
@@ -45,6 +47,7 @@ func GetOTPService() *OTPService {
 		otpServiceInstance = &OTPService{
 			Redis:     redis_client.InitRedisClient(),
 			EventRepo: repository.GetEventRepository(),
+			UserRepo:  repository.GetUserRepository(),
 		}
 	})
 	return otpServiceInstance
@@ -65,6 +68,17 @@ func (s *OTPService) getOTPKey(tenantID string, phone string) string {
 
 func (s *OTPService) getCoolDownKey(tenantID string, phone string) string {
 	return s.Redis.GetRedisKey(fmt.Sprintf("tenant/%s/otp_coolDown/%s", tenantID, phone))
+}
+
+func (s *OTPService) SendLoginOTP(ctx context.Context, tenantID int64, tenantUUID string, phone string) error {
+	user, err := s.UserRepo.GetFullUserByPhone(ctx, tenantID, phone)
+	if err != nil {
+		if err == interfaces.ErrUserNotFound {
+			return interfaces.ErrUserNotFound
+		}
+		return err
+	}
+	return s.GenerateAndDispatch(ctx, tenantUUID, phone, *user.FullName)
 }
 
 // ==========================================
