@@ -1,0 +1,39 @@
+.wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  cursor: help;
+
+  &:hover .bubble,
+  &:focus-visible .bubble {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -4px);
+  }
+}
+
+.bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, 0);
+  margin-bottom: var(--space-2);
+  min-width: 180px;
+  max-width: 240px;
+  background: var(--color-text-primary);
+  color: var(--color-surface);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  font-weight: 500;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+  z-index: 10;
+}
