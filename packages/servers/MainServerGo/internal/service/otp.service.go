@@ -64,15 +64,16 @@ func (s *OTPService) generateSecureOTP() string {
 }
 
 func (s *OTPService) getOTPKey(tenantID string, phone string) string {
-	return s.Redis.GetRedisKey(fmt.Sprintf("tenant/%s/otp_session/%s", tenantID, phone))
+	return fmt.Sprintf("tenant:%s:otp_session:%s", tenantID, phone)
 }
 
 func (s *OTPService) getCoolDownKey(tenantID string, phone string) string {
-	return s.Redis.GetRedisKey(fmt.Sprintf("tenant/%s/otp_coolDown/%s", tenantID, phone))
+	return fmt.Sprintf("tenant:%s:otp_coolDown:%s", tenantID, phone)
 }
 
 func (s *OTPService) SendOTP(ctx context.Context, tenantID int64, tenantUUID string, phone string) (bool, error) {
 	user, err := s.UserRepo.GetFullUserByPhone(ctx, tenantID, phone)
+
 	isRegistered := true
 	name := "Customer"
 

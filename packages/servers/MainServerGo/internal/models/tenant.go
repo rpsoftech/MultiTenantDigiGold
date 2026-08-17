@@ -6,7 +6,8 @@ import (
 )
 
 type Tenant struct {
-	ID               int64           `json:"-"` // Internal BIGSERIAL
+	ID               int64           `json:"-"`            // Internal BIGSERIAL
+	ExportID         int64           `json:"id,omitempty"` // Public UUID
 	UUID             string          `json:"tenant_uuid"`
 	FullName         string          `json:"full_name"`
 	ShortName        *string         `json:"short_name"`

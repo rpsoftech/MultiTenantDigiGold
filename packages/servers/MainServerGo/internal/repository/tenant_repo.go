@@ -182,13 +182,13 @@ func (r *TenantRepository) generateCacheKey(t *models.Tenant) []string {
 	// Pre-allocate a slice with a capacity of 3 to avoid reallocation overhead during append
 	keys := make([]string, 0, 3)
 
-	keys = append(keys, r.Redis.GetRedisKey(r.tenantCacheKeys.FullUUID+t.UUID))
+	keys = append(keys, r.tenantCacheKeys.FullUUID+t.UUID)
 
 	if t.Domain != nil && *t.Domain != "" {
-		keys = append(keys, r.Redis.GetRedisKey(r.tenantCacheKeys.FullDomain+*t.Domain))
+		keys = append(keys, r.tenantCacheKeys.FullDomain+*t.Domain)
 	}
 	if t.ShortName != nil && *t.ShortName != "" {
-		keys = append(keys, r.Redis.GetRedisKey(r.tenantCacheKeys.FullShort+*t.ShortName))
+		keys = append(keys, r.tenantCacheKeys.FullShort+*t.ShortName)
 	}
 
 	return keys
@@ -199,7 +199,20 @@ func (r *TenantRepository) invalidateTenantCaches(ctx context.Context, t *models
 	r.Redis.RemoveKey(ctx, keys...)
 }
 
+func (r *TenantRepository) readCachedData(ctx context.Context, key string) *models.Tenant {
+	cachedStr, err := r.Redis.GetStringData(ctx, key)
+	if err == nil && cachedStr != "" {
+		var t models.Tenant
+		if marshalErr := json.Unmarshal([]byte(cachedStr), &t); marshalErr == nil {
+			t.ID = t.ExportID
+			return &t
+		}
+	}
+	return nil
+}
+
 func (r *TenantRepository) createTenantCaches(ctx context.Context, t *models.Tenant) {
+	t.ExportID = t.ID
 	keys := r.generateCacheKey(t)
 	if jsonData, err := json.Marshal(t); err == nil {
 		for _, cacheKey := range keys {
@@ -238,14 +251,14 @@ func (r *TenantRepository) scanFullRetrieval(row *sql.Row) (*models.Tenant, erro
 	return &t, nil
 }
 
-func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (*int64, error) {
+func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (int64, error) {
 	r.uuidMapMutex.RLock()
 	id, ok := r.tenantUUIDtoID[uuid]
 	r.uuidMapMutex.RUnlock()
 	if !ok {
 		entity, err := r.GetFullTenantByUUID(ctx, uuid)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 		id = entity.ID
 		r.uuidMapMutex.Lock()
@@ -253,7 +266,7 @@ func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (*in
 		r.uuidMapMutex.Unlock()
 
 	}
-	return &id, nil
+	return id, nil
 }
 
 // ==========================================
@@ -327,14 +340,10 @@ func (r *TenantRepository) UpdateFullTenantWithTX(ctx context.Context, tx *sql.T
 // ==========================================
 
 func (r *TenantRepository) GetFullTenantByUUID(ctx context.Context, uuid string) (*models.Tenant, error) {
-	cacheKey := r.Redis.GetRedisKey(r.tenantCacheKeys.FullUUID + uuid)
+	cacheKey := r.tenantCacheKeys.FullUUID + uuid
 
-	cachedStr, err := r.Redis.GetStringData(ctx, cacheKey)
-	if err == nil && cachedStr != "" {
-		var t models.Tenant
-		if marshalErr := json.Unmarshal([]byte(cachedStr), &t); marshalErr == nil {
-			return &t, nil
-		}
+	if t := r.readCachedData(ctx, cacheKey); t != nil {
+		return t, nil
 	}
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByUUID.QueryRowContext(ctx, uuid))
@@ -350,14 +359,10 @@ func (r *TenantRepository) GetFullTenantByUUID(ctx context.Context, uuid string)
 }
 
 func (r *TenantRepository) GetFullTenantByShortName(ctx context.Context, shortName string) (*models.Tenant, error) {
-	cacheKey := r.Redis.GetRedisKey(r.tenantCacheKeys.FullShort + shortName)
+	cacheKey := r.tenantCacheKeys.FullShort + shortName
 
-	cachedStr, err := r.Redis.GetStringData(ctx, cacheKey)
-	if err == nil && cachedStr != "" {
-		var t models.Tenant
-		if marshalErr := json.Unmarshal([]byte(cachedStr), &t); marshalErr == nil {
-			return &t, nil
-		}
+	if t := r.readCachedData(ctx, cacheKey); t != nil {
+		return t, nil
 	}
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByShort.QueryRowContext(ctx, shortName))
@@ -373,13 +378,10 @@ func (r *TenantRepository) GetFullTenantByShortName(ctx context.Context, shortNa
 }
 
 func (r *TenantRepository) GetFullTenantByDomain(ctx context.Context, domain string) (*models.Tenant, error) {
-	cacheKey := r.Redis.GetRedisKey(r.tenantCacheKeys.FullDomain + domain)
-	cachedStr, err := r.Redis.GetStringData(ctx, cacheKey)
-	if err == nil && cachedStr != "" {
-		var t models.Tenant
-		if marshalErr := json.Unmarshal([]byte(cachedStr), &t); marshalErr == nil {
-			return &t, nil
-		}
+	cacheKey := r.tenantCacheKeys.FullDomain + domain
+
+	if t := r.readCachedData(ctx, cacheKey); t != nil {
+		return t, nil
 	}
 
 	t, err := r.scanFullRetrieval(r.stmtGetFullByDomain.QueryRowContext(ctx, domain))
@@ -399,14 +401,10 @@ func (r *TenantRepository) GetFullTenantByDomain(ctx context.Context, domain str
 // ==========================================
 
 func (r *TenantRepository) GetPartialTenantByUUID(ctx context.Context, uuid string) (*models.Tenant, error) {
-	cacheKey := r.Redis.GetRedisKey(r.tenantCacheKeys.FullUUID + uuid)
+	cacheKey := r.tenantCacheKeys.FullUUID + uuid
 
-	cachedStr, err := r.Redis.GetStringData(ctx, cacheKey)
-	if err == nil && cachedStr != "" {
-		var t models.Tenant
-		if marshalErr := json.Unmarshal([]byte(cachedStr), &t); marshalErr == nil {
-			return &t, nil
-		}
+	if t := r.readCachedData(ctx, cacheKey); t != nil {
+		return t, nil
 	}
 
 	t, err := r.scanPartialRetrieval(r.stmtGetPartialByUUID.QueryRowContext(ctx, uuid))
@@ -417,14 +415,10 @@ func (r *TenantRepository) GetPartialTenantByUUID(ctx context.Context, uuid stri
 }
 
 func (r *TenantRepository) GetPartialTenantByDomain(ctx context.Context, domain string) (*models.Tenant, error) {
-	cacheKey := r.Redis.GetRedisKey(r.tenantCacheKeys.FullDomain + domain)
+	cacheKey := r.tenantCacheKeys.FullDomain + domain
 
-	cachedStr, err := r.Redis.GetStringData(ctx, cacheKey)
-	if err == nil && cachedStr != "" {
-		var t models.Tenant
-		if marshalErr := json.Unmarshal([]byte(cachedStr), &t); marshalErr == nil {
-			return &t, nil
-		}
+	if t := r.readCachedData(ctx, cacheKey); t != nil {
+		return t, nil
 	}
 
 	t, err := r.scanPartialRetrieval(r.stmtGetPartialByDomain.QueryRowContext(ctx, domain))
@@ -435,14 +429,10 @@ func (r *TenantRepository) GetPartialTenantByDomain(ctx context.Context, domain 
 }
 
 func (r *TenantRepository) GetPartialTenantByShortName(ctx context.Context, shortName string) (*models.Tenant, error) {
-	cacheKey := r.Redis.GetRedisKey(r.tenantCacheKeys.FullShort + shortName)
+	cacheKey := r.tenantCacheKeys.FullShort + shortName
 
-	cachedStr, err := r.Redis.GetStringData(ctx, cacheKey)
-	if err == nil && cachedStr != "" {
-		var t models.Tenant
-		if marshalErr := json.Unmarshal([]byte(cachedStr), &t); marshalErr == nil {
-			return &t, nil
-		}
+	if t := r.readCachedData(ctx, cacheKey); t != nil {
+		return t, nil
 	}
 
 	t, err := r.scanPartialRetrieval(r.stmtGetPartialByShort.QueryRowContext(ctx, shortName))

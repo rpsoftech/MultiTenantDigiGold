@@ -44,5 +44,5 @@ func (base *BaseEvent) GetPayloadString() string {
 	return string(payload)
 }
 func (base *BaseEvent) GetEventName() string {
-	return fmt.Sprintf("event/%s/%s/%s", base.TenantId, base.EventName, base.Id)
+	return fmt.Sprintf("event:%s:%s:%s", base.TenantId, base.EventName, base.Id)
 }

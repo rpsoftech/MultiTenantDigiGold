@@ -27,7 +27,7 @@ func TenantInterceptor(c fiber.Ctx) error {
 	// CRITICAL: We use c.UserContext() to pass a standard context.Context to the database
 	tenantIntID, err := tenantRepo.TenantUUIDtoID(c.Context(), tenantUUID)
 
-	if err != nil || tenantIntID == nil {
+	if err != nil || tenantIntID == 0 {
 		// Do not leak database errors to the frontend; just deny access.
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"success": false,
@@ -36,7 +36,7 @@ func TenantInterceptor(c fiber.Ctx) error {
 	}
 
 	// 3. Inject into Fiber's high-performance Locals
-	c.Locals(LocalsKeyTenantIntID, *tenantIntID)
+	c.Locals(LocalsKeyTenantIntID, tenantIntID)
 	c.Locals(LocalsKeyTenantUUID, tenantUUID)
 
 	// 4. Proceed to the Controller

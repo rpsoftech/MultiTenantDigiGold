@@ -9,7 +9,9 @@ func ParseDBError(err error) *RequestError {
 	if err == nil {
 		return nil
 	}
-
+	if reqErr, ok := err.(*RequestError); ok {
+		return reqErr
+	}
 	// 1. Check for specific fixed structures using errors.Is()
 	switch {
 	case errors.Is(err, ErrUserNotFound):

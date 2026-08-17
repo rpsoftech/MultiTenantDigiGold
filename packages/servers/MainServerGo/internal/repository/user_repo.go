@@ -112,8 +112,8 @@ func (r *UserRepository) generateCacheKey(t *models.User) []string {
 	// STRICT TENANT ISOLATION IN CACHE KEYS
 	base := fmt.Sprintf("tenant/%d/user/full/", t.TenantID)
 
-	keys = append(keys, r.Redis.GetRedisKey(base+"uuid/"+t.UUID))
-	keys = append(keys, r.Redis.GetRedisKey(base+"phone/"+t.PhoneNumber))
+	keys = append(keys, base+"uuid/"+t.UUID)
+	keys = append(keys, base+"phone/"+t.PhoneNumber)
 
 	return keys
 }
@@ -209,7 +209,7 @@ func (r *UserRepository) UpdateFullUser(ctx context.Context, u *models.User) err
 }
 
 func (r *UserRepository) GetFullUserByPhone(ctx context.Context, tenantID int64, phone string) (*models.User, error) {
-	cacheKey := r.Redis.GetRedisKey(fmt.Sprintf("tenant/%d/user/full/phone/%s", tenantID, phone))
+	cacheKey := fmt.Sprintf("tenant/%d/user/full/phone/%s", tenantID, phone)
 
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
 		var u models.User
@@ -229,7 +229,7 @@ func (r *UserRepository) GetFullUserByPhone(ctx context.Context, tenantID int64,
 // GetFullUserByUUID fetches a user using their UUID, strictly isolated by the internal tenantID (int64)
 func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, userUUID string) (*models.User, error) {
 	// 1. Generate the strictly isolated Cache Key
-	cacheKey := r.Redis.GetRedisKey(fmt.Sprintf("tenant/%d/user/full/uuid/%s", tenantID, userUUID))
+	cacheKey := fmt.Sprintf("tenant/%d/user/full/uuid/%s", tenantID, userUUID)
 
 	// 2. Check Redis Cache First
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {

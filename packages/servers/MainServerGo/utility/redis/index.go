@@ -3,6 +3,7 @@ package redis_client
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"sync"
 	"time"
@@ -82,8 +83,8 @@ func InitRedisClient() *RedisClientStruct {
 			Client: client,
 			Config: config,
 		}
-
 		println("Redis Client Initialized Successfully")
+		log.Printf("🔗 Redis Target: %s", client.Options().Addr)
 	})
 
 	return redisInstance
@@ -102,44 +103,47 @@ func DeferFunction() {
 // DATA METHODS (Context & Error Enforced)
 // ==========================================
 
-func (r *RedisClientStruct) SubscribeToChannels(ctx context.Context, channels ...string) *redis.PubSub {
-	return r.Client.Subscribe(ctx, channels...)
-}
+// func (r *RedisClientStruct) SubscribeToChannels(ctx context.Context, channels ...string) *redis.PubSub {
+// 	return r.Client.Subscribe(ctx, channels...)
+// }
 
 func (r *RedisClientStruct) PublishEvent(ctx context.Context, event events.BaseEventInterface) error {
-	return r.Client.Publish(ctx, event.GetEventName(), event.GetPayloadString()).Err()
+	return r.PublishCustomEvent(ctx, event.GetEventName(), event.GetPayloadString())
 }
 
 func (r *RedisClientStruct) PublishCustomEvent(ctx context.Context, event string, payload string) error {
-	return r.Client.Publish(ctx, event, payload).Err()
+	return r.Client.Publish(ctx, r.GetRedisEventKey(event), payload).Err()
 }
 
-func (r *RedisClientStruct) GetHashValue(ctx context.Context, key string) (map[string]string, error) {
-	return r.Client.HGetAll(ctx, key).Result()
-}
+// func (r *RedisClientStruct) GetHashValue(ctx context.Context, key string) (map[string]string, error) {
+// 	return r.Client.HGetAll(ctx, key).Result()
+// }
 
 func (r *RedisClientStruct) GetStringData(ctx context.Context, key string) (string, error) {
-	return r.Client.Get(ctx, key).Result()
+	return r.Client.Get(ctx, r.GetRedisKey(key)).Result()
 }
 
 func (r *RedisClientStruct) RemoveKey(ctx context.Context, key ...string) error {
+	for i, k := range key {
+		key[i] = r.GetRedisKey(k)
+	}
 	return r.Client.Del(ctx, key...).Err()
 }
 
 func (r *RedisClientStruct) SetStringDataKeepTTL(ctx context.Context, key string, value string) error {
-	return r.Client.Set(ctx, key, value, redis.KeepTTL).Err()
+	return r.Client.Set(ctx, r.GetRedisKey(key), value, redis.KeepTTL).Err()
 }
 func (r *RedisClientStruct) SetStringData(ctx context.Context, key string, value string, expiresIn int) error {
 	return r.SetStringDataWithExpiry(ctx, key, value, time.Duration(expiresIn)*time.Second)
 }
 
 func (r *RedisClientStruct) SetStringDataWithExpiry(ctx context.Context, key string, value string, expiresIn time.Duration) error {
-	return r.Client.Set(ctx, key, value, expiresIn).Err()
+	return r.Client.Set(ctx, r.GetRedisKey(key), value, expiresIn).Err()
 }
 
-func (r *RedisClientStruct) Generate(ctx context.Context, key string, values map[string]string) error {
-	return r.Client.HMSet(ctx, key, values).Err()
-}
+//	func (r *RedisClientStruct) Generate(ctx context.Context, key string, values map[string]string) error {
+//		return r.Client.HMSet(ctx, key, values).Err()
+//	}
 func (r *RedisClientStruct) GetRedisKey(key string) string {
 	return r.Config.Redis_DB_KEY_PREFIX + key
 }

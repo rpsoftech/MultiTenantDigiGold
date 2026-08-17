@@ -36,6 +36,7 @@ func main() {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		AppName:      "Digi Gold API v1",
+		ErrorHandler: middleware.GlobalErrorHandler, // Centralized Error Handling
 	})
 
 	// 3. Initialize Controllers

@@ -168,7 +168,7 @@ func (r *TenantConfigRepository) GetConfigByTenantUUID(ctx context.Context, tena
 		return nil, err
 	}
 
-	err = r.stmtGetByTenantID.QueryRowContext(ctx, *tenantID).Scan(
+	err = r.stmtGetByTenantID.QueryRowContext(ctx, tenantID).Scan(
 		&config.ID, &config.UUID, &config.TenantID,
 		&whatsappBytes, &paymentBytes, &webhookBytes,
 		&config.CreatedAt, &config.ModifiedAt,

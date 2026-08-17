@@ -126,8 +126,8 @@ func (r *TenantUserLoginRepository) generateCacheKey(a *models.TenantUserLogin) 
 	// STRICT TENANT ISOLATION: The tenantID is the root of the cache key
 	base := fmt.Sprintf("tenant/%d/admin/full/", a.TenantID)
 
-	keys = append(keys, r.Redis.GetRedisKey(base+"uuid/"+a.UUID))
-	keys = append(keys, r.Redis.GetRedisKey(base+"phone/"+a.PhoneNumber))
+	keys = append(keys, base+"uuid/"+a.UUID)
+	keys = append(keys, base+"phone/"+a.PhoneNumber)
 
 	return keys
 }
@@ -222,7 +222,7 @@ func (r *TenantUserLoginRepository) UpdateFullAdmin(ctx context.Context, a *mode
 
 // GetFullAdminByUUID is used primarily for middleware authorization and profile fetching
 func (r *TenantUserLoginRepository) GetFullAdminByUUID(ctx context.Context, tenantID int64, uuid string) (*models.TenantUserLogin, error) {
-	cacheKey := r.Redis.GetRedisKey(fmt.Sprintf("tenant/%d/admin/full/uuid/%s", tenantID, uuid))
+	cacheKey := fmt.Sprintf("tenant/%d/admin/full/uuid/%s", tenantID, uuid)
 
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
 		var a models.TenantUserLogin
@@ -242,7 +242,7 @@ func (r *TenantUserLoginRepository) GetFullAdminByUUID(ctx context.Context, tena
 
 // GetActiveAdminByPhone is used for the Login flow. It strictly enforces the tu_is_active flag.
 func (r *TenantUserLoginRepository) GetActiveAdminByPhone(ctx context.Context, tenantID int64, phone string) (*models.TenantUserLogin, error) {
-	cacheKey := r.Redis.GetRedisKey(fmt.Sprintf("tenant/%d/admin/full/phone/%s", tenantID, phone))
+	cacheKey := fmt.Sprintf("tenant/%d/admin/full/phone/%s", tenantID, phone)
 
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
 		var a models.TenantUserLogin

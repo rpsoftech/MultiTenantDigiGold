@@ -54,7 +54,7 @@ const (
 	ColUserStatusApprovedBy = "user_status_approved_by"
 	ColUserDocumentJSON     = "user_document_json"
 	ColUserERPUniqueID      = "user_erp_unique_id"
-	ColUserVaultBalance     = "user_vault_balance"
+	ColUserVaultBalance     = "user_total_vault_balance"
 	ColUserCreatedAt        = "user_created_at"
 	ColUserModifiedAt       = "user_modified_at"
 )
