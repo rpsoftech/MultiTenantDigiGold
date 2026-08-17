@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
@@ -17,6 +18,7 @@ import (
 )
 
 func main() {
+	env.LoadEnv("digiGold.env")
 	log.Println("🚀 Booting Digi Gold HTTP API Server (Fiber v3)...")
 
 	// 1. Pre-flight Infrastructure Checks
@@ -38,16 +40,11 @@ func main() {
 
 	// 3. Initialize Controllers
 	authController := auth_controllers.NewAuthController()
-
 	// 4. Setup Route Groups & Apply Tenancy Middleware
 	api := app.Group("/api/v1")
-
 	// The middleware is attached to the /auth group, protecting everything inside it
 	auth := api.Group("/auth", middleware.TenantInterceptor)
-
-	// Route: POST /api/v1/auth/otp/request
-	auth.Post("/otp/request", authController.RequestOTP)
-
+	authController.RegisterRoutes(auth)
 	// 5. Start the Server in a Goroutine
 	go func() {
 		log.Println("✅ Fiber Server listening on port 8080")

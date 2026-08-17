@@ -46,5 +46,5 @@ const (
 	PG_SCHEMA_KEY   = "PG_SCHEMA"
 
 	// REQ HEADER KEY
-	XApiToken = "X-Api-Token"
+	XApiToken = RequestTokenHeaderKey
 )

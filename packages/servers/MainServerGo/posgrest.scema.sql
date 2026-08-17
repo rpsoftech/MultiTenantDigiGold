@@ -76,7 +76,7 @@ CREATE TABLE users (
     
     -- KYC & Compliance 
     user_kyc_status VARCHAR(20) CHECK (user_kyc_status IN ('pending', 'verified', 'rejected')) DEFAULT 'pending',
-    user_status_approved_by BIGINT NOT NULL REFERENCES tenant_user_logins(tu_id) ON DELETE CASCADE,
+    user_status_approved_by BIGINT REFERENCES tenant_user_logins(tu_id) ON DELETE CASCADE,
     user_document_json JSONB DEFAULT '{}'::jsonb,
     
     -- Future-Proofing (E-Commerce/Offline Integration)

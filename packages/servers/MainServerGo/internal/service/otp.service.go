@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -70,15 +71,27 @@ func (s *OTPService) getCoolDownKey(tenantID string, phone string) string {
 	return s.Redis.GetRedisKey(fmt.Sprintf("tenant/%s/otp_coolDown/%s", tenantID, phone))
 }
 
-func (s *OTPService) SendLoginOTP(ctx context.Context, tenantID int64, tenantUUID string, phone string) error {
+func (s *OTPService) SendOTP(ctx context.Context, tenantID int64, tenantUUID string, phone string) (bool, error) {
 	user, err := s.UserRepo.GetFullUserByPhone(ctx, tenantID, phone)
+	isRegistered := true
+	name := "Customer"
+
 	if err != nil {
-		if err == interfaces.ErrUserNotFound {
-			return interfaces.ErrUserNotFound
+		if errors.Is(err, interfaces.ErrUserNotFound) {
+			isRegistered = false
+		} else {
+			return false, err
 		}
-		return err
+	} else if user.FullName != nil {
+		name = *user.FullName
 	}
-	return s.GenerateAndDispatch(ctx, tenantUUID, phone, *user.FullName)
+
+	err = s.GenerateAndDispatch(ctx, tenantUUID, phone, name)
+	if err != nil {
+		return false, err
+	}
+
+	return isRegistered, nil
 }
 
 // ==========================================

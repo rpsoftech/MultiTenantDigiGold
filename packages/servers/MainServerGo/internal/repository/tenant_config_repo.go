@@ -23,9 +23,8 @@ type TenantConfigRepository struct {
 	Redis     *redis_client.RedisClientStruct
 
 	// Prepared Statements
-	stmtGetByTenantID   *sql.Stmt
-	stmtGetByTenantUUID *sql.Stmt // ADDED: Pre-compiled statement for UUID lookups
-	stmtUpsertConfig    *sql.Stmt
+	stmtGetByTenantID *sql.Stmt
+	stmtUpsertConfig  *sql.Stmt
 }
 
 var (
@@ -54,12 +53,6 @@ func GetTenantConfigRepository() *TenantConfigRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare GetTenantConfigByTenantID: %v", err))
 		}
 
-		// GET BY TENANT UUID (ADDED)
-		stmtGetUUID, err := db.Db.Prepare(fmt.Sprintf(`%s WHERE %s = $1`, querySelectBase, schema.ColTICUUID))
-		if err != nil {
-			panic(fmt.Sprintf("FATAL: Failed to prepare GetTenantConfigByTenantUUID: %v", err))
-		}
-
 		// 2. UPSERT QUERY (Using Schema Constants)
 		queryUpsert := fmt.Sprintf(`
             INSERT INTO %s (%s, %s, %s, %s, %s)
@@ -85,12 +78,11 @@ func GetTenantConfigRepository() *TenantConfigRepository {
 		}
 
 		tenantConfigRepoInstance = &TenantConfigRepository{
-			DB:                  db,
-			Redis:               rdb,
-			EventRepo:           eventRepo,
-			stmtGetByTenantID:   stmtGet,
-			stmtGetByTenantUUID: stmtGetUUID,
-			stmtUpsertConfig:    stmtUpsert,
+			DB:                db,
+			Redis:             rdb,
+			EventRepo:         eventRepo,
+			stmtGetByTenantID: stmtGet,
+			stmtUpsertConfig:  stmtUpsert,
 		}
 	})
 	return tenantConfigRepoInstance
@@ -171,8 +163,12 @@ func (r *TenantConfigRepository) GetConfigByTenantUUID(ctx context.Context, tena
 	var config models.TenantInternalConfig
 	var whatsappBytes, paymentBytes, webhookBytes []byte
 
-	// FIXED: Using the prepared statement instead of executing a live raw string
-	err := r.stmtGetByTenantUUID.QueryRowContext(ctx, tenantUUID).Scan(
+	tenantID, err := GetTenantRepository().TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	err = r.stmtGetByTenantID.QueryRowContext(ctx, *tenantID).Scan(
 		&config.ID, &config.UUID, &config.TenantID,
 		&whatsappBytes, &paymentBytes, &webhookBytes,
 		&config.CreatedAt, &config.ModifiedAt,

@@ -73,6 +73,24 @@ func ParseDBError(err error) *RequestError {
 			Name:          "ERROR_OTP_INVALID",
 			LogTheDetails: false, // Users make typos all the time, keep logs clean
 		}
+
+	case errors.Is(err, ErrMaxResendAttempts):
+		return &RequestError{
+			StatusCode:    429,
+			Code:          ERROR_TOO_MANY_ATTEMPTS,
+			Message:       "Maximum OTP resend attempts reached. Please try again later.",
+			Name:          "ERROR_MAX_RESEND_ATTEMPTS",
+			LogTheDetails: false,
+		}
+
+	case errors.Is(err, ErrMaxVerifyAttempts):
+		return &RequestError{
+			StatusCode:    429,
+			Code:          ERROR_TOO_MANY_ATTEMPTS,
+			Message:       "Too many incorrect guesses. OTP has been invalidated.",
+			Name:          "ERROR_MAX_VERIFY_ATTEMPTS",
+			LogTheDetails: false,
+		}
 	}
 
 	// 2. Fallback for actual database crashes (Connection dropped, syntax error, etc.)

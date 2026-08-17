@@ -250,7 +250,7 @@ func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (*in
 		id = entity.ID
 		r.uuidMapMutex.Lock()
 		r.tenantUUIDtoID[uuid] = id
-		r.uuidMapMutex.RUnlock()
+		r.uuidMapMutex.Unlock()
 
 	}
 	return &id, nil
