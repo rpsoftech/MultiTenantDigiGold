@@ -17,9 +17,9 @@ import (
 )
 
 type TenantRepository struct {
-	DB        *postgres.PostgresDBStruct
-	Redis     *redis_client.RedisClientStruct
-	EventRepo *EventRepository
+	DB    *postgres.PostgresDBStruct
+	Redis *redis_client.RedisClientStruct
+	// EventRepo *EventRepository
 	// Partial Statements (8 Columns - Highly Optimized)
 	stmtGetPartialByUUID   *sql.Stmt
 	stmtGetPartialByDomain *sql.Stmt
@@ -57,7 +57,7 @@ func GetTenantRepository() *TenantRepository {
 	tenantRepoOnce.Do(func() {
 		db := postgres.GetPostgresDB()
 		rdb := redis_client.InitRedisClient()
-		eventRepo := GetEventRepository()
+		// eventRepo := GetEventRepository()
 		// ==========================================
 		// 1. PARTIAL QUERIES (8 Columns)
 		// ==========================================
@@ -152,9 +152,9 @@ func GetTenantRepository() *TenantRepository {
 		}
 
 		tenantRepoInstance = &TenantRepository{
-			DB:                     db,
-			Redis:                  rdb,
-			EventRepo:              eventRepo,
+			DB:    db,
+			Redis: rdb,
+			// EventRepo:              eventRepo,
 			stmtGetPartialByUUID:   stmtPartialUUID,
 			stmtGetPartialByDomain: stmtPartialDomain,
 			stmtGetPartialByShort:  stmtPartialShort,
@@ -195,8 +195,11 @@ func (r *TenantRepository) generateCacheKey(t *models.Tenant) []string {
 }
 
 func (r *TenantRepository) invalidateTenantCaches(ctx context.Context, t *models.Tenant) {
+	// 1. ADD STRICT TIMEOUT TO PREVENT MEMORY LEAKS
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	keys := r.generateCacheKey(t)
-	r.Redis.RemoveKey(ctx, keys...)
+	r.Redis.RemoveKey(timeoutCtx, keys...)
 }
 
 func (r *TenantRepository) readCachedData(ctx context.Context, key string) *models.Tenant {
@@ -212,11 +215,14 @@ func (r *TenantRepository) readCachedData(ctx context.Context, key string) *mode
 }
 
 func (r *TenantRepository) createTenantCaches(ctx context.Context, t *models.Tenant) {
+	// 1. ADD STRICT TIMEOUT TO PREVENT MEMORY LEAKS
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	t.ExportID = t.ID
 	keys := r.generateCacheKey(t)
 	if jsonData, err := json.Marshal(t); err == nil {
 		for _, cacheKey := range keys {
-			r.Redis.SetStringDataWithExpiry(ctx, cacheKey, string(jsonData), tenantCacheTTL)
+			r.Redis.SetStringDataWithExpiry(timeoutCtx, cacheKey, string(jsonData), tenantCacheTTL)
 		}
 	}
 }
@@ -409,6 +415,9 @@ func (r *TenantRepository) GetPartialTenantByUUID(ctx context.Context, uuid stri
 
 	t, err := r.scanPartialRetrieval(r.stmtGetPartialByUUID.QueryRowContext(ctx, uuid))
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, interfaces.ErrTenantNotFound
+		}
 		return nil, err
 	}
 	return t, nil

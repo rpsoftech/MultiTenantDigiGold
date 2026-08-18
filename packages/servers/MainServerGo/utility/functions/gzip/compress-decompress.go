@@ -7,7 +7,6 @@ import (
 )
 
 func GzipCompressFile(src string, dst string) error {
-
 	in, err := os.Open(src)
 	if err != nil {
 		return err

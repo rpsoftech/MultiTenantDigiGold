@@ -7,8 +7,10 @@
     "**/*.code-search": true
   },
   "cSpell.words": [
+    "archs",
     "BIGSERIAL",
     "Digi",
+    "digigold",
     "godotenv",
     "jackc",
     "joho",
