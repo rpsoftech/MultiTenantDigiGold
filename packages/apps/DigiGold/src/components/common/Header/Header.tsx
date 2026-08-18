@@ -50,14 +50,14 @@ export function Header() {
               <Image
                 src={logo.image}
                 alt={logo.text || brandName}
-                width={168}
-                height={32}
+                width={196}
+                height={38}
                 className={styles.logoImage}
               />
             ) : logo.text ? (
               <span className={styles.logoText}>{logo.text}</span>
             ) : (
-              <Logo height={28} />
+              <Logo height={34} />
             )}
           </Link>
         </div>
