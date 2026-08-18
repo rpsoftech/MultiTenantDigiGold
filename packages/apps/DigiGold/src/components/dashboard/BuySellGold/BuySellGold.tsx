@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card } from '@/components/common/Card/Card';
 import { Badge } from '@/components/common/Badge/Badge';
 import { Button } from '@/components/common/Button/Button';
@@ -10,8 +11,10 @@ import { ClockIcon, CloseIcon, CoinsIcon } from '@/components/common/icons/Icons
 import { useToast } from '@/components/common/Toast/Toast';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useLiveRate } from '@/features/market/hooks/useLiveRate';
+import { useSession } from '@/features/auth/hooks/useSession';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import { cn } from '@/lib/utils/cn';
+import { ROUTES } from '@/lib/constants/routes';
 import styles from './BuySellGold.module.scss';
 
 const GST_RATE = 0.03;
@@ -23,8 +26,10 @@ const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
 type BuyMode = 'grams' | 'inr';
 
 export function BuySellGold() {
+  const router = useRouter();
   const tenantConfig = useTenantConfig();
   const { showToast } = useToast();
+  const { isAuthenticated } = useSession();
   const { data: rate, isLoading } = useLiveRate();
 
   const [mode, setMode] = useState<BuyMode>('grams');
@@ -59,6 +64,10 @@ export function BuySellGold() {
   };
 
   const handleProceed = () => {
+    if (!isAuthenticated) {
+      router.push(ROUTES.login);
+      return;
+    }
     showToast({
       variant: 'success',
       title: 'Order queued',
@@ -222,7 +231,10 @@ export function BuySellGold() {
         </div>
 
         <Button fullWidth disabled={grams <= 0 || isLoading} onClick={handleProceed}>
-          <CoinsIcon width={16} height={16} /> Proceed to Pay {formatCurrency(totalInr, 'INR')}
+          <CoinsIcon width={16} height={16} />{' '}
+          {isAuthenticated
+            ? `Proceed to Pay ${formatCurrency(totalInr, 'INR')}`
+            : 'Login to Proceed'}
         </Button>
       </Card>
     </section>

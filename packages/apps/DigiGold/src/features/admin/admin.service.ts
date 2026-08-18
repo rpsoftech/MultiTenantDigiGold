@@ -1,9 +1,18 @@
 import { apiClient } from '@/lib/api/client';
 import type { ApiResponse } from '@/types/api.types';
-import type { AdminStats, AdminTransaction, AdminUserSummary, UpdateKycStatusPayload } from './admin.types';
+import type {
+  AdminStats,
+  AdminTransaction,
+  AdminUserSummary,
+  TransactionStats,
+  UpdateKycStatusPayload,
+} from './admin.types';
 import {
   mockGetAdminStats,
   mockGetAdminUsers,
+  mockGetRecentTransactions,
+  mockGetRecentUsers,
+  mockGetTransactionStats,
   mockGetUserTransactions,
   mockUpdateKycStatus,
 } from './admin.mock';
@@ -28,6 +37,26 @@ export const adminService = {
     const response = await apiClient.get<ApiResponse<AdminTransaction[]>>(
       `/admin/users/${userId}/transactions`
     );
+    return response.data.data;
+  },
+
+  getTransactionStats: async (): Promise<TransactionStats> => {
+    if (USE_MOCK_ADMIN) return mockGetTransactionStats();
+    const response = await apiClient.get<ApiResponse<TransactionStats>>('/admin/stats/transactions');
+    return response.data.data;
+  },
+
+  getRecentTransactions: async (): Promise<AdminTransaction[]> => {
+    if (USE_MOCK_ADMIN) return mockGetRecentTransactions();
+    const response = await apiClient.get<ApiResponse<AdminTransaction[]>>(
+      '/admin/transactions/recent'
+    );
+    return response.data.data;
+  },
+
+  getRecentUsers: async (): Promise<AdminUserSummary[]> => {
+    if (USE_MOCK_ADMIN) return mockGetRecentUsers();
+    const response = await apiClient.get<ApiResponse<AdminUserSummary[]>>('/admin/users/recent');
     return response.data.data;
   },
 
