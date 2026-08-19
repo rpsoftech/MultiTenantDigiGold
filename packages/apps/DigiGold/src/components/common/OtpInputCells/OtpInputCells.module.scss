@@ -1,0 +1,28 @@
+@use '@/styles/mixins' as *;
+
+.cells {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.cell {
+  width: 2.75rem;
+  height: 3rem;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 1.25rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.cellError {
+  border-color: var(--color-danger);
+}
