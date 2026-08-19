@@ -105,7 +105,7 @@ func (ac *AuthController) VerifyOTP(c fiber.Ctx) error {
 	// 3. CRITICAL FIX: Use c.Context()
 	err := ac.OTPService.VerifyOTP(c.Context(), tenantUUID, payload.Phone, payload.OTP)
 	if err != nil {
-		return interfaces.ParseDBError(err)
+		return err
 	}
 
 	user, err := ac.UserService.UserRepo.GetFullUserByPhone(c.Context(), tenantID, payload.Phone)

@@ -37,21 +37,28 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func GetFileKey(component string, os string, arch string) string {
-	return fmt.Sprintf("digigold_%s_%s_%s", component, os, arch)
+func GetFileKey(envName string, component string, os string, arch string) string {
+	return fmt.Sprintf("%s_digigold_%s_%s_%s", envName, component, os, arch)
 }
 
-func CheckAndUpdate(kvBaseURL string, componentName string, currentVersion int) (bool, error) {
+func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int) (bool, error) {
 	osName := runtime.GOOS
 	archName := runtime.GOARCH
-	kvKey := GetFileKey(componentName, osName, archName)
+	kvKey := GetFileKey(envName, componentName, osName, archName)
 	kvServerURL := kvBaseURL + kvKey
 
 	log.Printf("🔍 Checking for updates at KV Key: %s", kvKey)
 
 	// 1. Fetch latest version info from KV Server
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(kvServerURL)
+	req, err := http.NewRequest("GET", kvServerURL, nil)
+	if err != nil {
+		log.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	resp, err := client.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("failed to reach KV server: %w", err)
 	}

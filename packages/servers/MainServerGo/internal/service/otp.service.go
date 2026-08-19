@@ -148,7 +148,6 @@ func (s *OTPService) GenerateAndDispatch(ctx context.Context, tenantID string, p
 
 func (s *OTPService) VerifyOTP(ctx context.Context, tenantID string, phone string, inputOTP string) error {
 	sessionKey := s.getOTPKey(tenantID, phone)
-
 	// 1. Fetch Session from Redis
 	existingData, err := s.Redis.GetStringData(ctx, sessionKey)
 	if err != nil || existingData == "" {

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	utility_functions_gzip "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions/gzip"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/updater"
 )
@@ -53,12 +54,17 @@ type VersionInfo struct {
 	SHA256  string `json:"sha256"`
 }
 
-func getNextVersion(component string, os string, arch string) int {
-	targetKey := updater.GetFileKey(component, os, arch)
-
+func getNextVersion(envName, component, os, arch string) int {
+	targetKey := updater.GetFileKey(envName, component, os, arch)
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(KeyValueURL + targetKey)
-
+	req, err := http.NewRequest("GET", KeyValueURL+targetKey, nil)
+	if err != nil {
+		log.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		log.Printf("⚠️ Could not fetch current version from KV store (Status: %d). Defaulting to Version 1.", resp.StatusCode)
 		if resp != nil {
@@ -81,13 +87,16 @@ func main() {
 	if fileServerToken == "" || kvToken == "" {
 		log.Fatal("FATAL: FILE_SERVER_TOKEN and KV_TOKEN environment variables are required.")
 	}
-
+	deployEnv := os.Getenv("DEPLOY_ENV")
+	if deployEnv == "" {
+		deployEnv = string(env.APP_ENV_STAGING) // Fail-safe default
+		log.Println("⚠️ DEPLOY_ENV not set. Defaulting to 'staging'.")
+	}
 	// Loop through both microservices (API and Worker)
-	for compName, compPath := range components {
+	for _, target := range targets {
 		// Loop through the entire Build Matrix
-		for _, target := range targets {
-			versionInt := getNextVersion(compName, target.OS, target.Arch)
-
+		for compName, compPath := range components {
+			versionInt := getNextVersion(deployEnv, compName, target.OS, target.Arch)
 			if len(os.Args) > 1 {
 				if v, err := strconv.Atoi(os.Args[1]); err == nil {
 					versionInt = v
@@ -104,7 +113,7 @@ func main() {
 			log.Printf("🔨 Building %s [%s/%s]", compName, target.OS, target.Arch)
 
 			// 2. DYNAMIC NAMING: Handle the Windows .exe extension
-			binaryName := fmt.Sprintf("%s-%s-%s", compName, target.OS, target.Arch)
+			binaryName := updater.GetFileKey(deployEnv, compName, target.OS, target.Arch)
 			if target.OS == "windows" {
 				binaryName += ".exe"
 			}
@@ -142,13 +151,13 @@ func main() {
 			// 6. UPLOAD: Push to File Server
 			uploadPath := fmt.Sprintf("digiGold/%s", compName)
 			log.Printf("☁️ Uploading to File Server...")
-			if err := uploadFile(gzBinaryPath, gzBinaryName, uploadPath); err != nil {
+			if err := UploadFile(gzBinaryPath, gzBinaryName, uploadPath, FileServerURL, fileServerToken); err != nil {
 				log.Fatalf("Upload failed: %v", err)
 			}
 
 			// 7. KV UPDATE: Create the dynamic Key-Value store string
 			// Outputs exactly like: digigold_api_darwin_arm64 or digigold_worker_windows_amd64
-			kvKey := updater.GetFileKey(compName, target.OS, target.Arch)
+			kvKey := updater.GetFileKey(deployEnv, compName, target.OS, target.Arch)
 			fileURL := fmt.Sprintf("https://files.rpso.in/static/%s/%s", uploadPath, gzBinaryName)
 
 			vInfo := VersionInfo{
@@ -172,8 +181,7 @@ func main() {
 // ==========================================
 // UTILITY FUNCTIONS (Inlined for Portability)
 // ==========================================
-
-func uploadFile(path, filename, uploadPath string) error {
+func UploadFile(path, filename, uploadPath, fileServerURL, fileServerToken string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -187,29 +195,52 @@ func uploadFile(path, filename, uploadPath string) error {
 	if err != nil {
 		return err
 	}
+	client := &http.Client{
+		Timeout: time.Second * 540,
+	}
 	io.Copy(part, file)
-	writer.WriteField("path", uploadPath)
-	writer.Close()
 
-	req, err := http.NewRequest("POST", FileServerURL+filename, payload)
+	writer.WriteField("path", uploadPath)
+
+	err = writer.Close()
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+
+	req, err := http.NewRequest(
+		"POST",
+		fileServerURL+filename,
+		payload,
+	)
+
 	if err != nil {
 		return err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+fileServerToken)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	client := &http.Client{Timeout: 5 * time.Minute}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+		log.Printf("failed to upload file With Status Code: %d", resp.StatusCode)
+		return fmt.Errorf("failed to upload file: %s", resp.Status)
 	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	fmt.Println(string(body))
+	fmt.Println("Uploaded:", filename)
+
 	return nil
 }
 
@@ -221,6 +252,9 @@ func updateKeyValue(key string, data []byte) error {
 
 	req.Header.Set("Authorization", "Bearer "+kvToken)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

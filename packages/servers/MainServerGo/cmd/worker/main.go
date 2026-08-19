@@ -27,14 +27,14 @@ func main() {
 	defer cancel()
 
 	// 2. The 5-Minute OTA Updater Daemon (Worker Target)
-	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION {
+	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION || env.Env.APP_ENV == env.APP_ENV_STAGING {
 		// We pass the context to know when to stop ticking, and the cancel function to trigger a restart
 		go func(versionStr string, workerCtx context.Context, triggerRestart context.CancelFunc) {
 			currentVersion, _ := strconv.Atoi(versionStr)
 
 			runCheck := func() {
 				// Notice we target "worker" instead of "api"
-				updated, err := updater.CheckAndUpdate("https://keyvalue.rpso.in/public/", "worker", currentVersion)
+				updated, err := updater.CheckAndUpdate(string(env.Env.APP_ENV), "https://keyvalue.rpso.in/public/", "worker", currentVersion)
 				if err != nil {
 					log.Printf("⚠️ OTA Updater: %v\n", err)
 					return

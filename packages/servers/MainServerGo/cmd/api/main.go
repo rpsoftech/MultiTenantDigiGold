@@ -29,13 +29,12 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	// 2. The 5-Minute OTA Updater Daemon
-	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION {
+	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION || env.Env.APP_ENV == env.APP_ENV_STAGING {
 		go func(versionStr string, stopChan chan<- os.Signal) {
 			currentVersion, _ := strconv.Atoi(versionStr)
-
 			// Define the check logic
 			runCheck := func() {
-				updated, err := updater.CheckAndUpdate("https://keyvalue.rpso.in/public/", "api", currentVersion)
+				updated, err := updater.CheckAndUpdate(string(env.Env.APP_ENV), "https://keyvalue.rpso.in/public/", "api", currentVersion)
 				if err != nil {
 					log.Printf("⚠️ OTA Updater: %v\n", err)
 					return
@@ -86,11 +85,11 @@ func main() {
 	// The middleware is attached to the /auth group, protecting everything inside it
 	auth := api.Group("/auth", middleware.TenantInterceptor)
 	authController.RegisterRoutes(auth)
-
 	// 7. Start the Server in a Goroutine
 	go func() {
-		log.Println("✅ Fiber Server listening on port 8080")
-		if err := app.Listen(":8080"); err != nil {
+		port := env.GetServerPort(env.PORT_KEY)
+		log.Println("✅ Fiber Server listening on port", port)
+		if err := app.Listen(":" + port); err != nil {
 			log.Fatalf("FATAL: Server crashed: %v", err)
 		}
 	}()
