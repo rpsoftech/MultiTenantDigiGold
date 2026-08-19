@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useRef, type ClipboardEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent } from 'react';
 import styles from './OtpInputCells.module.scss';
 import { cn } from '@/lib/utils/cn';
 
@@ -34,16 +34,27 @@ export function OtpInputCells({ length = 6, value, onChange, error }: OtpInputCe
   };
 
   const handleKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
+      event.preventDefault();
+      onChange('');
+      inputRefs.current[0]?.focus();
+      inputRefs.current[0]?.select();
+      return;
+    }
     if (event.key === 'Backspace' && !digits[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
+  };
+
+  const handleFocus = (event: ReactFocusEvent<HTMLInputElement>) => {
+    event.target.select();
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
     const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, length);
     if (!pasted) return;
     event.preventDefault();
-    onChange(pasted.padEnd(length, '').slice(0, length));
+    onChange(pasted);
     inputRefs.current[Math.min(pasted.length, length - 1)]?.focus();
   };
 
@@ -62,6 +73,7 @@ export function OtpInputCells({ length = 6, value, onChange, error }: OtpInputCe
           value={digit}
           onChange={(event) => handleChange(index, event.target.value)}
           onKeyDown={(event) => handleKeyDown(index, event)}
+          onFocus={handleFocus}
           onPaste={handlePaste}
           className={cn(styles.cell, error && styles.cellError)}
           aria-label={`Digit ${index + 1}`}

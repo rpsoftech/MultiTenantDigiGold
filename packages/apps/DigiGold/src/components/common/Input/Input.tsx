@@ -6,13 +6,14 @@ import { cn } from '@/lib/utils/cn';
 
 export type InputProps = InputHTMLAttributes<HTMLInputElement> & {
   label?: string;
+  labelSuffix?: ReactNode;
   error?: string;
   leftAddon?: ReactNode;
   rightIcon?: ReactNode;
 };
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, error, leftAddon, rightIcon, className, id, ...rest },
+  { label, labelSuffix, error, leftAddon, rightIcon, className, id, ...rest },
   ref
 ) {
   const inputId = id ?? rest.name;
@@ -20,9 +21,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div className={styles.field}>
       {label && (
-        <label htmlFor={inputId} className={styles.label}>
-          {label}
-        </label>
+        <span className={styles.labelRow}>
+          <label htmlFor={inputId} className={styles.label}>
+            {label}
+          </label>
+          {labelSuffix}
+        </span>
       )}
       <div className={cn(styles.inputWrapper, error && styles.inputWrapperError)}>
         {leftAddon && <span className={styles.addon}>{leftAddon}</span>}

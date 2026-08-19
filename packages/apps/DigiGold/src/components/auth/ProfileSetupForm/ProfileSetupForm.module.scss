@@ -29,23 +29,3 @@
   width: 100%;
   text-align: left;
 }
-
-.dots {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-6);
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-border);
-}
-
-.dotActive {
-  width: 20px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--brand-primary);
-}

@@ -6,7 +6,7 @@ const MOCK_TRENDING_PRODUCTS: Product[] = [
   {
     id: 'heritage-necklace-22k',
     title: '22K Gold Heritage Necklace',
-    imageUrl: '/marketplace/heritage-necklace-22k.jpg',
+    imageUrl: '/marketplace/heritage-necklace-24k.jpg',
     imageAlt: '22K Gold Heritage Necklace',
     price: 145000,
     currency: 'INR',
@@ -16,7 +16,7 @@ const MOCK_TRENDING_PRODUCTS: Product[] = [
   {
     id: 'minimalist-bangle-24k',
     title: '24K Gold Minimalist Bangle',
-    imageUrl: '/marketplace/minimalist-bangle-24k.jpg',
+    imageUrl: '/marketplace/minimalist-bengal1-24k.jpg',
     imageAlt: '24K Gold Minimalist Bangle',
     price: 85500,
     currency: 'INR',
