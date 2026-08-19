@@ -24,7 +24,7 @@ jobs:
           FILE_SERVER_TOKEN: ${{ secrets.FILE_SERVER_TOKEN }}
           KV_TOKEN: ${{ secrets.KV_TOKEN }}
           DEPLOY_ENV: STAGING
-        run: go run scripts/deploy.go
+        run: go run packages/servers/MainServerGo/scripts/deploy.go
 
       - name: Deploy Production
         if: github.ref == 'refs/heads/main'
