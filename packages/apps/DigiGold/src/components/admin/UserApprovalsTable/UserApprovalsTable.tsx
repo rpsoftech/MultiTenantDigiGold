@@ -1,14 +1,28 @@
 'use client';
 
 import { Card } from '@/components/common/Card/Card';
-import { Badge } from '@/components/common/Badge/Badge';
+import { Badge, type BadgeVariant } from '@/components/common/Badge/Badge';
 import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
 import { useAdminUsers } from '@/features/admin/hooks/useAdminUsers';
 import { useUpdateKycStatus } from '@/features/admin/hooks/useUpdateKycStatus';
 import { formatMobileNumber } from '@/lib/utils/formatMobileNumber';
-import { KYC_BADGE_VARIANT, KYC_LABEL } from '@/components/admin/adminStatusBadge';
+import type { KycStatus } from '@/features/admin/admin.types';
 import styles from './UserApprovalsTable.module.scss';
+
+const KYC_BADGE_VARIANT: Record<KycStatus, BadgeVariant> = {
+  verified: 'success',
+  pending: 'neutral',
+  rejected: 'danger',
+  not_started: 'neutral',
+};
+
+const KYC_LABEL: Record<KycStatus, string> = {
+  verified: 'Approved',
+  pending: 'Pending',
+  rejected: 'Rejected',
+  not_started: 'Not Started',
+};
 
 export type UserApprovalsTableProps = {
   selectedUserId: string | null;

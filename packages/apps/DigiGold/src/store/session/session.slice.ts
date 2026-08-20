@@ -37,4 +37,3 @@ export const sessionReducer = sessionSlice.reducer;
 
 export const selectSessionUser = (state: RootState): SessionUser | null => state.session.user;
 export const selectIsAuthenticated = (state: RootState): boolean => state.session.isAuthenticated;
-export const selectIsAdmin = (state: RootState): boolean => state.session.user?.role === 'admin';

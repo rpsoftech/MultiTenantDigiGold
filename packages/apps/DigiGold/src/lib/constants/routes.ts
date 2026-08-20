@@ -14,7 +14,6 @@ export const ROUTES = {
   helpCenter: '/help-center',
   contactSupport: '/contact-support',
   adminLogin: '/admin/login',
+  adminOtp: '/admin/otp',
   adminDashboard: '/admin/dashboard',
-  adminProfile: '/admin/profile',
-  adminUpdatePassword: '/admin/update-password',
 } as const;

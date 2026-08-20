@@ -4,7 +4,7 @@
 
 ✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
 
 ## Generate a library
 
@@ -58,52 +58,59 @@ You can enforce that the TypeScript project references are always in the correct
 npx nx sync:check
 ```
 
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
+# Digi Gold Multi-Tenant Platform (Backend Phase 1)
 
-## Set up CI!
+A high-performance, multi-tenant backend engine designed to handle concurrent digital gold spot trading, automated SIPs, and frictionless offline physical redemptions.
 
-### Step 1
+## Tech Stack
 
-To connect to Nx Cloud, run the following command:
+- **Language:** Go (Golang)
+- **Primary Database:** PostgreSQL 13+ (Relational, ACID-compliant ledger)
+- **In-Memory Cache & Queues:** Redis (Live spot rate ticker, OTPs, short-lived states)
 
-```sh
-npx nx connect
-```
+## Core Architectural Principles
 
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+### 1. Absolute Multi-Tenancy (Row-Level Security)
 
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+This platform serves multiple independent retail jewelry shops. **Every API request MUST be intercepted by the `tenancy.go` middleware.**
 
-### Step 2
+- The middleware extracts the `tenant_uuid` from the request header or subdomain.
+- It injects the internal `tenant_id` into the Go `context.Context`.
+- Database repositories must strictly append `WHERE tenant_id = ?` to all operations to guarantee absolute data isolation.
 
-Use the following command to configure a CI workflow for your workspace:
+### 2. Dual-ID Database Pattern
 
-```sh
-npx nx g ci-workflow
-```
+To ensure maximum internal join performance while maintaining public API security:
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- **Internal DB Operations:** Use standard `BIGSERIAL` integer IDs (e.g., `user_id`, `tenant_id`) for hyper-fast SQL `JOIN`s and foreign key relationships.
+- **Public REST API / Frontend:** Expose and consume only `UUID`s (e.g., `user_uuid`, `tenant_uuid`). The repository layer is responsible for translating the UUID back to the internal integer ID.
 
-## Install Nx Console
+### 3. The Schema Registry & Prepared Statements
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+Do **not** hardcode SQL strings or column names across multiple files.
 
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- All database table and column names live exclusively as constants inside `internal/schema/`.
+- High-traffic endpoints (like Spot Trading) must utilize `sql.Stmt` (Prepared Statements) loaded into memory on server boot via `internal/repository/registry.go` to minimize database parsing overhead during spikes in concurrent traffic.
 
-## Useful links
+### 4. Fractional Math
 
-Learn more:
+All gold weights are strictly calculated and stored at a 4-decimal precision (e.g., `12.4500g`) utilizing `DECIMAL(14,4)` in PostgreSQL to prevent floating-point rounding errors.
 
-- [Learn more about this workspace setup](https://nx.dev/nx-api/js?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## Folder Structure (Domain-Driven Design)
 
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- `/cmd/api/` - The entry point. Initializes database/Redis connections and starts the HTTP server.
+- `/internal/schema/` - Centralized registry for all database table/column constants.
+- `/internal/models/` - Struct definitions representing database rows.
+- `/internal/repository/` - The only layer allowed to communicate with PostgreSQL. Houses prepared statements.
+- `/internal/service/` - The business logic brain (calculates GST, validates KYC limits).
+- `/internal/api/` - HTTP delivery layer (Request decoding, routing, and JSON responses).
+- `/internal/middleware/` - Request interceptors (JWT validation, Tenancy extraction).
+- `/pkg/` - Shared, independent utilities (Redis connections, external WhatsApp APIs).
+
+## Quickstart (Development)
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd digigold-backend
+   ```

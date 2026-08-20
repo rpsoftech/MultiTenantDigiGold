@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { Badge } from '@/components/common/Badge/Badge';
 import { ShieldIcon } from '@/components/common/icons/Icons';
-import { AdminProfileMenu } from '@/components/admin/AdminProfileMenu/AdminProfileMenu';
 import styles from './AdminShell.module.scss';
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -28,10 +27,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <div className={styles.headerActions}>
-            <Badge variant="success">Market Trading Gate: Open</Badge>
-            <AdminProfileMenu />
-          </div>
+          <Badge variant="success">Market Trading Gate: Open</Badge>
         </div>
       </header>
 
