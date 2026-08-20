@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { resolveTenantConfig } from '@/features/tenant/tenant.service';
+import { resolveTenantFromHost } from '@/lib/utils/resolveTenantFromHost';
 import { makeStore } from '@/store';
+import { tenantConfigReceived } from '@/store/tenant/tenant.slice';
 import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
 import { ToastProvider } from '@/components/common/Toast/Toast';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
@@ -15,9 +18,7 @@ type ProvidersProps = {
 
 function TenantThemeSync({ config }: { config: TenantConfig }) {
   useEffect(() => {
-    // Re-applies the same values the SSR-inlined <style> tag already set — a no-op
-    // visually, but keeps the pipeline reactive if tenantSlice.config is ever updated at
-    // runtime (e.g. a future admin theme-preview feature) without a page reload.
+    // Keeps the static default theme reactive when the browser resolves a tenant config.
     applyTenantTheme(config);
   }, [config]);
 
@@ -25,19 +26,39 @@ function TenantThemeSync({ config }: { config: TenantConfig }) {
 }
 
 export function Providers({ children, initialTenantConfig }: ProvidersProps) {
-  // A fresh store per mount, preloaded with the SSR-resolved tenant config — avoids both
-  // a cross-request singleton (unsafe once tenant config differs per request) and a
-  // post-hydration dispatch delay (which would flash unbranded content for one frame).
+  // Start with the static default, then replace it after the browser resolves the host.
   const [store] = useState(() =>
     makeStore({ tenant: { config: initialTenantConfig } })
   );
   const [queryClient] = useState(() => new QueryClient());
+  const [tenantConfig, setTenantConfig] = useState(initialTenantConfig);
+
+  useEffect(() => {
+    const defaultTenant =
+      process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'aurelian-digital';
+    const retailerCode = resolveTenantFromHost(window.location.host, defaultTenant);
+    let cancelled = false;
+
+    void resolveTenantConfig(retailerCode)
+      .then((config) => {
+        if (cancelled) return;
+        setTenantConfig(config);
+        store.dispatch(tenantConfigReceived(config));
+      })
+      .catch(() => {
+        // Keep the build-time default theme when the tenant API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
 
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
-          <TenantThemeSync config={initialTenantConfig} />
+          <TenantThemeSync config={tenantConfig} />
           {children}
         </ToastProvider>
       </QueryClientProvider>
