@@ -1,7 +1,7 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -20,7 +20,7 @@ import {
 import { useToast } from '@/components/common/Toast/Toast';
 import { useRequestOtp } from '@/features/auth/hooks/useRequestOtp';
 import { MOBILE_NUMBER_PATTERN } from '@/lib/constants/regex';
-import { ROUTES } from '@/lib/constants/routes';
+import { OtpForm } from '@/components/auth/OtpForm/OtpForm';
 import styles from './LoginForm.module.scss';
 
 const loginSchema = z.object({
@@ -32,13 +32,13 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 export type LoginFormProps = {
-  otpRoute?: string;
+  successRoute?: string;
 };
 
-export function LoginForm({ otpRoute = ROUTES.otp }: LoginFormProps) {
-  const router = useRouter();
+export function LoginForm({ successRoute }: LoginFormProps) {
   const { showToast } = useToast();
   const requestOtp = useRequestOtp();
+  const [otpMobileNumber, setOtpMobileNumber] = useState<string | null>(null);
 
   const {
     register,
@@ -53,7 +53,7 @@ export function LoginForm({ otpRoute = ROUTES.otp }: LoginFormProps) {
   const onSubmit = async ({ mobileNumber }: LoginFormValues) => {
     try {
       await requestOtp.mutateAsync({ mobileNumber });
-      router.push(`${otpRoute}?mobile=${mobileNumber}`);
+      setOtpMobileNumber(mobileNumber);
     } catch {
       showToast({
         variant: 'danger',
@@ -62,6 +62,18 @@ export function LoginForm({ otpRoute = ROUTES.otp }: LoginFormProps) {
       });
     }
   };
+
+  if (otpMobileNumber) {
+    return (
+      <OtpForm
+        mobileNumber={otpMobileNumber}
+        successRoute={successRoute}
+        onEditNumber={() => setOtpMobileNumber(null)}
+      />
+    );
+  }
+
+  const { onChange: onMobileNumberChange, ...mobileNumberField } = register('mobileNumber');
 
   return (
     <Card className={styles.card}>
@@ -87,10 +99,15 @@ export function LoginForm({ otpRoute = ROUTES.otp }: LoginFormProps) {
             </>
           }
           placeholder="00000 00000"
+          type="tel"
           inputMode="numeric"
           maxLength={10}
           error={errors.mobileNumber?.message}
-          {...register('mobileNumber')}
+          onChange={(event) => {
+            event.target.value = event.target.value.replace(/\D/g, '').slice(0, 10);
+            onMobileNumberChange(event);
+          }}
+          {...mobileNumberField}
         />
 
         <Button
