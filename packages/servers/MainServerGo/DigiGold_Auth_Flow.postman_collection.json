@@ -1,0 +1,444 @@
+{
+  "info": {
+    "_postman_id": "a8b9c0d1-e2f3-4a5b-6c7d-8e9f0a1b2c3d",
+    "name": "DigiGold - Auth Flow Testing",
+    "description": "Postman Collection for testing the secure, multi-tenant OTP verification and user registration flow using JWT tokens in the DigiGold Go backend.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Request OTP (Unregistered Phone)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"OTP Dispatched Successfully\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.eql(true);",
+              "    pm.expect(jsonData.is_registered).to.eql(false);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Tenant-ID",
+            "value": "{{tenant_uuid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{unregistered_phone}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/request",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "request"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Request OTP (Registered Phone)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"OTP Dispatched Successfully\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.eql(true);",
+              "    pm.expect(jsonData.is_registered).to.eql(true);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Tenant-ID",
+            "value": "{{tenant_uuid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{phone_number}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/request",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "request"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Verify OTP (Unregistered Phone)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"OTP Verified - Registration Token Received\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.eql(true);",
+              "    pm.expect(jsonData.is_registered).to.eql(false);",
+              "    pm.expect(jsonData.registration_token).to.not.be.undefined;",
+              "    // Automatically set collection variable",
+              "    pm.collectionVariables.set(\"registration_token\", jsonData.registration_token);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Tenant-ID",
+            "value": "{{tenant_uuid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{unregistered_phone}}\",\n  \"otp\": \"{{otp}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/verify",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "verify"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Verify OTP (Registered Phone)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"OTP Verified - Access & Refresh Tokens Received\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.eql(true);",
+              "    pm.expect(jsonData.is_registered).to.eql(true);",
+              "    pm.expect(jsonData.access_token).to.not.be.undefined;",
+              "    pm.expect(jsonData.refresh_token).to.not.be.undefined;",
+              "    // Automatically set collection variables",
+              "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+              "    pm.collectionVariables.set(\"refresh_token\", jsonData.refresh_token);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Tenant-ID",
+            "value": "{{tenant_uuid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{phone_number}}\",\n  \"otp\": \"{{otp}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/verify",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "verify"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. Register User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Registration Successful - Tokens Received\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.eql(true);",
+              "    pm.expect(jsonData.access_token).to.not.be.undefined;",
+              "    pm.expect(jsonData.refresh_token).to.not.be.undefined;",
+              "    // Automatically set collection variables",
+              "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+              "    pm.collectionVariables.set(\"refresh_token\", jsonData.refresh_token);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Tenant-ID",
+            "value": "{{tenant_uuid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"registration_token\": \"{{registration_token}}\",\n  \"full_name\": \"John Doe\",\n  \"email_id\": \"john.doe@example.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/register",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "register"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6. Access Protected Route (Example)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{access_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Tenant-ID",
+            "value": "{{tenant_uuid}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/profile",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "profile"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Edge Case - Missing X-Tenant-ID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 400\", function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "pm.test(\"Error message matches\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.eql(false);",
+              "    pm.expect(jsonData.error).to.eql(\"Missing X-Tenant-ID header\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{unregistered_phone}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/request",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "request"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Edge Case - Invalid Tenant UUID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 401\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"Error message matches\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.eql(false);",
+              "    pm.expect(jsonData.error).to.eql(\"Invalid or suspended Tenant API Key\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Tenant-ID",
+            "value": "invalid-tenant-uuid-12345"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{unregistered_phone}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/request",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "request"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "tenant_uuid",
+      "value": "123e4567-e89b-12d3-a456-426614174000",
+      "type": "string"
+    },
+    {
+      "key": "phone_number",
+      "value": "9876543210",
+      "type": "string"
+    },
+    {
+      "key": "unregistered_phone",
+      "value": "1234567890",
+      "type": "string"
+    },
+    {
+      "key": "otp",
+      "value": "123456",
+      "type": "string"
+    },
+    {
+      "key": "registration_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

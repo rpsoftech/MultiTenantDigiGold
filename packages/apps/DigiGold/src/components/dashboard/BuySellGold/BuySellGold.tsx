@@ -17,7 +17,6 @@ import styles from './BuySellGold.module.scss';
 const GST_RATE = 0.03;
 const PRICE_LOCK_SECONDS = 60;
 const QUICK_ADD_GRAMS = [0.5, 1, 5, 10];
-const QUICK_ADD_INR = [1000, 5000, 10000, 25000];
 const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
 
 type BuyMode = 'grams' | 'inr';
@@ -49,13 +48,8 @@ export function BuySellGold() {
     setGramsInput(pricePerGram ? (inrValue / pricePerGram).toFixed(4) : '0');
   };
 
-  const handleQuickAddGrams = (increment: number) => {
+  const handleQuickAdd = (increment: number) => {
     setGramsInput((grams + increment).toFixed(4));
-  };
-
-  const handleQuickAddInr = (increment: number) => {
-    const nextInr = totalInr + increment;
-    setGramsInput(pricePerGram ? (nextInr / pricePerGram).toFixed(4) : '0');
   };
 
   const handleProceed = () => {
@@ -168,53 +162,27 @@ export function BuySellGold() {
 
         <div className={styles.quickAddRow}>
           <span className={styles.quickAddLabel}>Quick Add:</span>
-          {mode === 'grams'
-            ? QUICK_ADD_GRAMS.map((increment) => (
-                <button
-                  key={increment}
-                  type="button"
-                  className={styles.quickAddChip}
-                  onClick={() => handleQuickAddGrams(increment)}
-                >
-                  +{increment}g
-                </button>
-              ))
-            : QUICK_ADD_INR.map((increment) => (
-                <button
-                  key={increment}
-                  type="button"
-                  className={styles.quickAddChip}
-                  onClick={() => handleQuickAddInr(increment)}
-                >
-                  +{formatCurrency(increment, 'INR')}
-                </button>
-              ))}
+          {QUICK_ADD_GRAMS.map((increment) => (
+            <button
+              key={increment}
+              type="button"
+              className={styles.quickAddChip}
+              onClick={() => handleQuickAdd(increment)}
+            >
+              +{increment}g
+            </button>
+          ))}
         </div>
 
         <div className={styles.summary}>
-          {mode === 'inr' ? (
-            <>
-              <div className={styles.summaryRow}>
-                <span>Total Investment Amount:</span>
-                <span className={styles.summaryValueBrand}>{formatCurrency(totalInr, 'INR')}</span>
-              </div>
-              <div className={styles.summaryRow}>
-                <span>Gold Weight to be Added:</span>
-                <span className={styles.summaryValueSuccess}>{grams.toFixed(4)} g</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className={styles.summaryRow}>
-                <span>Gold Weight to be Added:</span>
-                <span className={styles.summaryValueBrand}>{grams.toFixed(4)} g</span>
-              </div>
-              <div className={styles.summaryRow}>
-                <span>Total Investment Amount:</span>
-                <span className={styles.summaryValueSuccess}>{formatCurrency(totalInr, 'INR')}</span>
-              </div>
-            </>
-          )}
+          <div className={styles.summaryRow}>
+            <span>Gold Weight to be Added:</span>
+            <span className={styles.summaryValueBrand}>{grams.toFixed(4)} g</span>
+          </div>
+          <div className={styles.summaryRow}>
+            <span>Total Investment Amount:</span>
+            <span className={styles.summaryValueSuccess}>{formatCurrency(totalInr, 'INR')}</span>
+          </div>
           <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
             <span>Applicable GST (3% included):</span>
             <span>{formatCurrency(gstAmount, 'INR')}</span>
