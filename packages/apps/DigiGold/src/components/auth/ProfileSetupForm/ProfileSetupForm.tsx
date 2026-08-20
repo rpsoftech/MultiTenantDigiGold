@@ -8,15 +8,30 @@ import { Card } from '@/components/common/Card/Card';
 import { Input } from '@/components/common/Input/Input';
 import { Button } from '@/components/common/Button/Button';
 import { DatePickerField } from '@/components/common/DatePickerField/DatePickerField';
-import { MapPinIcon, UserIcon } from '@/components/common/icons/Icons';
+import { Tooltip } from '@/components/common/Tooltip/Tooltip';
+import { InfoIcon, MapPinIcon, UserIcon } from '@/components/common/icons/Icons';
 import { useToast } from '@/components/common/Toast/Toast';
 import { useCompleteProfile } from '@/features/auth/hooks/useCompleteProfile';
 import { ROUTES } from '@/lib/constants/routes';
 import styles from './ProfileSetupForm.module.scss';
 
+const MIN_AGE_YEARS = 16;
+
+function isAtLeastAge(dateOfBirth: string, years: number) {
+  const dob = new Date(dateOfBirth);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  return dob <= cutoff;
+}
+
 const profileSetupSchema = z.object({
-  fullName: z.string().trim().min(2, 'Enter your full name'),
-  dateOfBirth: z.string().min(1, 'Enter your date of birth'),
+  fullName: z.string().trim().min(2, 'Enter your full name').max(50, 'Full name must be 50 characters or fewer'),
+  dateOfBirth: z
+    .string()
+    .min(1, 'Enter your date of birth')
+    .refine((value) => isAtLeastAge(value, MIN_AGE_YEARS), {
+      message: `You must be at least ${MIN_AGE_YEARS} years old`,
+    }),
   city: z.string().trim().min(2, 'Enter your city'),
 });
 
@@ -38,6 +53,9 @@ export function ProfileSetupForm() {
     defaultValues: { fullName: '', dateOfBirth: '', city: '' },
   });
 
+  const maxDateOfBirth = new Date();
+  maxDateOfBirth.setFullYear(maxDateOfBirth.getFullYear() - MIN_AGE_YEARS);
+
   const onSubmit = async (values: ProfileSetupFormValues) => {
     try {
       await completeProfile.mutateAsync(values);
@@ -56,6 +74,7 @@ export function ProfileSetupForm() {
         <Input
           label="Full Name"
           placeholder="Jane Doe"
+          maxLength={50}
           rightIcon={<UserIcon width={16} height={16} />}
           error={errors.fullName?.message}
           {...register('fullName')}
@@ -67,9 +86,14 @@ export function ProfileSetupForm() {
             <DatePickerField
               name={field.name}
               label="Date of Birth (DD/MM/YYYY)"
+              labelHint={
+                <Tooltip content={`You must be at least ${MIN_AGE_YEARS} years old to create an account.`}>
+                  <InfoIcon width={14} height={14} />
+                </Tooltip>
+              }
               error={errors.dateOfBirth?.message}
               value={field.value ? new Date(field.value) : undefined}
-              maxDate={new Date()}
+              maxDate={maxDateOfBirth}
               onChange={(date) => field.onChange(date.toISOString())}
             />
           )}
@@ -86,12 +110,6 @@ export function ProfileSetupForm() {
           Create Account
         </Button>
       </form>
-
-      <div className={styles.dots} aria-hidden>
-        <span className={styles.dotActive} />
-        <span className={styles.dot} />
-        <span className={styles.dot} />
-      </div>
     </Card>
   );
 }

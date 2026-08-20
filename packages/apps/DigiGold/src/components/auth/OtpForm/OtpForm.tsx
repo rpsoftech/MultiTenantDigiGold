@@ -21,9 +21,15 @@ export type OtpFormProps = {
   mobileNumber: string;
   successRoute?: string;
   loginRoute?: string;
+  onEditNumber?: () => void;
 };
 
-export function OtpForm({ mobileNumber, successRoute, loginRoute = ROUTES.login }: OtpFormProps) {
+export function OtpForm({
+  mobileNumber,
+  successRoute,
+  loginRoute = ROUTES.login,
+  onEditNumber,
+}: OtpFormProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const verifyOtp = useVerifyOtp();
@@ -77,7 +83,7 @@ export function OtpForm({ mobileNumber, successRoute, loginRoute = ROUTES.login 
         <button
           type="button"
           className={styles.editButton}
-          onClick={() => router.push(loginRoute)}
+          onClick={onEditNumber ?? (() => router.push(loginRoute))}
           aria-label="Edit mobile number"
         >
           <PencilIcon width={14} height={14} />

@@ -12,5 +12,8 @@
     {
       "path": "./packages/servers/MainServer"
     }
-  ]
+  ],
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0"
+  }
 }
