@@ -1,0 +1,71 @@
+{
+  "logo": {
+    "text": "",
+    "image": "",
+    "url": "/home"
+  },
+  "menus": [
+    {
+      "id": "home",
+      "label": "Home",
+      "url": "/home",
+      "enabled": true,
+      "order": 1,
+      "icon": "home"
+    },
+    {
+      "id": "marketplace",
+      "label": "Marketplace",
+      "url": "/marketplace",
+      "enabled": true,
+      "order": 2
+    },
+    {
+      "id": "vault",
+      "label": "Vault",
+      "url": "/vault",
+      "enabled": true,
+      "order": 3
+    },
+    {
+      "id": "invest",
+      "label": "Invest",
+      "url": "/invest",
+      "enabled": true,
+      "order": 4
+    },
+    {
+      "id": "about",
+      "label": "About",
+      "url": "#",
+      "enabled": true,
+      "order": 5,
+      "children": [
+        {
+          "id": "about-us",
+          "label": "About Us",
+          "url": "/about-us",
+          "enabled": true,
+          "order": 1
+        },
+        {
+          "id": "contact-us",
+          "label": "Contact Us",
+          "url": "/contact-us",
+          "enabled": true,
+          "order": 2
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "sign-in",
+      "label": "Sign In",
+      "url": "/login",
+      "type": "link",
+      "enabled": true,
+      "order": 1
+    }
+  ]
+}

@@ -1,4 +1,7 @@
-import './global.css';
+import { mockTenantConfig } from '@/features/tenant/tenant.mock';
+import { computeTenantCssVars } from '@/features/tenant/tenantCssVars';
+import { Providers } from './providers';
+import './globals.scss';
 
 export const metadata = {
   title: 'Welcome to DigiGold',
@@ -10,9 +13,25 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const cssVars = computeTenantCssVars(mockTenantConfig)
+    .map(([name, value]) => `${name}:${value}`)
+    .join(';');
+
   return (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <style
+          id="tenant-theme-vars"
+          dangerouslySetInnerHTML={{ __html: `:root{${cssVars}}` }}
+        />
+        <style>
+          @import
+          url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&display=swap');
+        </style>
+      </head>
+      <body>
+        <Providers initialTenantConfig={mockTenantConfig}>{children}</Providers>
+      </body>
     </html>
   );
 }

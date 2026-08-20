@@ -50,7 +50,7 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 	log.Printf("🔍 Checking for updates at KV Key: %s", kvKey)
 
 	// 1. Fetch latest version info from KV Server
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Minute}
 	req, err := http.NewRequest("GET", kvServerURL, nil)
 	if err != nil {
 		log.Fatalf("Failed to create request: %v", err)
@@ -75,7 +75,7 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 
 	// 2. Compare Integer Versions
 	if currentVersion >= kvData.Version {
-		log.Printf("✅ %s binary is up to date (Version %d).\n", componentName, currentVersion)
+		// log.Printf("✅ %s binary is up to date (Version %d).\n", componentName, currentVersion)
 		return false, nil
 	}
 
@@ -94,17 +94,34 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 
 	// 3. Download the GZIP archive
 	log.Printf("📥 Downloading update from %s...", kvData.URL)
-	downloadResp, err := client.Get(kvData.URL)
+
+	downReq, err := http.NewRequest("GET", kvData.URL, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create download request: %w", err)
+	}
+
+	// 1. Mirror the anti-bot headers so your file server doesn't block the download
+	downReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	downReq.Header.Set("Accept", "*/*")
+
+	// 2. Prevent Go and the server from auto-decompressing the .gz file in transit
+	downReq.Header.Set("Accept-Encoding", "identity")
+
+	downloadResp, err := client.Do(downReq)
 	if err != nil {
 		return false, fmt.Errorf("failed to download update: %w", err)
 	}
 	defer downloadResp.Body.Close()
 
+	// 3. THE CRITICAL FIX: Ensure we actually got the file, not a 404/403 HTML page!
+	if downloadResp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("file server rejected download with status: %d", downloadResp.StatusCode)
+	}
+
 	gzFile, err := os.Create(gzTmpPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to create temp gz file: %w", err)
 	}
-
 	// 4. THE OPTIMIZATION: Hash the file exactly as it streams from the internet
 	h := sha256.New()
 	multiWriter := io.MultiWriter(gzFile, h)

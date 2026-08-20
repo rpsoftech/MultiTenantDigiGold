@@ -6,8 +6,11 @@ tmp
 out-tsc
 install-state.gz
 build
+__debug_*
 # dependencies
 node_modules
+
+docs/
 
 # IDEs and editors
 /.idea
@@ -49,3 +52,6 @@ Thumbs.db
 .next
 out
 test-output
+
+# Local env files
+.env.local

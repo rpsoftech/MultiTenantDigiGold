@@ -43,8 +43,8 @@ var (
 	}
 
 	components = map[string]string{
-		"api":    "./cmd/api/main.go",
-		"worker": "./cmd/worker/main.go",
+		"api":    "./packages/servers/MainServerGo/cmd/api/main.go",
+		"worker": "./packages/servers/MainServerGo/cmd/worker/main.go",
 	}
 )
 
@@ -204,7 +204,7 @@ func UploadFile(path, filename, uploadPath, fileServerURL, fileServerToken strin
 
 	err = writer.Close()
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
 
@@ -235,11 +235,11 @@ func UploadFile(path, filename, uploadPath, fileServerURL, fileServerToken strin
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
-	fmt.Println(string(body))
-	fmt.Println("Uploaded:", filename)
+	log.Println(string(body))
+	log.Println("Uploaded:", filename)
 
 	return nil
 }

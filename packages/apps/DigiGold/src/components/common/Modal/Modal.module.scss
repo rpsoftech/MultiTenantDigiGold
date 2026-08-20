@@ -1,0 +1,98 @@
+@use '@/styles/mixins' as *;
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.15s ease;
+
+  @include reduced-motion {
+    animation: none;
+  }
+}
+
+.content {
+  position: fixed;
+  background: var(--color-surface);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-card);
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.centered {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(90vw, 420px);
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  animation: scaleIn 0.15s ease;
+
+  @include reduced-motion {
+    animation: none;
+  }
+}
+
+.bottomSheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  animation: slideUp 0.2s ease;
+
+  @include reduced-motion {
+    animation: none;
+  }
+}
+
+.title {
+  font-family: var(--font-headline);
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+}
+
+.description {
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-4);
+}
+
+.close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+}

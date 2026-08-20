@@ -1,0 +1,21 @@
+.trigger {
+  cursor: pointer;
+}
+
+.content {
+  z-index: 50;
+  width: 350px;
+  max-width: 90vw;
+  animation: fadeIn 120ms ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -1,0 +1,84 @@
+@use '@/styles/mixins' as *;
+
+.shell {
+  min-height: 100dvh;
+  background: var(--color-surface-secondary);
+}
+
+.header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-4);
+
+  @include md {
+    padding: var(--space-6) var(--space-8);
+  }
+}
+
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.titleGroup {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.iconBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--brand-primary) 15%, transparent);
+  color: var(--brand-secondary);
+}
+
+.title {
+  font-family: var(--font-headline);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+
+  @include md {
+    font-size: 1.375rem;
+  }
+}
+
+.subtitle {
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: var(--space-1) 0 0;
+}
+
+.tenantName {
+  color: var(--brand-primary);
+  font-weight: 600;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.content {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+
+  @include md {
+    padding: var(--space-8);
+  }
+}
