@@ -2,13 +2,13 @@
   "logo": {
     "text": "",
     "image": "",
-    "url": "/"
+    "url": "/home"
   },
   "menus": [
     {
       "id": "home",
       "label": "Home",
-      "url": "/",
+      "url": "/home",
       "enabled": true,
       "order": 1,
       "icon": "home"
@@ -66,15 +66,6 @@
       "type": "link",
       "enabled": true,
       "order": 1
-    },
-    {
-      "id": "open-account",
-      "label": "Open Account",
-      "url": "/login",
-      "type": "button",
-      "enabled": true,
-      "order": 2,
-      "icon": "arrow-right"
     }
   ]
 }

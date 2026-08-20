@@ -53,9 +53,6 @@ export function ProfileSetupForm() {
     defaultValues: { fullName: '', dateOfBirth: '', city: '' },
   });
 
-  const maxDateOfBirth = new Date();
-  maxDateOfBirth.setFullYear(maxDateOfBirth.getFullYear() - MIN_AGE_YEARS);
-
   const onSubmit = async (values: ProfileSetupFormValues) => {
     try {
       await completeProfile.mutateAsync(values);
@@ -93,7 +90,7 @@ export function ProfileSetupForm() {
               }
               error={errors.dateOfBirth?.message}
               value={field.value ? new Date(field.value) : undefined}
-              maxDate={maxDateOfBirth}
+              maxDate={new Date()}
               onChange={(date) => field.onChange(date.toISOString())}
             />
           )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type ClipboardEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent } from 'react';
+import { useRef, useState, type ClipboardEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent } from 'react';
 import styles from './OtpInputCells.module.scss';
 import { cn } from '@/lib/utils/cn';
 
@@ -9,12 +9,14 @@ export type OtpInputCellsProps = {
   value: string;
   onChange: (value: string) => void;
   error?: boolean;
+  onSubmit?: () => void;
 };
 
 const DIGIT_PATTERN = /^\d$/;
 
-export function OtpInputCells({ length = 6, value, onChange, error }: OtpInputCellsProps) {
+export function OtpInputCells({ length = 6, value, onChange, error, onSubmit }: OtpInputCellsProps) {
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const [isAllSelected, setIsAllSelected] = useState(false);
   const digits = Array.from({ length }, (_, index) => value[index] ?? '');
 
   const setDigitAt = (index: number, digit: string) => {
@@ -27,6 +29,13 @@ export function OtpInputCells({ length = 6, value, onChange, error }: OtpInputCe
     const digit = rawInput.slice(-1);
     if (digit && !DIGIT_PATTERN.test(digit)) return;
 
+    if (isAllSelected) {
+      setIsAllSelected(false);
+      onChange(digit);
+      if (digit) inputRefs.current[1]?.focus();
+      return;
+    }
+
     setDigitAt(index, digit);
     if (digit && index < length - 1) {
       inputRefs.current[index + 1]?.focus();
@@ -36,18 +45,31 @@ export function OtpInputCells({ length = 6, value, onChange, error }: OtpInputCe
   const handleKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
       event.preventDefault();
-      onChange('');
-      inputRefs.current[0]?.focus();
-      inputRefs.current[0]?.select();
+      setIsAllSelected(true);
       return;
     }
-    if (event.key === 'Backspace' && !digits[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
+    if (event.key === 'Backspace') {
+      if (isAllSelected) {
+        event.preventDefault();
+        setIsAllSelected(false);
+        onChange('');
+        inputRefs.current[0]?.focus();
+        return;
+      }
+      if (!digits[index] && index > 0) {
+        inputRefs.current[index - 1]?.focus();
+      }
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onSubmit?.();
     }
   };
 
   const handleFocus = (event: ReactFocusEvent<HTMLInputElement>) => {
     event.target.select();
+    setIsAllSelected(false);
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
@@ -75,7 +97,7 @@ export function OtpInputCells({ length = 6, value, onChange, error }: OtpInputCe
           onKeyDown={(event) => handleKeyDown(index, event)}
           onFocus={handleFocus}
           onPaste={handlePaste}
-          className={cn(styles.cell, error && styles.cellError)}
+          className={cn(styles.cell, error && styles.cellError, isAllSelected && styles.cellSelected)}
           aria-label={`Digit ${index + 1}`}
         />
       ))}
