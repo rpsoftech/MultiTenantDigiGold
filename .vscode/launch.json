@@ -2,6 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Main Server for DigiGold",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "args": ["--dev"],
+      "program": "${workspaceFolder}/packages/servers/MainServerGo/cmd/api/main.go"
+    },
+    {
+      "name": "Event Processor for DigiGold",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "args": ["--dev"],
+      "program": "${workspaceFolder}/packages/servers/MainServerGo/cmd/worker/main.go"
+    },
+    {
       "type": "node",
       "request": "launch",
       "name": "Debug MainServer with Nx",

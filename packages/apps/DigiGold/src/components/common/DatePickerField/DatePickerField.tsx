@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { Input } from '@/components/common/Input/Input';
 import { Calendar } from '@/components/common/Calendar/Calendar';
@@ -9,6 +9,7 @@ import styles from './DatePickerField.module.scss';
 
 export type DatePickerFieldProps = {
   label?: string;
+  labelHint?: ReactNode;
   placeholder?: string;
   error?: string;
   value?: Date;
@@ -26,6 +27,7 @@ function formatDate(date: Date) {
 
 export function DatePickerField({
   label,
+  labelHint,
   placeholder = 'DD/MM/YYYY',
   error,
   value,
@@ -42,6 +44,7 @@ export function DatePickerField({
         <div className={styles.trigger}>
           <Input
             label={label}
+            labelSuffix={labelHint}
             name={name}
             placeholder={placeholder}
             readOnly
