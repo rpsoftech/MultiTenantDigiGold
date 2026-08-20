@@ -1,6 +1,5 @@
-import { LoginForm } from '@/components/auth/LoginForm/LoginForm';
-import { ROUTES } from '@/lib/constants/routes';
+import { AdminLoginForm } from '@/components/auth/AdminLoginForm/AdminLoginForm';
 
 export default function AdminLoginPage() {
-  return <LoginForm successRoute={ROUTES.adminDashboard} />;
+  return <AdminLoginForm />;
 }

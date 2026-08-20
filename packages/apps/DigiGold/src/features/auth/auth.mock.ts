@@ -22,6 +22,7 @@ export async function mockVerifyOtp(payload: VerifyOtpPayload): Promise<VerifyOt
   return {
     user: {
       userId: 'mock-user-1',
+      role: 'customer',
       mobileNumber: payload.mobileNumber,
       isNewUser: true,
       kycStatus: 'not_started',

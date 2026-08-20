@@ -65,6 +65,13 @@
   font-weight: 600;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .content {
   padding: var(--space-4);
   display: flex;
