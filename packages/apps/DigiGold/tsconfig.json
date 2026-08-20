@@ -24,7 +24,8 @@
     "types": ["jest", "node"],
     "outDir": "dist",
     "rootDir": "src",
-    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "src/**/*.ts",
@@ -32,6 +33,7 @@
     "src/**/*.js",
     "src/**/*.jsx",
     "src/**/*.json",
+    "**/*.d.ts",
     "../../../packages/apps/DigiGold/.next/types/**/*.ts",
     "../../../dist/packages/apps/DigiGold/.next/types/**/*.ts",
     "next-env.d.ts"
