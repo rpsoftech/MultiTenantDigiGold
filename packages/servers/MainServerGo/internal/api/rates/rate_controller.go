@@ -1,76 +1,67 @@
-package rates
+package rates_api
 
 import (
 	"bufio"
-	"context"
-	"fmt"
-	"log"
 
 	"github.com/gofiber/fiber/v3"
-	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
 type RateController struct {
-	Redis *redis_client.RedisClientStruct
+	Hub *RateHub
 }
 
-func NewRateController() *RateController {
+// FIX 2: We must inject the running Hub from main.go, NOT create a new dead one!
+func NewRateController(hub *RateHub) *RateController {
 	return &RateController{
-		Redis: redis_client.InitRedisClient(),
+		Hub: hub,
 	}
 }
 
 func (rc *RateController) RegisterRoutes(router fiber.Router) {
-	// The frontend will connect to GET /api/v1/rates/stream
-	router.Get("/stream", rc.StreamLiveRates)
+	router.Get("/stream", rc.StreamRates)
+	router.Get("/last-rate", rc.LastRate)
 }
 
-func (rc *RateController) StreamLiveRates(c fiber.Ctx) error {
-	// 1. Set the mandatory SSE HTTP Headers
+func (rc *RateController) LastRate(c fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"latest_rate": rc.Hub.GetInitialRate(c.Context()), // Use the safe getter
+	})
+}
+
+func (rc *RateController) StreamRates(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Set("Access-Control-Allow-Origin", "*")
-
-	// 2. Take hijack control of the underlying TCP stream using Fiber's StreamWriter
+	clientChan := make(chan string, 10)
+	rc.Hub.Register(clientChan)
+	initialRate := rc.Hub.GetInitialRate(c.Context())
+	if initialRate != "" {
+		clientChan <- initialRate
+	}
 	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
-		log.Println("🟢 Client connected to Live Rate Stream")
+		defer rc.Hub.Unregister(clientChan)
+		if err := w.Flush(); err != nil {
+			return
+		}
 
-		// Create a context that cancels when the client closes their browser/tab
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		// Subscribe specifically to the raw global feed
-		pubsub := rc.Redis.Client.Subscribe(ctx, "global:raw_gold_rate")
-		defer pubsub.Close()
-
-		ch := pubsub.Channel()
-
-		// 3. The Infinite Streaming Loop
 		for {
 			select {
 			case <-c.Context().Done():
-				// Fiber detected the client disconnected
-				log.Println("🔴 Client disconnected from Rate Stream")
-				return
+				return // Client disconnected
 
-			case msg, ok := <-ch:
+			case payload, ok := <-clientChan:
 				if !ok {
-					return // Redis channel closed
+					return // Hub closed the channel
 				}
 
-				// SSE format requires "data: {payload}\n\n"
-				eventPayload := fmt.Sprintf("data: %s\n\n", msg.Payload)
-
-				// Write to the TCP buffer
-				if _, err := w.WriteString(eventPayload); err != nil {
-					log.Println("⚠️ Failed to write to client, closing stream.")
+				// EXPLICIT WRITE: Using WriteString makes it perfectly clear we are writing to the stream
+				if _, err := w.WriteString(payload); err != nil {
 					return
 				}
 
-				// Flush pushes the buffer through the network to the Angular frontend instantly
+				// PUSH TO NETWORK: Instantly push the buffered string to the user
 				if err := w.Flush(); err != nil {
-					log.Println("⚠️ Failed to flush stream, client likely dropped.")
 					return
 				}
 			}

@@ -36,7 +36,7 @@ var (
 // InitPostgresDB implements thread-safe Singleton initialization
 func InitPostgresDB() *PostgresDBStruct {
 	postgresOnce.Do(func() {
-		fmt.Println("PostgreSQL Initializing...")
+		log.Println("PostgreSQL Initializing...")
 
 		port, err := strconv.Atoi(env.Env.GetEnv(env.PG_PORT_KEY)) // Assuming you update this to PG_PORT_KEY
 		if err != nil {
@@ -87,7 +87,7 @@ func InitPostgresDB() *PostgresDBStruct {
 			Db: db,
 		}
 
-		fmt.Println("PostgreSQL Client Initialized Successfully")
+		log.Println("PostgreSQL Client Initialized Successfully")
 	})
 
 	return postgresInstance
@@ -103,7 +103,7 @@ func GetPostgresDB() *PostgresDBStruct {
 // DeferFunction gracefully closes the pool on application shutdown
 func (c *PostgresDBStruct) DeferFunction() {
 	if c.Db != nil {
-		fmt.Println("Closing PostgreSQL connections...")
+		log.Println("Closing PostgreSQL connections...")
 		if err := c.Db.Close(); err != nil {
 			// Log the error during shutdown, NEVER panic.
 			log.Printf("Error closing PostgreSQL connection: %v\n", err)

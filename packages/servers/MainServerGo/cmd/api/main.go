@@ -13,6 +13,7 @@ import (
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
+	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
@@ -22,17 +23,20 @@ import (
 var version string = "0" // Injected by deploy script
 
 func main() {
+	log.SetOutput(os.Stdout)
 	env.LoadEnv("digiGold.env")
 	log.Println("🚀 Booting Digi Gold HTTP API Server (Fiber v3)...")
 
 	// 1. Move the termination channel to the top so our background workers can trigger a restart
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	// 2. The 5-Minute OTA Updater Daemon
 	// 2. The 5-Minute OTA Updater Daemon
 	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION || env.Env.APP_ENV == env.APP_ENV_STAGING {
-		go func(versionStr string, stopChan chan<- os.Signal) {
+		// Pass 'cancel' directly as triggerRestart
+		go func(versionStr string, triggerRestart context.CancelFunc) {
 			currentVersion, _ := strconv.Atoi(versionStr)
-			// Define the check logic
+
 			runCheck := func() {
 				updated, err := updater.CheckAndUpdate(string(env.Env.APP_ENV), "https://keyvalue.rpso.in/public/", "api", currentVersion)
 				if err != nil {
@@ -40,24 +44,25 @@ func main() {
 					return
 				}
 
-				// If a new binary was downloaded and replaced, trigger a graceful restart!
 				if updated {
 					log.Println("🔄 OTA Update applied successfully! Triggering graceful restart...")
-					stopChan <- syscall.SIGTERM
+					triggerRestart() // <--- Instantly fires ctx.Done() globally!
 				}
 			}
 
-			// Run immediately on boot
 			runCheck()
-
-			// Schedule to run exactly every 5 minutes
 			ticker := time.NewTicker(5 * time.Minute)
 			defer ticker.Stop()
 
-			for range ticker.C {
-				runCheck()
+			for {
+				select {
+				case <-ctx.Done(): // Stop ticking if the server is shutting down
+					return
+				case <-ticker.C:
+					runCheck()
+				}
 			}
-		}(version, quit)
+		}(version, cancel)
 	}
 	// 3. Pre-flight Infrastructure Checks
 	db := postgres.GetPostgresDB()
@@ -69,10 +74,19 @@ func main() {
 		log.Fatalf("FATAL: Redis connection failed: %v", err)
 	}
 
+	// ==========================================
+	// 2. THE RATE HUB INITIALIZATION (SINGLETON)
+	// ==========================================
+	rateHub := rates_api.NewRateHub()
+
+	// You MUST start the Hub in a background Goroutine so it listens to Redis forever
+	go rateHub.Start(ctx)
+
 	// 4. Initialize Fiber App with Strict Timeouts
 	app := fiber.New(fiber.Config{
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout: 5 * time.Second,
+		// WriteTimeout: 10 * time.Second,
+		WriteTimeout: 0, // Set to 0 for persistent SSE streaming connections!
 		AppName:      "Digi Gold API v1",
 		ErrorHandler: middleware.GlobalErrorHandler, // Centralized Error Handling
 	})
@@ -85,6 +99,11 @@ func main() {
 	// The middleware is attached to the /auth group, protecting everything inside it
 	auth := api.Group("/auth", middleware.TenantInterceptor)
 	authController.RegisterRoutes(auth)
+
+	// Rates Route (Public Stream)
+	rateController := rates_api.NewRateController(rateHub)
+	ratesGroup := api.Group("/rates")
+	rateController.RegisterRoutes(ratesGroup)
 	// 7. Start the Server in a Goroutine
 	go func() {
 		port := env.GetServerPort(env.PORT_KEY)
@@ -93,9 +112,28 @@ func main() {
 			log.Fatalf("FATAL: Server crashed: %v", err)
 		}
 	}()
+	// ==========================================
+	// 🛠️ LOCAL DEV ROUTE PRINTER
+	// ==========================================
+	if string(env.Env.APP_ENV) == "DEVELOPMENT" || string(env.Env.APP_ENV) == "LOCAL" {
+		time.Sleep(100 * time.Millisecond) // Give the server a split-second to boot
+		log.Println("\n==================================================")
+		log.Println("🚀 REGISTERED API ROUTES:")
+		log.Println("==================================================")
 
+		// app.GetRoutes(true) filters out auto-generated HEAD/OPTIONS routes
+		for _, route := range app.GetRoutes(true) {
+			// CRITICAL FIX: Skip auto-generated HEAD routes to keep the terminal clean
+			if route.Method == fiber.MethodHead {
+				continue
+			}
+			// Format with padding so the methods and paths align perfectly
+			log.Printf("🔹 %-7s %s\n", route.Method, route.Path)
+		}
+		log.Println("==================================================")
+	}
 	// 8. Block main thread until OS (or OTA Updater) sends a termination signal
-	<-quit
+	<-ctx.Done()
 
 	log.Println("🛑 Shutting down Fiber server gracefully...")
 
