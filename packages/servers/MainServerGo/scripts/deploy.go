@@ -43,8 +43,8 @@ var (
 	}
 
 	components = map[string]string{
-		"api":    "./cmd/api/main.go",
-		"worker": "./cmd/worker/main.go",
+		"api":    "./packages/servers/MainServerGo/cmd/api/main.go",
+		"worker": "./packages/servers/MainServerGo/cmd/worker/main.go",
 	}
 )
 
