@@ -14984,13 +14984,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pify@npm:^2.3.0":
-  version: 2.3.0
-  resolution: "pify@npm:2.3.0"
-  checksum: 10c0/551ff8ab830b1052633f59cb8adc9ae8407a436e06b4a9718bcb27dc5844b83d535c3a8512b388b6062af65a98c49bdc0dd523d8b2617b188f7c8fee457158dc
-  languageName: node
-  linkType: hard
-
 "pify@npm:^4.0.1":
   version: 4.0.1
   resolution: "pify@npm:4.0.1"
@@ -15842,11 +15835,9 @@ __metadata:
   linkType: hard
 
 "read-cache@npm:^1.0.0":
-  version: 1.0.1
-  resolution: "read-cache@npm:1.0.1"
-  dependencies:
-    pify: "npm:^2.3.0"
-  checksum: 10c0/70a7daaa72a45d301db0c7a097391f751430ca2638bd2069681481705653668eb18cd9b587db95d56e987cd42b5037c0675120b9ee76bcac8f1cd9ee4912c981
+  version: 1.0.2
+  resolution: "read-cache@npm:1.0.2"
+  checksum: 10c0/c1b3c8d2a492630ebb78c9fe9bb5c3af7444e374f9771895b7fd4de89a685f22228cea7aa1d6096ec61f7dd00b8910ab311f4b35fdd45b2163cb3aec69b23b45
   languageName: node
   linkType: hard
 
@@ -16531,7 +16522,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sass@npm:1.102.0, sass@npm:^1.97.2":
+"sass@npm:1.102.0":
   version: 1.102.0
   resolution: "sass@npm:1.102.0"
   dependencies:
@@ -16562,6 +16553,23 @@ __metadata:
   bin:
     sass: sass.js
   checksum: 10c0/5622a4f9d0acf5cdfb72c73c448366b3ec7bfe2b6e1ecb62c6e9f8eaff9c02a6afd86a31ded246fc818fe660cedea6bd27335e82fc9bd7cce46c29f95774bece
+  languageName: node
+  linkType: hard
+
+"sass@npm:^1.97.2":
+  version: 1.103.0
+  resolution: "sass@npm:1.103.0"
+  dependencies:
+    "@parcel/watcher": "npm:^2.4.1"
+    chokidar: "npm:^5.0.0"
+    immutable: "npm:^5.1.5"
+    source-map-js: "npm:>=0.6.2 <2.0.0"
+  dependenciesMeta:
+    "@parcel/watcher":
+      optional: true
+  bin:
+    sass: sass.js
+  checksum: 10c0/5d335ea249a564950fc138ecd97eb0ef0748d31b2dc3746287290fc3fa6afb4652c6a93f5acd87d02482dbb08988082873eff2ae07b26ddaae2f9f51428e4a41
   languageName: node
   linkType: hard
 
@@ -17527,9 +17535,9 @@ __metadata:
   linkType: hard
 
 "svg-parser@npm:^2.0.4":
-  version: 2.0.4
-  resolution: "svg-parser@npm:2.0.4"
-  checksum: 10c0/02f6cb155dd7b63ebc2f44f36365bc294543bebb81b614b7628f1af3c54ab64f7e1cec20f06e252bf95bdde78441ae295a412c68ad1678f16a6907d924512b7a
+  version: 2.0.5
+  resolution: "svg-parser@npm:2.0.5"
+  checksum: 10c0/5c6670aa78631716526e6a9b559d984349766d53364d2a80459088bfb1366ac2b3ce80a1df92d5afb6c6e73606681fb1a4afd404c81b0455930892305c6cb3d5
   languageName: node
   linkType: hard
 
