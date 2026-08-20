@@ -1,0 +1,102 @@
+@use '@/styles/mixins' as *;
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lifetimeCard {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lifetimeLabel {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-on-brand);
+  opacity: 0.85;
+  margin: 0;
+}
+
+.lifetimeValueRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.lifetimeAmount {
+  font-family: var(--font-headline);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-on-brand);
+  margin: 0;
+
+  @include md {
+    font-size: 2.5rem;
+  }
+}
+
+.lifetimeGrams {
+  font-family: var(--font-body);
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-on-brand);
+  opacity: 0.9;
+  margin: 0;
+}
+
+.lifetimeCardBrand {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-tertiary));
+  border: none;
+}
+
+.subGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+
+  @include sm {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.subTile {
+  padding: var(--space-4);
+}
+
+.subLabel {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.subValueRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.subAmount {
+  font-family: var(--font-headline);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.subGrams {
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  margin: 0;
+}
