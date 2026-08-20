@@ -12,7 +12,7 @@ jobs:
     environment: Staging
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -33,4 +33,4 @@ jobs:
           FILE_SERVER_TOKEN: ${{ secrets.FILE_SERVER_TOKEN }}
           KV_TOKEN: ${{ secrets.KV_TOKEN }}
           DEPLOY_ENV: PRODUCTION
-        run: go run scripts/deploy.go
+        run: go run packages/servers/MainServerGo/scripts/deploy.go

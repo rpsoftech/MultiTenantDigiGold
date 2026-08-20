@@ -16,13 +16,13 @@ const SUB_PERIODS: Array<{ key: 'today' | 'last7Days' | 'last30Days'; label: str
 
 function SubTile({ label, metric }: { label: string; metric: PeriodMetric }) {
   return (
-    <Card className={styles.subTile}>
+    <div className={styles.subTile}>
       <p className={styles.subLabel}>{label}</p>
       <div className={styles.subValueRow}>
         <p className={styles.subAmount}>{formatCurrency(metric.amountInr, 'INR')}</p>
         <p className={styles.subGrams}>{metric.grams.toFixed(4)} g</p>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -43,11 +43,11 @@ export function TransactionStatsPanel() {
         </div>
       </Card>
 
-      <div className={styles.subGrid}>
+      <Card className={styles.subCard}>
         {SUB_PERIODS.map(({ key, label }) => (
           <SubTile key={key} label={label} metric={stats[key]} />
         ))}
-      </div>
+      </Card>
     </section>
   );
 }

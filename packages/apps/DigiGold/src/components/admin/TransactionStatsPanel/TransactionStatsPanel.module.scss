@@ -57,23 +57,41 @@
   border: none;
 }
 
-.subGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-4);
+.subCard {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
 
   @include sm {
-    grid-template-columns: repeat(3, 1fr);
+    flex-direction: row;
   }
 }
 
 .subTile {
+  flex: 1;
   padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  @include sm {
+    border-bottom: none;
+    border-right: 1px solid var(--color-border);
+
+    &:last-child {
+      border-right: none;
+    }
+  }
 }
 
 .subLabel {
   font-family: var(--font-label);
   font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--color-text-muted);
   margin: 0 0 var(--space-2);
 }

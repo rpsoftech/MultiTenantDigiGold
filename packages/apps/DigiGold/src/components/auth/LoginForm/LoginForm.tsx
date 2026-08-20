@@ -46,7 +46,7 @@ export function LoginForm({ successRoute }: LoginFormProps) {
     formState: { errors, isValid },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    mode: 'onChange',
+    mode: 'onTouched',
     defaultValues: { mobileNumber: '' },
   });
 

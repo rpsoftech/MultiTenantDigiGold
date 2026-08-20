@@ -17,5 +17,4 @@ export const ROUTES = {
   adminDashboard: '/admin/dashboard',
   adminProfile: '/admin/profile',
   adminUpdatePassword: '/admin/update-password',
-  adminOtp: '/admin/otp',
 } as const;

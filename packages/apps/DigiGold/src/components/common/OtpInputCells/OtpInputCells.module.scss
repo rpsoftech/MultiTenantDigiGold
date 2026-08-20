@@ -26,3 +26,8 @@
 .cellError {
   border-color: var(--color-danger);
 }
+
+.cellSelected {
+  background: var(--color-surface-secondary);
+  border-color: var(--brand-primary);
+}

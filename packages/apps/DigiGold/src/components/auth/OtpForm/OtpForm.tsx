@@ -42,6 +42,7 @@ export function OtpForm({
   const isComplete = OTP_PATTERN.test(otp);
 
   const handleVerify = async () => {
+    if (!isComplete || verifyOtp.isPending) return;
     try {
       const result = await verifyOtp.mutateAsync({ mobileNumber, otp });
       router.push(
@@ -90,7 +91,7 @@ export function OtpForm({
         </button>
       </span>
 
-      <OtpInputCells value={otp} onChange={setOtp} error={verifyOtp.isError} />
+      <OtpInputCells value={otp} onChange={setOtp} error={verifyOtp.isError} onSubmit={handleVerify} />
 
       <div className={styles.resendRow}>
         {canResend ? (

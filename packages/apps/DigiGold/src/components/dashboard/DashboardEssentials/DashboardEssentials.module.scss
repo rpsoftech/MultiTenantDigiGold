@@ -1,12 +1,13 @@
 @use '@/styles/mixins' as *;
 
 .section {
-  padding: var(--space-6) var(--space-4);
+  background: var(--color-surface);
+  padding: var(--space-6) var(--space-2);
   max-width: 1280px;
   margin-inline: auto;
 
   @include lg {
-    padding: var(--space-8);
+    padding: var(--space-8) var(--space-4);
   }
 }
 
