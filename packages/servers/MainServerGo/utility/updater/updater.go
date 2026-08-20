@@ -50,7 +50,7 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 	log.Printf("🔍 Checking for updates at KV Key: %s", kvKey)
 
 	// 1. Fetch latest version info from KV Server
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Minute}
 	req, err := http.NewRequest("GET", kvServerURL, nil)
 	if err != nil {
 		log.Fatalf("Failed to create request: %v", err)
@@ -75,7 +75,7 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 
 	// 2. Compare Integer Versions
 	if currentVersion >= kvData.Version {
-		log.Printf("✅ %s binary is up to date (Version %d).\n", componentName, currentVersion)
+		// log.Printf("✅ %s binary is up to date (Version %d).\n", componentName, currentVersion)
 		return false, nil
 	}
 
@@ -94,6 +94,7 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 
 	// 3. Download the GZIP archive
 	log.Printf("📥 Downloading update from %s...", kvData.URL)
+
 	downReq, err := http.NewRequest("GET", kvData.URL, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to create download request: %w", err)
