@@ -107,7 +107,7 @@ func (h *RateHub) setLatestRate(rate string) bool {
 	if h.AllRates.Ask != h.latestRate {
 		h.latestRate = h.AllRates.Ask
 		h.latestRateString = strconv.FormatFloat(h.latestRate, 'f', -1, 64)
-		h.sseLatestRate = fmt.Sprintf("data: %s\n\n", rate)
+		h.sseLatestRate = fmt.Sprintf("data: %d\n\n", h.latestRateString)
 		return true
 	}
 	return false
