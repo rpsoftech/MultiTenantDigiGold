@@ -89,3 +89,110 @@ const (
 	ColTICCreatedAt          = "tic_created_at"
 	ColTICModifiedAt         = "tic_modified_at"
 )
+
+// ------------------------------------------
+// 6. tenant_kyc_documents
+// ------------------------------------------
+const (
+	ColTKDID             = "tkd_id"
+	ColTKDUUID           = "tkd_uuid"
+	ColTKDTenantID       = "tkd_tenant_id"
+	ColTKDDocumentType   = "tkd_document_type"
+	ColTKDDocumentURL    = "tkd_document_url"
+	ColTKDDocumentNumber = "tkd_document_number"
+	ColTKDStatus         = "tkd_status"
+	ColTKDVerifiedBy     = "tkd_verified_by"
+	ColTKDVerifiedAt     = "tkd_verified_at"
+	ColTKDCreatedAt      = "tkd_created_at"
+	ColTKDModifiedAt     = "tkd_modified_at"
+)
+
+// ------------------------------------------
+// 7. margin_configurations
+// ------------------------------------------
+const (
+	ColMCID              = "mc_id"
+	ColMCUUID            = "mc_uuid"
+	ColMCTenantID        = "mc_tenant_id"
+	ColMCCommodityType   = "mc_commodity_type"
+	ColMCSellMarginType  = "mc_sell_margin_type"
+	ColMCSellMarginValue = "mc_sell_margin_value"
+	ColMCIsGSTEnabled    = "mc_is_gst_enabled"
+	ColMCGSTPercentage   = "mc_gst_percentage"
+	ColMCIsActive        = "mc_is_active"
+	ColMCCreatedAt       = "mc_created_at"
+	ColMCModifiedAt      = "mc_modified_at"
+)
+
+// ------------------------------------------
+// 8. gold_transaction_ledger
+// ------------------------------------------
+const (
+	ColGLID                      = "gl_id"
+	ColGLUUID                    = "gl_uuid"
+	ColGLTenantID                = "gl_tenant_id"
+	ColGLUserID                  = "gl_user_id"
+	ColGLEventType               = "gl_event_type"
+	ColGLPaymentMode             = "gl_payment_mode"
+	ColGLWeightGrams             = "gl_weight_grams"
+	ColGLTotalAmountINR          = "gl_total_amount_inr"
+	ColGLRunningGoldBalanceGrams = "gl_running_gold_balance_grams"
+	ColGLMCXBaseRate             = "gl_mcx_base_rate"
+	ColGLMasterMarginApplied     = "gl_master_margin_applied"
+	ColGLTenantMarginApplied     = "gl_tenant_margin_applied"
+	ColGLGSTApplied              = "gl_gst_applied"
+	ColGLFinalRatePerGram        = "gl_final_rate_per_gram"
+	ColGLReferenceID             = "gl_reference_id"
+	ColGLMetadataJSON            = "gl_metadata_json"
+	ColGLCreatedAt               = "gl_created_at"
+	ColGLModifiedAt              = "gl_modified_at"
+)
+
+// ------------------------------------------
+// 9. redemption_fulfillments
+// ------------------------------------------
+const (
+	ColRFID                 = "rf_id"
+	ColRFUUID               = "rf_uuid"
+	ColRFLedgerID           = "rf_ledger_id"
+	ColRFTenantID           = "rf_tenant_id"
+	ColRFUserID             = "rf_user_id"
+	ColRFItemSKU            = "rf_item_sku"
+	ColRFFulfillmentStatus  = "rf_fulfillment_status"
+	ColRFCourierName        = "rf_courier_name"
+	ColRFTrackingNumber     = "rf_tracking_number"
+	ColRFShippingDetailJSON = "rf_shipping_detail_json"
+	ColRFIsExported         = "rf_is_exported"
+	ColRFExportedAt         = "rf_exported_at"
+	ColRFCreatedAt          = "rf_created_at"
+	ColRFModifiedAt         = "rf_modified_at"
+)
+
+// ------------------------------------------
+// 10. master_hedging_state
+// ------------------------------------------
+const (
+	ColMHSID               = "mhs_id"
+	ColMHSUnhedgedGrams    = "mhs_unhedged_grams"
+	ColMHSTotalHedgedGrams = "mhs_total_hedged_grams"
+	ColMHSLastHedgedAt     = "mhs_last_hedged_at"
+	ColMHSCreatedAt        = "mhs_created_at"
+	ColMHSModifiedAt       = "mhs_modified_at"
+)
+
+// ------------------------------------------
+// 11. master_hedging_orders
+// ------------------------------------------
+const (
+	ColMHOID               = "mho_id"
+	ColMHOUUID             = "mho_uuid"
+	ColMHOLotWeightGrams   = "mho_lot_weight_grams"
+	ColMHOLPExecutionRate  = "mho_lp_execution_rate"
+	ColMHOLPTotalAmountINR = "mho_lp_total_amount_inr"
+	ColMHOStatus           = "mho_status"
+	ColMHOLPOrderReference = "mho_lp_order_reference"
+	ColMHOErrorLog         = "mho_error_log"
+	ColMHOCreatedAt        = "mho_created_at"
+	ColMHOCompletedAt      = "mho_completed_at"
+	ColMHOModifiedAt       = "mho_modified_at"
+)
