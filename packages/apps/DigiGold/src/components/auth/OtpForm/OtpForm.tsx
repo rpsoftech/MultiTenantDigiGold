@@ -46,7 +46,7 @@ export function OtpForm({
     try {
       const result = await verifyOtp.mutateAsync({ mobileNumber, otp });
       router.push(
-        successRoute ?? (result.user.isNewUser ? ROUTES.profileSetup : ROUTES.home)
+        successRoute ?? (result.is_registered ? ROUTES.home : ROUTES.profileSetup)
       );
     } catch {
       showToast({
@@ -63,8 +63,12 @@ export function OtpForm({
     setCanResend(false);
     setCooldownKey((key) => key + 1);
     try {
-      await requestOtp.mutateAsync({ mobileNumber });
-      showToast({ variant: 'success', title: 'OTP resent' });
+      const result = await requestOtp.mutateAsync({ mobileNumber });
+      showToast({
+        variant: 'success',
+        title: 'OTP resent',
+        description: result.dev_otp ? `Local code: ${result.dev_otp}` : undefined,
+      });
     } catch {
       showToast({ variant: 'danger', title: 'Could not resend OTP' });
     }

@@ -35,6 +35,19 @@ export type LoginFormProps = {
   successRoute?: string;
 };
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 export function LoginForm({ successRoute }: LoginFormProps) {
   const { showToast } = useToast();
   const requestOtp = useRequestOtp();
@@ -52,13 +65,20 @@ export function LoginForm({ successRoute }: LoginFormProps) {
 
   const onSubmit = async ({ mobileNumber }: LoginFormValues) => {
     try {
-      await requestOtp.mutateAsync({ mobileNumber });
+      const result = await requestOtp.mutateAsync({ mobileNumber });
+      if (result.dev_otp) {
+        showToast({
+          variant: 'success',
+          title: 'OTP sent',
+          description: `Local code: ${result.dev_otp}`,
+        });
+      }
       setOtpMobileNumber(mobileNumber);
-    } catch {
+    } catch (error) {
       showToast({
         variant: 'danger',
         title: 'Could not send OTP',
-        description: 'Please check the number and try again.',
+        description: getErrorMessage(error, 'Please check the number and try again.'),
       });
     }
   };

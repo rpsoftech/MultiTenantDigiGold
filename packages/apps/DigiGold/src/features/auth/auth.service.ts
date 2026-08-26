@@ -1,5 +1,4 @@
 import { apiClient } from '@/lib/api/client';
-import type { ApiResponse } from '@/types/api.types';
 import type {
   RequestOtpPayload,
   RequestOtpResult,
@@ -7,31 +6,58 @@ import type {
   VerifyOtpResult,
   CompleteProfilePayload,
 } from './auth.types';
-import { mockRequestOtp, mockVerifyOtp, mockCompleteProfile } from './auth.mock';
+import {
+  mockRequestOtp,
+  mockVerifyOtp,
+  mockCompleteProfile,
+} from './auth.mock';
 
-const USE_MOCK_AUTH = process.env.NEXT_PUBLIC_USE_MOCK_AUTH === 'true';
+export function shouldUseMockAuth() {
+  return process.env.NEXT_PUBLIC_USE_MOCK_AUTH === 'true';
+}
 
 export const authService = {
   requestOtp: async (payload: RequestOtpPayload): Promise<RequestOtpResult> => {
-    if (USE_MOCK_AUTH) return mockRequestOtp(payload);
-    const response = await apiClient.post<ApiResponse<RequestOtpResult>>(
-      '/auth/request-otp',
-      payload
+    if (shouldUseMockAuth()) return mockRequestOtp(payload);
+    const response = await apiClient.post<RequestOtpResult>(
+      '/auth/otp/request',
+      {
+        phone: payload.mobileNumber,
+      },
     );
-    return response.data.data;
+    return response.data;
   },
 
   verifyOtp: async (payload: VerifyOtpPayload): Promise<VerifyOtpResult> => {
-    if (USE_MOCK_AUTH) return mockVerifyOtp(payload);
-    const response = await apiClient.post<ApiResponse<VerifyOtpResult>>(
-      '/auth/verify-otp',
-      payload
-    );
-    return response.data.data;
+    if (shouldUseMockAuth()) return mockVerifyOtp(payload);
+    const response = await apiClient.post<VerifyOtpResult>('/auth/otp/verify', {
+      phone: payload.mobileNumber,
+      otp: payload.otp,
+    });
+    if (response.data.access_token) {
+      window.localStorage.setItem('access_token', response.data.access_token);
+    }
+    if (response.data.refresh_token) {
+      window.localStorage.setItem('refresh_token', response.data.refresh_token);
+    }
+    return response.data;
   },
 
-  completeProfile: async (payload: CompleteProfilePayload): Promise<void> => {
-    if (USE_MOCK_AUTH) return mockCompleteProfile(payload);
-    await apiClient.post<ApiResponse<null>>('/auth/complete-profile', payload);
+  completeProfile: async (
+    payload: CompleteProfilePayload,
+  ): Promise<VerifyOtpResult> => {
+    if (shouldUseMockAuth()) return mockCompleteProfile(payload);
+    const response = await apiClient.post<VerifyOtpResult>('/auth/register', {
+      registration_token: payload.registrationToken,
+      full_name: payload.fullName,
+      email_id: payload.emailId || undefined,
+    });
+    if (response.data.access_token) {
+      window.localStorage.setItem('access_token', response.data.access_token);
+    }
+    if (response.data.refresh_token) {
+      window.localStorage.setItem('refresh_token', response.data.refresh_token);
+    }
+    return response.data;
   },
 };
