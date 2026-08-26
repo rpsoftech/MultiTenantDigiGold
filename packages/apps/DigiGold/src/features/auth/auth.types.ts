@@ -1,5 +1,3 @@
-import type { SessionUser } from '@/store/session/session.types';
-
 // NOTE: candidate for @digigold/core — mirrors MainServer's expected auth request/response
 // shapes; move it there once packages/libs/core is built and importable.
 
@@ -8,8 +6,10 @@ export type RequestOtpPayload = {
 };
 
 export type RequestOtpResult = {
-  otpSent: boolean;
-  resendAfterSeconds: number;
+  success: boolean;
+  message: string;
+  is_registered: boolean;
+  dev_otp?: string;
 };
 
 export type VerifyOtpPayload = {
@@ -18,11 +18,16 @@ export type VerifyOtpPayload = {
 };
 
 export type VerifyOtpResult = {
-  user: SessionUser;
+  success: boolean;
+  message: string;
+  is_registered: boolean;
+  access_token?: string;
+  refresh_token?: string;
+  registration_token?: string;
 };
 
 export type CompleteProfilePayload = {
+  registrationToken: string;
   fullName: string;
-  dateOfBirth: string; // TODO: confirm exact wire format with backend
-  city: string;
+  emailId?: string;
 };
