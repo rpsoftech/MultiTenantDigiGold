@@ -103,7 +103,6 @@ func main() {
 		// X-Real-IP
 		// Optional: Customize the time format
 		TimeFormat: "2006-01-02 15:04:05",
-
 		// Optional: Define a timezone
 		TimeZone: "Local",
 	}))
