@@ -42,14 +42,14 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		rdb := redis_client.InitRedisClient()
 
 		// ==========================================
-		// 1. FULL QUERY BASE (11 Columns)
+		// 1. FULL QUERY BASE (13 Columns)
 		// ==========================================
 		queryFullSelect := fmt.Sprintf(`
 			SELECT 
-				%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s 
+				%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s 
 			FROM %s`,
 			schema.ColTUID, schema.ColTUUID, schema.ColTUTenantID, schema.ColTUUsername,
-			schema.ColTUPhoneNumber, schema.ColTUPasswordHash, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
+			schema.ColTUPhoneNumber, schema.ColTUPasswordHash, schema.ColTUTOTPSecret, schema.ColTUTOTPEnabled, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
 			schema.ColTUCreatedAt, schema.ColTUModifiedAt,
 			schema.TableTenantUserLogins,
 		)
@@ -70,12 +70,12 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		// 2. CREATE QUERY
 		// ==========================================
 		queryCreate := fmt.Sprintf(`
-			INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s, %s)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+			INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
 			RETURNING %s, %s, %s`,
 			schema.TableTenantUserLogins,
 			schema.ColTUUID, schema.ColTUTenantID, schema.ColTUUsername, schema.ColTUPhoneNumber,
-			schema.ColTUPasswordHash, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
+			schema.ColTUPasswordHash, schema.ColTUTOTPSecret, schema.ColTUTOTPEnabled, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
 			schema.ColTUID, schema.ColTUCreatedAt, schema.ColTUModifiedAt,
 		)
 		stmtCreate, err := db.Db.Prepare(queryCreate)
@@ -88,12 +88,13 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		// ==========================================
 		queryUpdate := fmt.Sprintf(`
 			UPDATE %s SET 
-				%s = $1, %s = $2, %s = $3, %s = $4, %s = $5, %s = $6,
+				%s = $1, %s = $2, %s = $3, %s = $4, %s = $5, %s = $6, %s = $7, %s = $8,
 				%s = CURRENT_TIMESTAMP
-			WHERE %s = $7 AND %s = $8
+			WHERE %s = $9 AND %s = $10
 			RETURNING %s`,
 			schema.TableTenantUserLogins,
 			schema.ColTUUsername, schema.ColTUPhoneNumber, schema.ColTUPasswordHash,
+			schema.ColTUTOTPSecret, schema.ColTUTOTPEnabled,
 			schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
 			schema.ColTUModifiedAt,
 			schema.ColTUTenantID, schema.ColTUUID,
@@ -150,7 +151,7 @@ func (r *TenantUserLoginRepository) scanFullRetrieval(row *sql.Row) (*models.Ten
 	var a models.TenantUserLogin
 	err := row.Scan(
 		&a.ID, &a.UUID, &a.TenantID, &a.Username,
-		&a.PhoneNumber, &a.PasswordHash, &a.Role, &a.IsActive, &a.PermissionsJSON,
+		&a.PhoneNumber, &a.PasswordHash, &a.TOTPSecret, &a.IsTOTPEnabled, &a.Role, &a.IsActive, &a.PermissionsJSON,
 		&a.CreatedAt, &a.ModifiedAt,
 	)
 	if err != nil {
@@ -171,7 +172,7 @@ func (r *TenantUserLoginRepository) scanFullRetrieval(row *sql.Row) (*models.Ten
 func (r *TenantUserLoginRepository) CreateFullAdminWithTx(ctx context.Context, tx *sql.Tx, a *models.TenantUserLogin) error {
 	err := tx.StmtContext(ctx, r.stmtCreateAdmin).QueryRowContext(ctx,
 		a.UUID, a.TenantID, a.Username, a.PhoneNumber,
-		a.PasswordHash, a.Role, a.IsActive, a.PermissionsJSON,
+		a.PasswordHash, a.TOTPSecret, a.IsTOTPEnabled, a.Role, a.IsActive, a.PermissionsJSON,
 	).Scan(&a.ID, &a.CreatedAt, &a.ModifiedAt)
 
 	if err != nil {
@@ -187,6 +188,7 @@ func (r *TenantUserLoginRepository) CreateFullAdminWithTx(ctx context.Context, t
 func (r *TenantUserLoginRepository) UpdateFullAdminWithTx(ctx context.Context, tx *sql.Tx, a *models.TenantUserLogin) error {
 	err := tx.StmtContext(ctx, r.stmtUpdateAdmin).QueryRowContext(ctx,
 		a.Username, a.PhoneNumber, a.PasswordHash,
+		a.TOTPSecret, a.IsTOTPEnabled,
 		a.Role, a.IsActive, a.PermissionsJSON,
 		a.TenantID, a.UUID, // WHERE clause variables
 	).Scan(&a.ModifiedAt)
@@ -203,6 +205,7 @@ func (r *TenantUserLoginRepository) UpdateFullAdminWithTx(ctx context.Context, t
 func (r *TenantUserLoginRepository) UpdateFullAdmin(ctx context.Context, a *models.TenantUserLogin) error {
 	err := r.stmtUpdateAdmin.QueryRowContext(ctx,
 		a.Username, a.PhoneNumber, a.PasswordHash,
+		a.TOTPSecret, a.IsTOTPEnabled,
 		a.Role, a.IsActive, a.PermissionsJSON,
 		a.TenantID, a.UUID, // WHERE clause variables
 	).Scan(&a.ModifiedAt)

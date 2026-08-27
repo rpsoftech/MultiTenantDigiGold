@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"sync"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/constants"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -65,9 +67,10 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 	}
 
 	// 3. Calculate Final Rate
-	if margin.SellMarginType == "FIXED_INR" || margin.SellMarginType == "FLAT" {
+	switch margin.SellMarginType {
+	case "FIXED_INR", "FLAT":
 		marginApplied = margin.SellMarginValue
-	} else if margin.SellMarginType == "PERCENTAGE" {
+	case "PERCENTAGE":
 		marginApplied = mcxRate * (margin.SellMarginValue / 100.0)
 	}
 
@@ -88,22 +91,26 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 }
 
 func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExecutionRequest, ipAddress, adminID string) (*models.GoldTransactionLedger, error) {
+	log.Printf("[TradeService] ExecuteTrade: tenantID=%d, userID=%d, reqRate=%f, reqWeight=%f, reqAmount=%f, ip=%s",
+		req.TenantID, req.UserID, req.RequestedRatePerGram, req.WeightGrams, req.TotalAmountINR, ipAddress)
+
 	finalRate, mcxRate, marginApplied, gstApplied, err := s.validateSlippage(ctx, req.TenantID, req.RequestedRatePerGram)
 	if err != nil {
+		log.Printf("[TradeService] Slippage validation failed for userID=%d, tenantID=%d: %v", req.UserID, req.TenantID, err)
 		return nil, err
 	}
 
-	// Calculate mathematically binding totals
+	// Calculate mathematically binding totals and round them/align them precisely
 	var finalWeight, finalTotalINR float64
 
 	if req.WeightGrams > 0 {
 		// 1. User is buying a specific weight (e.g., exactly 1.5000g)
-		finalWeight = req.WeightGrams
-		finalTotalINR = finalWeight * finalRate
+		finalWeight = math.Round(req.WeightGrams*10000) / 10000
+		finalTotalINR = math.Round((finalWeight*finalRate)*100) / 100
 	} else if req.TotalAmountINR > 0 {
 		// 2. User is buying a specific fiat amount (e.g., exactly ₹5000)
-		finalTotalINR = req.TotalAmountINR
-		finalWeight = finalTotalINR / finalRate
+		finalTotalINR = math.Round(req.TotalAmountINR*100) / 100
+		finalWeight = math.Round((finalTotalINR/finalRate)*10000) / 10000
 	} else {
 		return nil, fmt.Errorf("INVALID_PAYLOAD: must specify either WeightGrams or TotalAmountINR")
 	}
@@ -132,15 +139,31 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 	}
 
 	// Insert into Ledger (Locks balance row, calculates offset, inserts new row, and emits event)
-	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry, ipAddress, adminID)
+	// 1. Insert into Ledger (LedgerRepo remains DUMB and isolated)
+	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry)
 	if err != nil {
 		return nil, err
 	}
 
-	// Commit Transaction
+	// 2. Event Sourcing (TradeService orchestrates the outbox)
+	tenantIdStr := fmt.Sprintf("%d", req.TenantID)
+	tradeEvent := events.GenerateGoldPurchaseEvent(tenantIdStr, adminID, ipAddress, result)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &tradeEvent.BaseEvent); err != nil {
+		return nil, fmt.Errorf("failed to save trade event: %w", err)
+	}
+
+	// 3. B2B Ledger Validation (Locks margin row and increments unlifted weight)
+	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, req.TenantID, "GOLD", finalWeight); err != nil {
+		return nil, err
+	}
+
+	// 4. Commit Transaction
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	log.Printf("[TradeService] Trade successful: tenantID=%d, userID=%d, weight=%f, amount=%f, ledgerUUID=%s",
+		req.TenantID, req.UserID, finalWeight, finalTotalINR, result.UUID)
 
 	return result, nil
 }

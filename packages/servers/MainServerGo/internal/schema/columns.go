@@ -71,6 +71,8 @@ const (
 	ColTUPasswordHash    = "tu_password_hash"
 	ColTURole            = "tu_role"
 	ColTUIsActive        = "tu_is_active"
+	ColTUTOTPSecret      = "tu_totp_secret"
+	ColTUTOTPEnabled     = "tu_is_totp_enabled"
 	ColTUPermissionsJSON = "tu_permissions_json"
 	ColTUCreatedAt       = "tu_created_at"
 	ColTUModifiedAt      = "tu_modified_at"
@@ -111,17 +113,19 @@ const (
 // 7. margin_configurations
 // ------------------------------------------
 const (
-	ColMCID              = "mc_id"
-	ColMCUUID            = "mc_uuid"
-	ColMCTenantID        = "mc_tenant_id"
-	ColMCCommodityType   = "mc_commodity_type"
-	ColMCSellMarginType  = "mc_sell_margin_type"
-	ColMCSellMarginValue = "mc_sell_margin_value"
-	ColMCIsGSTEnabled    = "mc_is_gst_enabled"
-	ColMCGSTPercentage   = "mc_gst_percentage"
-	ColMCIsActive        = "mc_is_active"
-	ColMCCreatedAt       = "mc_created_at"
-	ColMCModifiedAt      = "mc_modified_at"
+	ColMCID                     = "mc_id"
+	ColMCUUID                   = "mc_uuid"
+	ColMCTenantID               = "mc_tenant_id"
+	ColMCCommodityType          = "mc_commodity_type"
+	ColMCSellMarginType         = "mc_sell_margin_type"
+	ColMCSellMarginValue        = "mc_sell_margin_value"
+	ColMCIsGSTEnabled           = "mc_is_gst_enabled"
+	ColMCGSTPercentage          = "mc_gst_percentage"
+	ColMCTenantCreditLimitGrams = "mc_tenant_credit_limit_grams"
+	ColMCTenantUnliftedGrams    = "mc_tenant_unlifted_grams"
+	ColMCIsActive               = "mc_is_active"
+	ColMCCreatedAt              = "mc_created_at"
+	ColMCModifiedAt             = "mc_modified_at"
 )
 
 // ------------------------------------------

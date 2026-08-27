@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
@@ -89,8 +90,23 @@ func main() {
 		WriteTimeout: 0, // Set to 0 for persistent SSE streaming connections!
 		AppName:      "Digi Gold API v1",
 		ErrorHandler: middleware.GlobalErrorHandler, // Centralized Error Handling
+		TrustProxy:   true,
+		ProxyHeader:  fiber.HeaderXForwardedFor,
+		TrustProxyConfig: fiber.TrustProxyConfig{
+			Loopback: true, // True if Nginx is on 127.0.0.1
+		},
 	})
 
+	app.Use(logger.New(logger.Config{
+		// Define your exact output log format using Fiber v3 tags
+		Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
+		// X-Real-IP
+		// Optional: Customize the time format
+		TimeFormat: "2006-01-02 15:04:05",
+
+		// Optional: Define a timezone
+		TimeZone: "Local",
+	}))
 	// 5. Initialize Controllers
 	authController := auth_controllers.NewAuthController()
 

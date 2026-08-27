@@ -41,6 +41,8 @@ CREATE TABLE tenant_user_logins (
     tu_username VARCHAR(255) NOT NULL,
     tu_phone_number VARCHAR(15) NOT NULL,
     tu_password_hash VARCHAR(255) NOT NULL, -- Storing the securely hashed password
+    tu_totp_secret VARCHAR(255),
+    tu_is_totp_enabled BOOLEAN DEFAULT FALSE,
     
     -- Role & State Management
     tu_role VARCHAR(50) CHECK (tu_role IN ('super_admin', 'manager', 'custom')) DEFAULT 'manager',
@@ -174,6 +176,8 @@ CREATE TABLE margin_configurations (
     mc_sell_margin_value NUMERIC(10, 4) NOT NULL DEFAULT 0.0000,
     mc_is_gst_enabled BOOLEAN DEFAULT TRUE,
     mc_gst_percentage NUMERIC(5, 2) DEFAULT 3.00,
+    mc_tenant_credit_limit_grams NUMERIC(12, 4) DEFAULT 0.0000,
+    mc_tenant_unlifted_grams NUMERIC(12, 4) DEFAULT 0.0000,
     mc_is_active BOOLEAN DEFAULT TRUE,
     mc_updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT unique_tenant_commodity UNIQUE (mc_tenant_id, mc_commodity_type)
@@ -196,7 +200,7 @@ CREATE TYPE ledger_event_type_enum AS ENUM (
 -- 2. Signed Unified Gold Ledger
 CREATE TABLE gold_transaction_ledger (
     gl_id BIGSERIAL PRIMARY KEY,                                      
-    gl_external_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),    
+    gl_uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),    
 
     gl_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id),
     gl_user_id BIGINT NOT NULL,
@@ -219,11 +223,11 @@ CREATE TABLE gold_transaction_ledger (
     gl_final_rate_per_gram NUMERIC(12, 2) DEFAULT 0.00,
     
     gl_reference_id VARCHAR(100), 
-    gl_metadata JSONB DEFAULT '{}', 
+    gl_metadata_json JSONB DEFAULT '{}', 
     
     gl_created_at TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX idx_ledger_external_id ON gold_transaction_ledger(gl_external_id);
+CREATE INDEX idx_ledger_external_id ON gold_transaction_ledger(gl_uuid);
 CREATE INDEX idx_ledger_tenant_date ON gold_transaction_ledger(gl_tenant_id, gl_created_at DESC);
 CREATE INDEX idx_ledger_user_passbook ON gold_transaction_ledger(gl_user_id, gl_created_at DESC);
 

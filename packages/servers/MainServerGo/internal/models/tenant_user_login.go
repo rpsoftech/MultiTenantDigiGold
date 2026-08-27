@@ -12,6 +12,8 @@ type TenantUserLogin struct {
 	Username        string          `json:"username"`
 	PhoneNumber     string          `json:"phone_number"`
 	PasswordHash    string          `json:"-"` // Never expose to JSON
+	TOTPSecret      string          `json:"-"`
+	IsTOTPEnabled   bool            `json:"is_totp_enabled"`
 	Role            string          `json:"role"`
 	IsActive        bool            `json:"is_active"`
 	PermissionsJSON json.RawMessage `json:"permissions_json"` // JSONB

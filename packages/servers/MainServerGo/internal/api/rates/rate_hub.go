@@ -76,9 +76,12 @@ func (h *RateHub) Start(ctx context.Context) {
 	}
 }
 
-func (h *RateHub) GetInitialRate(ctx context.Context) string {
+func (h *RateHub) GetInitialRate(ctx context.Context, withDataString bool) string {
 	h.rateMu.RLock()
-	cached := h.sseLatestRate // 🚨 Return the pre-formatted string
+	cached := h.latestRateString // 🚨 Return the pre-formatted string
+	if withDataString {
+		cached = h.sseLatestRate
+	}
 	h.rateMu.RUnlock()
 
 	if cached != "" {
@@ -89,7 +92,10 @@ func (h *RateHub) GetInitialRate(ctx context.Context) string {
 	val, err := h.Redis.GetHashKeyWithOriginalKey(ctx, constants.RedisKeyLatestRawRate, "GOLD")
 	if err == nil && val != "" {
 		h.setLatestRate(val)
-		return h.sseLatestRate
+		if withDataString {
+			return h.sseLatestRate
+		}
+		return h.latestRateString
 	}
 
 	return ""
