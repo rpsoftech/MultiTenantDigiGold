@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
+	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
@@ -119,6 +120,15 @@ func main() {
 	rateController := rates_api.NewRateController(rateHub)
 	ratesGroup := api.Group("/rates")
 	rateController.RegisterRoutes(ratesGroup)
+
+	// Admin Routes
+	adminGroup := api.Group("/admin")
+	adminAuthController := admin_controllers.NewAdminAuthController()
+	adminAuthController.RegisterRoutes(adminGroup)
+
+	adminTenantController := admin_controllers.NewAdminTenantController()
+	adminTenantController.RegisterRoutes(adminGroup)
+
 	// 7. Start the Server in a Goroutine
 	go func() {
 		port := env.GetServerPort(env.PORT_KEY)

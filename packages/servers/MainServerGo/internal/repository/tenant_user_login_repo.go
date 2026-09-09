@@ -17,14 +17,13 @@ import (
 )
 
 type TenantUserLoginRepository struct {
-	DB    *postgres.PostgresDBStruct
-	Redis *redis_client.RedisClientStruct
-
-	// Prepared Statements
-	stmtGetFullUUID  *sql.Stmt
-	stmtGetFullPhone *sql.Stmt
-	stmtCreateAdmin  *sql.Stmt
-	stmtUpdateAdmin  *sql.Stmt
+	DB                  *postgres.PostgresDBStruct
+	Redis               *redis_client.RedisClientStruct
+	stmtGetFullUUID     *sql.Stmt
+	stmtGetFullPhone    *sql.Stmt
+	stmtGetFullUsername *sql.Stmt
+	stmtCreateAdmin     *sql.Stmt
+	stmtUpdateAdmin     *sql.Stmt
 }
 
 var (
@@ -64,6 +63,12 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		stmtPhone, err := db.Db.Prepare(fmt.Sprintf(`%s WHERE %s = $1 AND %s = $2 AND %s = true`, queryFullSelect, schema.ColTUTenantID, schema.ColTUPhoneNumber, schema.ColTUIsActive))
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare GetFullAdminByPhone: %v", err))
+		}
+
+		// Get by Username (Strict Tenant Isolation + Must be Active)
+		stmtUsername, err := db.Db.Prepare(fmt.Sprintf(`%s WHERE %s = $1 AND %s = $2 AND %s = true`, queryFullSelect, schema.ColTUTenantID, schema.ColTUUsername, schema.ColTUIsActive))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare GetFullAdminByUsername: %v", err))
 		}
 
 		// ==========================================
@@ -106,12 +111,13 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		}
 
 		adminRepoInstance = &TenantUserLoginRepository{
-			DB:               db,
-			Redis:            rdb,
-			stmtGetFullUUID:  stmtUUID,
-			stmtGetFullPhone: stmtPhone,
-			stmtCreateAdmin:  stmtCreate,
-			stmtUpdateAdmin:  stmtUpdate,
+			DB:                  db,
+			Redis:               rdb,
+			stmtGetFullUUID:     stmtUUID,
+			stmtGetFullPhone:    stmtPhone,
+			stmtGetFullUsername: stmtUsername,
+			stmtCreateAdmin:     stmtCreate,
+			stmtUpdateAdmin:     stmtUpdate,
 		}
 	})
 	return adminRepoInstance
@@ -122,13 +128,14 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 // ==========================================
 
 func (r *TenantUserLoginRepository) generateCacheKey(a *models.TenantUserLogin) []string {
-	keys := make([]string, 0, 2)
+	keys := make([]string, 0, 3)
 
 	// STRICT TENANT ISOLATION: The tenantID is the root of the cache key
 	base := fmt.Sprintf("tenant/%d/admin/full/", a.TenantID)
 
 	keys = append(keys, base+"uuid/"+a.UUID)
 	keys = append(keys, base+"phone/"+a.PhoneNumber)
+	keys = append(keys, base+"username/"+a.Username)
 
 	return keys
 }
@@ -260,6 +267,28 @@ func (r *TenantUserLoginRepository) GetActiveAdminByPhone(ctx context.Context, t
 	a, err := r.scanFullRetrieval(r.stmtGetFullPhone.QueryRowContext(ctx, tenantID, phone))
 	if err != nil {
 		return nil, err // Fails if they don't exist OR if IsActive = false due to the SQL WHERE clause
+	}
+
+	go r.createAdminCaches(context.Background(), a)
+	return a, nil
+}
+
+// GetActiveAdminByUsername is used for the Login flow. It strictly enforces the tu_is_active flag.
+func (r *TenantUserLoginRepository) GetActiveAdminByUsername(ctx context.Context, tenantID int64, username string) (*models.TenantUserLogin, error) {
+	cacheKey := fmt.Sprintf("tenant:%d:admin:full:username:%s", tenantID, username)
+
+	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
+		var a models.TenantUserLogin
+		if err := json.Unmarshal([]byte(cachedStr), &a); err == nil {
+			if a.IsActive {
+				return &a, nil
+			}
+		}
+	}
+
+	a, err := r.scanFullRetrieval(r.stmtGetFullUsername.QueryRowContext(ctx, tenantID, username))
+	if err != nil {
+		return nil, err
 	}
 
 	go r.createAdminCaches(context.Background(), a)

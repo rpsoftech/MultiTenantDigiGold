@@ -21,6 +21,13 @@ type UserClaims struct {
 	*jwt.RegisteredClaims
 }
 
+type AdminClaims struct {
+	AdminUUID string `json:"admin_uuid"`
+	Role      string `json:"role"`
+	TenantID  int64  `json:"tenant_id"`
+	*jwt.RegisteredClaims
+}
+
 type RegistrationClaims struct {
 	Phone      string `json:"phone"`
 	TenantUUID string `json:"tenant_uuid"`
@@ -117,6 +124,44 @@ func (s *JWTService) GenerateRegistrationToken(phone string, tenantUUID string) 
 
 	tokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return tokenObj.SignedString(s.accessKey)
+}
+
+// GenerateAdminTokens generates both Access (15m) and Refresh (7d) tokens for an admin
+func (s *JWTService) GenerateAdminTokens(adminUUID string, role string, tenantID int64) (string, string, error) {
+	now := time.Now()
+	// 1. Access Token (15 minutes)
+	accessClaims := &AdminClaims{
+		AdminUUID: adminUUID,
+		Role:      role,
+		TenantID:  tenantID,
+		RegisteredClaims: &jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	accessToken, err := accessTokenObj.SignedString(s.accessKey)
+	if err != nil {
+		return "", "", err
+	}
+
+	// 2. Refresh Token (7 days)
+	refreshClaims := &AdminClaims{
+		AdminUUID: adminUUID,
+		Role:      role,
+		TenantID:  tenantID,
+		RegisteredClaims: &jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	refreshToken, err := refreshTokenObj.SignedString(s.refreshKey)
+	if err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 // ==========================================

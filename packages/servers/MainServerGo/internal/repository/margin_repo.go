@@ -247,7 +247,20 @@ func (r *MarginRepository) CreateMarginConfigWithTx(ctx context.Context, tx *sql
 
 // UpdateMarginConfigWithTx updates limits and margins via Master Admin API
 func (r *MarginRepository) UpdateMarginConfigWithTx(ctx context.Context, tx *sql.Tx, margin *models.MarginConfig) error {
-	err := tx.StmtContext(ctx, r.stmtUpdateMargin).QueryRowContext(ctx,
+	// 1. SELECT FOR UPDATE to prevent race conditions with live trades
+	var current models.MarginConfig
+	err := tx.StmtContext(ctx, r.stmtGetMarginForUpdate).QueryRowContext(ctx, margin.TenantID, margin.CommodityType).Scan(
+		&current.ID, &current.UUID, &current.TenantID, &current.CommodityType,
+		&current.SellMarginType, &current.SellMarginValue, &current.IsGSTEnabled,
+		&current.GSTPercentage, &current.TenantCreditLimitGrams, &current.TenantUnLiftedGrams,
+		&current.IsActive, &current.CreatedAt, &current.ModifiedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to lock margin config: %w", err)
+	}
+
+	// 2. Perform the update
+	err = tx.StmtContext(ctx, r.stmtUpdateMargin).QueryRowContext(ctx,
 		margin.SellMarginType, margin.SellMarginValue,
 		margin.IsGSTEnabled, margin.GSTPercentage, margin.TenantCreditLimitGrams,
 		margin.TenantID, margin.CommodityType,
@@ -256,6 +269,13 @@ func (r *MarginRepository) UpdateMarginConfigWithTx(ctx context.Context, tx *sql
 	if err != nil {
 		return fmt.Errorf("failed to update margin config: %w", err)
 	}
+
+	// 3. Update the struct's state for the event sourcing payload
+	margin.ID = current.ID
+	margin.UUID = current.UUID
+	margin.TenantUnLiftedGrams = current.TenantUnLiftedGrams
+	margin.IsActive = current.IsActive
+	margin.CreatedAt = current.CreatedAt
 
 	// Cache Invalidation (Strict Delete)
 	go func() {

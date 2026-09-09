@@ -135,3 +135,115 @@ func (s *TenantConfigService) UpdateTenantConfig(ctx context.Context, newConfig 
 	// 5. Commit both actions to PostgreSQL simultaneously
 	return tx.Commit()
 }
+
+// Stage 2: Profile Update
+func (s *TenantConfigService) UpdateTenantProfile(ctx context.Context, tenant *models.Tenant, adminUUID string) error {
+	tx, err := s.DB.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := s.TenantRepo.UpdateFullTenantWithTX(ctx, tx, tenant); err != nil {
+		return err
+	}
+
+	auditEvent := events.CreateNewTenantUpdated(tenant, adminUUID)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, auditEvent.BaseEvent); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// Stage 4: Margin Patch
+func (s *TenantConfigService) UpdateTenantMargins(ctx context.Context, margin *models.MarginConfig, adminUUID string, tenantUUID string) error {
+	tx, err := s.DB.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := s.MarginRepo.UpdateMarginConfigWithTx(ctx, tx, margin); err != nil {
+		return err
+	}
+
+	auditEvent := events.CreateNewMarginUpdated(margin, adminUUID, tenantUUID)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, auditEvent); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// Stage 7: Launch / Status Update
+func (s *TenantConfigService) UpdateTenantStatus(ctx context.Context, tenant *models.Tenant, adminUUID string) error {
+	// Re-uses Tenant Profile Update underneath, but we can emit a distinct event if needed
+	tx, err := s.DB.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := s.TenantRepo.UpdateFullTenantWithTX(ctx, tx, tenant); err != nil {
+		return err
+	}
+
+	// Create custom TenantActivated event
+	event := &events.BaseEvent{
+		EventName: "TENANT_ACTIVATED",
+		TenantId:  tenant.UUID,
+		KeyId:     tenant.UUID,
+		AdminId:   adminUUID,
+		Payload:   tenant,
+	}
+	event.CreateBaseEvent()
+
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, event); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// Stage 5: KYC Add
+func (s *TenantConfigService) UpdateTenantKYCAdd(ctx context.Context, kycDoc *models.TenantKYCDocument, adminUUID string, tenantUUID string) error {
+	tx, err := s.DB.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	kycRepo := repository.GetTenantKYCRepository()
+	if err := kycRepo.CreateKYCDocWithTx(ctx, tx, kycDoc); err != nil {
+		return err
+	}
+
+	auditEvent := events.CreateNewKYCDocUploaded(kycDoc, adminUUID, tenantUUID)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, auditEvent); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// Stage 6: KYC Verify
+func (s *TenantConfigService) UpdateTenantKYCVerify(ctx context.Context, kycDoc *models.TenantKYCDocument, adminUUID string, tenantUUID string) error {
+	tx, err := s.DB.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	kycRepo := repository.GetTenantKYCRepository()
+	if err := kycRepo.VerifyKYCDocWithTx(ctx, tx, kycDoc); err != nil {
+		return err
+	}
+
+	auditEvent := events.CreateNewKYCDocVerified(kycDoc, adminUUID, tenantUUID)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, auditEvent); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}

@@ -125,7 +125,7 @@ const (
 	ColMCTenantUnliftedGrams    = "mc_tenant_unlifted_grams"
 	ColMCIsActive               = "mc_is_active"
 	ColMCCreatedAt              = "mc_created_at"
-	ColMCModifiedAt             = "mc_modified_at"
+	ColMCModifiedAt             = "mc_updated_at"
 )
 
 // ------------------------------------------

@@ -170,6 +170,7 @@ CREATE TYPE margin_unit_enum AS ENUM ('PERCENTAGE', 'FIXED_INR');
 
 CREATE TABLE margin_configurations (
     mc_id BIGSERIAL PRIMARY KEY,
+    mc_uuid UUID UNIQUE NOT NULL DEFAULT uuidv7(),    
     mc_tenant_id BIGINT REFERENCES tenants(tenant_id) ON DELETE CASCADE, -- ID 1 / Master Tenant = Global Base
     mc_commodity_type VARCHAR(20) DEFAULT 'GOLD', -- GOLD, SILVER, PLATINUM, etc.
     mc_sell_margin_type margin_unit_enum NOT NULL DEFAULT 'FIXED_INR',
@@ -179,6 +180,7 @@ CREATE TABLE margin_configurations (
     mc_tenant_credit_limit_grams NUMERIC(12, 4) DEFAULT 0.0000,
     mc_tenant_unlifted_grams NUMERIC(12, 4) DEFAULT 0.0000,
     mc_is_active BOOLEAN DEFAULT TRUE,
+    mc_created_at TIMESTAMPTZ DEFAULT NOW(),
     mc_updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT unique_tenant_commodity UNIQUE (mc_tenant_id, mc_commodity_type)
 );
