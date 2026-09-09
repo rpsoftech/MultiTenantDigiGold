@@ -4,7 +4,7 @@ CREATE TABLE tenants (
 	tenant_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     
     -- The public ID exposed in REST APIs and frontend URLs
-    tenant_uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_uuid UUID NOT NULL UNIQUE DEFAULT uuidv7(),
     
     -- Branding & Identification
     tenant_full_name VARCHAR(255) NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE tenant_user_logins (
     tu_id BIGSERIAL PRIMARY KEY, 
     
     -- Public ID exposed in REST APIs
-    tu_uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tu_uuid UUID NOT NULL UNIQUE DEFAULT uuidv7(),
     
     -- Foreign Key mapping strictly to the tenant's internal ID
     tu_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
@@ -60,13 +60,13 @@ CREATE TABLE tenant_user_logins (
     CONSTRAINT unique_tenant_admin_phone UNIQUE (tu_tenant_id, tu_phone_number)
 );
 
-CREATE INDEX idx_tu_login_lookup ON tenant_user_logins(tu_tenant_id, tu_phone_number, tu_is_active);
+CREATE INDEX IF NOT EXISTS idx_tu_login_lookup ON tenant_user_logins(tu_tenant_id, tu_phone_number, tu_is_active);
 CREATE TABLE users (
     -- Internal ID for fast SQL JOINs
     user_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     
     -- Public ID exposed in REST APIs and frontend URLs
-    user_uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    user_uuid UUID NOT NULL UNIQUE DEFAULT uuidv7(),
     
     -- Foreign Key mapping strictly to the tenant's internal ID
     user_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
@@ -113,14 +113,14 @@ CREATE TABLE system_events (
 ) PARTITION BY RANGE (occurred_at);
 
 -- 1. GIN Index: Allows you to instantly search inside the dynamic JSONB payload
-CREATE INDEX idx_system_events_payload ON system_events USING GIN (payload);
+CREATE INDEX IF NOT EXISTS idx_system_events_payload ON system_events USING GIN (payload);
 
 -- 2. Tenant Index: For fetching audit logs strictly isolated to a specific retailer
-CREATE INDEX idx_system_events_tenant ON system_events (tenant_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_system_events_tenant ON system_events (tenant_id, occurred_at);
 
 -- 3. The "Outbox" Partial Index: CRITICAL for background workers. 
 -- This index ONLY stores rows where is_processed is false, making queue lookups take <1 millisecond.
-CREATE INDEX idx_system_events_unprocessed ON system_events (is_processed) WHERE is_processed = false;
+CREATE INDEX IF NOT EXISTS idx_system_events_unprocessed ON system_events (is_processed) WHERE is_processed = false;
 
 -- Create the partitions for the current and upcoming months
 CREATE TABLE system_events_2026_07 PARTITION OF system_events
@@ -148,7 +148,7 @@ CREATE TABLE tenant_internal_configs (
 );
 
 -- Index for lightning-fast lookups when the worker needs credentials
-CREATE INDEX idx_tic_tenant_id ON tenant_internal_configs(tic_tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tic_tenant_id ON tenant_internal_configs(tic_tenant_id);
 
 -- 1. Tenant KYC & Documentation
 -- CREATE TYPE kyc_status_enum AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED');
@@ -200,7 +200,8 @@ CREATE TYPE ledger_event_type_enum AS ENUM (
 -- 2. Signed Unified Gold Ledger
 CREATE TABLE gold_transaction_ledger (
     gl_id BIGSERIAL PRIMARY KEY,                                      
-    gl_uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),    
+    gl_external_id UUID UNIQUE NOT NULL DEFAULT uuidv7(),    
+    gl_uuid UUID UNIQUE NOT NULL DEFAULT uuidv7(),    
 
     gl_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id),
     gl_user_id BIGINT NOT NULL,
@@ -223,13 +224,15 @@ CREATE TABLE gold_transaction_ledger (
     gl_final_rate_per_gram NUMERIC(12, 2) DEFAULT 0.00,
     
     gl_reference_id VARCHAR(100), 
+    gl_metadata JSONB DEFAULT '{}', 
     gl_metadata_json JSONB DEFAULT '{}', 
     
     gl_created_at TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX idx_ledger_external_id ON gold_transaction_ledger(gl_uuid);
-CREATE INDEX idx_ledger_tenant_date ON gold_transaction_ledger(gl_tenant_id, gl_created_at DESC);
-CREATE INDEX idx_ledger_user_passbook ON gold_transaction_ledger(gl_user_id, gl_created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ledger_external_id ON gold_transaction_ledger(gl_external_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_external_id ON gold_transaction_ledger(gl_uuid);
+CREATE INDEX IF NOT EXISTS idx_ledger_tenant_date ON gold_transaction_ledger(gl_tenant_id, gl_created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ledger_user_passbook ON gold_transaction_ledger(gl_user_id, gl_created_at DESC);
 
 -- 1. Singleton State Table: Tracks the live accumulated unhedged exposure
 CREATE TABLE master_hedging_state (
@@ -251,7 +254,7 @@ CREATE TYPE hedge_order_status_enum AS ENUM ('PENDING', 'FILLED', 'FAILED', 'REJ
 
 CREATE TABLE master_hedging_orders (
     mho_id BIGSERIAL PRIMARY KEY,
-    mho_external_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    mho_external_id UUID UNIQUE NOT NULL DEFAULT uuidv7(),
     
     mho_lot_weight_grams NUMERIC(12, 4) NOT NULL, -- Always multiples of 10.0000
     mho_lp_execution_rate NUMERIC(12, 2),          -- Rate confirmed by LP
@@ -265,4 +268,4 @@ CREATE TABLE master_hedging_orders (
     mho_completed_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_hedging_orders_status ON master_hedging_orders(mho_status, mho_created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hedging_orders_status ON master_hedging_orders(mho_status, mho_created_at DESC);
