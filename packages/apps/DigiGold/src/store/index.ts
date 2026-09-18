@@ -1,12 +1,12 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import { tenantReducer } from './tenant/tenant.slice';
 import { sessionReducer } from './session/session.slice';
+import { marketReducer } from './market/market.slice';
 
-// market reducer gets added here when the market feature is built — not invented ahead
-// of need.
 const rootReducer = combineReducers({
   tenant: tenantReducer,
   session: sessionReducer,
+  market: marketReducer,
 });
 
 export type RootState = ReturnType<typeof rootReducer>;
