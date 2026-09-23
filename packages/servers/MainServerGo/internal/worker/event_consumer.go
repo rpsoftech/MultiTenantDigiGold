@@ -16,6 +16,7 @@ type EventConsumer struct {
 	EventRepo           *repository.EventRepository
 	TenantRepo          *repository.TenantRepository
 	ConfigRepo          *repository.TenantConfigRepository
+	HedgingRepo         *repository.HedgingRepository
 	DefaultTenantConfig *models.TenantInternalConfig
 	DefaultTenant       *models.Tenant
 }
@@ -23,10 +24,11 @@ type EventConsumer struct {
 // StartEventConsumer should be called in a goroutine from your main.go
 func StartEventConsumer(ctx context.Context) {
 	consumer := &EventConsumer{
-		Redis:      redis_client.InitRedisClient(),
-		EventRepo:  repository.GetEventRepository(),
-		TenantRepo: repository.GetTenantRepository(),
-		ConfigRepo: repository.GetTenantConfigRepository(),
+		Redis:       redis_client.InitRedisClient(),
+		EventRepo:   repository.GetEventRepository(),
+		TenantRepo:  repository.GetTenantRepository(),
+		ConfigRepo:  repository.GetTenantConfigRepository(),
+		HedgingRepo: repository.InitHedgingRepo(),
 	}
 
 	// 1. SAFE BOOTSTRAPPING: Prevent Nil Pointer Dereference
@@ -83,8 +85,8 @@ func (c *EventConsumer) routeEvent(ctx context.Context, payloadStr string) {
 	switch baseEvent.EventName {
 	case events.OTPReqEvent: // Ensure events.OTPReqEvent strictly equals "OTPReqEvent"
 		processErr = c.processWhatsAppOTP(ctx, baseEvent)
-	// case events.TenantCreatedEvent:
-	// processErr = c.processTenantCreated(ctx, baseEvent)
+	case events.TradeEventGoldPurchase:
+		processErr = c.processTradeGoldPurchase(ctx, baseEvent)
 	default:
 		log.Printf("⚠️ Unhandled event type dropped: %s\n", baseEvent.EventName)
 		return

@@ -35,11 +35,11 @@ var (
 	kvToken         = os.Getenv("KV_TOKEN")
 
 	targets = []BuildTarget{
-		{"linux", "amd64"},   // Standard Linux Servers
-		{"linux", "arm64"},   // AWS Graviton
-		{"darwin", "amd64"},  // Older Intel Macs
-		{"darwin", "arm64"},  // Apple Silicon (M1/M2/M3) Macs
-		{"windows", "amd64"}, // Standard Windows 64-bit
+		{"linux", "amd64"}, // Standard Linux Servers
+		// {"linux", "arm64"},   // AWS Graviton
+		// {"darwin", "amd64"},  // Older Intel Macs
+		// {"darwin", "arm64"},  // Apple Silicon (M1/M2/M3) Macs
+		// {"windows", "amd64"}, // Standard Windows 64-bit
 	}
 
 	components = map[string]string{

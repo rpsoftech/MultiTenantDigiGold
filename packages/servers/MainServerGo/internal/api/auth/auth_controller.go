@@ -36,9 +36,10 @@ type (
 		RegistrationToken string `json:"registration_token,omitempty"`
 	}
 	RegisterPayload struct {
-		RegistrationToken string  `json:"registration_token" validate:"required"`
-		FullName          string  `json:"full_name" validate:"required"`
-		EmailID           *string `json:"email_id"`
+		RegistrationToken string `json:"registration_token" validate:"required"`
+		FullName          string `json:"full_name" validate:"required"`
+		Location          string `json:"location" validate:"required"`
+		EmailID           string `json:"email_id"`
 	}
 )
 

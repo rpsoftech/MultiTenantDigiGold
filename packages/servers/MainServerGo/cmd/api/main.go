@@ -10,11 +10,16 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
+	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
+	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
+	otel_setup "github.com/rpsoftech/DigiGold/MainServerGo/utility/otel"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/updater"
@@ -30,6 +35,18 @@ func main() {
 	// 1. Move the termination channel to the top so our background workers can trigger a restart
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	tp, err := otel_setup.InitTracer(ctx, "digigold-api")
+	if err != nil {
+		log.Printf("⚠️ OpenTelemetry failed to initialize: %v (Proceeding without tracing)\n", err)
+	} else {
+		defer func() {
+			if err := tp.Shutdown(context.Background()); err != nil {
+				log.Printf("Error shutting down tracer provider: %v", err)
+			}
+		}()
+	}
+
 	// 2. The 5-Minute OTA Updater Daemon
 	// 2. The 5-Minute OTA Updater Daemon
 	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION || env.Env.APP_ENV == env.APP_ENV_STAGING {
@@ -89,10 +106,33 @@ func main() {
 		WriteTimeout: 0, // Set to 0 for persistent SSE streaming connections!
 		AppName:      "Digi Gold API v1",
 		ErrorHandler: middleware.GlobalErrorHandler, // Centralized Error Handling
+		TrustProxy:   true,
+		ProxyHeader:  fiber.HeaderXForwardedFor,
+		TrustProxyConfig: fiber.TrustProxyConfig{
+			Loopback: true, // True if Nginx is on 127.0.0.1
+		},
 	})
 
+	// Add OpenTelemetry Tracing Middleware
+	app.Use(middleware.OtelInterceptor)
+
+	app.Use(logger.New(logger.Config{
+		// Define your exact output log format using Fiber v3 tags
+		Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
+		// X-Real-IP
+		// Optional: Customize the time format
+		TimeFormat: "2006-01-02 15:04:05",
+		// Optional: Define a timezone
+		TimeZone: "Local",
+	}))
 	// 5. Initialize Controllers
 	authController := auth_controllers.NewAuthController()
+
+	// 5b. Setup Swagger API Docs in Non-Production
+	if string(env.Env.APP_ENV) == "DEVELOPMENT" || string(env.Env.APP_ENV) == "LOCAL" || string(env.Env.APP_ENV) == "STAGING" {
+		setupSwagger(app)
+		log.Println("📚 Swagger UI is available at /docs")
+	}
 
 	// 6. Setup Route Groups & Apply Tenancy Middleware
 	api := app.Group("/api/v1")
@@ -104,7 +144,42 @@ func main() {
 	rateController := rates_api.NewRateController(rateHub)
 	ratesGroup := api.Group("/rates")
 	rateController.RegisterRoutes(ratesGroup)
-	// 7. Start the Server in a Goroutine
+
+	// Admin Routes
+	// Note: auth/* is public (login, totp/setup, totp/verify — no JWT required)
+	//       tenants/* is guarded inside RegisterRoutes via TenantInterceptor + AdminJWTMiddleware + RequireRole
+	adminGroup := api.Group("/admin")
+	adminAuthController := admin_controllers.NewAdminAuthController()
+	adminAuthController.RegisterRoutes(adminGroup)
+
+	adminTenantController := admin_controllers.NewAdminTenantController()
+	adminTenantController.RegisterRoutes(adminGroup)
+
+	adminUserController := admin_controllers.NewAdminUserController()
+	adminUserController.RegisterRoutes(adminGroup)
+
+	adminEventsController := admin_controllers.NewAdminEventsController()
+	adminEventsController.RegisterRoutes(adminGroup)
+
+	adminStoreController := admin_controllers.NewAdminStoreController()
+	adminStoreController.RegisterRoutes(adminGroup)
+
+	// Customer Routes
+	customerTradeGroup := api.Group("/", middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
+	customerTradeController := trade_api.NewCustomerTradeController(rateHub)
+	customerTradeController.RegisterRoutes(customerTradeGroup)
+
+	// Webhooks (Public)
+	webhookController := trade_api.NewWebhookController()
+	webhookController.RegisterRoutes(api)
+
+	// 7. Start Background Workers
+	log.Println("🚀 Starting background event consumer, outbox recovery, and hedging cron...")
+	go workers.StartEventConsumer(ctx)
+	go workers.StartOutboxRecoveryCron(ctx)
+	go workers.StartHedgingCron(ctx)
+
+	// 8. Start the Server in a Goroutine
 	go func() {
 		port := env.GetServerPort(env.PORT_KEY)
 		log.Println("✅ Fiber Server listening on port", port)

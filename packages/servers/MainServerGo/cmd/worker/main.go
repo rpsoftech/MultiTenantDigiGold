@@ -19,6 +19,7 @@ import (
 var version string = "0" // Injected by deploy script
 
 func main() {
+	log.SetOutput(os.Stdout)
 	env.LoadEnv(env.ENV_FILE_NAME)
 	log.Println("🚀 Booting Digi Gold Background Worker Microservice...")
 

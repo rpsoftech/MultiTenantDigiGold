@@ -35,3 +35,45 @@ func CreateNewTenantConfigUpdated(entity *models.TenantInternalConfig, adminId s
 	event.Add()
 	return event.BaseEvent
 }
+
+func CreateNewMarginUpdated(entity *models.MarginConfig, adminId string, tenantUUID string) *BaseEvent {
+	event := &tenantConfigEvent{
+		BaseEvent: &BaseEvent{
+			KeyId:     entity.UUID,
+			TenantId:  tenantUUID,
+			AdminId:   adminId,
+			Payload:   entity,
+			EventName: "MARGIN_UPDATED",
+		},
+	}
+	event.Add()
+	return event.BaseEvent
+}
+
+func CreateNewKYCDocUploaded(entity *models.TenantKYCDocument, adminId string, tenantUUID string) *BaseEvent {
+	event := &tenantConfigEvent{
+		BaseEvent: &BaseEvent{
+			KeyId:     entity.UUID,
+			TenantId:  tenantUUID,
+			AdminId:   adminId,
+			Payload:   entity,
+			EventName: "KYC_DOC_UPLOADED",
+		},
+	}
+	event.Add()
+	return event.BaseEvent
+}
+
+func CreateNewKYCDocVerified(entity *models.TenantKYCDocument, adminId string, tenantUUID string) *BaseEvent {
+	event := &tenantConfigEvent{
+		BaseEvent: &BaseEvent{
+			KeyId:     entity.UUID,
+			TenantId:  tenantUUID,
+			AdminId:   adminId,
+			Payload:   entity,
+			EventName: "KYC_DOC_VERIFIED",
+		},
+	}
+	event.Add()
+	return event.BaseEvent
+}

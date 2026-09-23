@@ -24,7 +24,7 @@ func (rc *RateController) RegisterRoutes(router fiber.Router) {
 
 func (rc *RateController) LastRate(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"latest_rate": rc.Hub.GetInitialRate(c.Context()), // Use the safe getter
+		"latest_rate": rc.Hub.GetInitialRate(c.Context(), false), // Use the safe getter
 	})
 }
 
@@ -35,7 +35,7 @@ func (rc *RateController) StreamRates(c fiber.Ctx) error {
 	c.Set("Access-Control-Allow-Origin", "*")
 	clientChan := make(chan string, 10)
 	rc.Hub.Register(clientChan)
-	initialRate := rc.Hub.GetInitialRate(c.Context())
+	initialRate := rc.Hub.GetInitialRate(c.Context(), true)
 	if initialRate != "" {
 		clientChan <- initialRate
 	}
