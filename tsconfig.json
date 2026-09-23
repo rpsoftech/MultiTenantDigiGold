@@ -11,6 +11,12 @@
     },
     {
       "path": "./packages/servers/MainServer"
+    },
+    {
+      "path": "./packages/apps/consumer-app"
+    },
+    {
+      "path": "./packages/apps/admin-app"
     }
   ],
   "compilerOptions": {

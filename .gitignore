@@ -56,3 +56,5 @@ test-output
 
 # Local env files
 .env.local
+
+.angular
