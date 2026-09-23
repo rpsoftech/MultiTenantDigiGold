@@ -1,5 +1,6 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { AuthService } from '@dg/services';
 
 @Component({
   selector: 'dg-header-1',
@@ -48,33 +49,28 @@ import { CommonModule } from '@angular/common';
 
           <!-- User Actions -->
           <div class="flex items-center space-x-4">
-            <button class="text-gray-500 hover:text-gray-900 p-2 relative">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+            @if (auth.state().isAuthenticated) {
+              <div class="flex items-center gap-3">
+                <span class="text-sm font-bold text-slate-700 hidden sm:block">
+                  Hi,
+                  {{ auth.state().user?.fullName || auth.state().user?.phone }}
+                </span>
+                <button
+                  (click)="auth.logout()"
+                  class="text-xs font-bold text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-full transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
+            } @else {
+              <button
+                (click)="auth.isLoginModalOpen.set(true)"
+                class="hidden md:inline-flex items-center justify-center px-6 py-2.5 border border-transparent text-sm font-bold rounded-full text-white shadow-md transition-all hover:shadow-lg transform hover:-translate-y-0.5"
+                [ngStyle]="{ 'background-color': primaryColor }"
               >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                />
-              </svg>
-              <!-- Notification Dot -->
-              <span
-                class="absolute top-1.5 right-1.5 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"
-              ></span>
-            </button>
-
-            <button
-              class="hidden md:inline-flex items-center justify-center px-6 py-2.5 border border-transparent text-sm font-bold rounded-full text-white shadow-md transition-all hover:shadow-lg transform hover:-translate-y-0.5"
-              [ngStyle]="{ 'background-color': primaryColor }"
-            >
-              Login
-            </button>
+                Login
+              </button>
+            }
 
             <!-- Mobile menu button -->
             <button class="md:hidden text-gray-500 p-2">
@@ -100,7 +96,9 @@ import { CommonModule } from '@angular/common';
   `,
 })
 export class Header1Component {
+  public auth = inject(AuthService);
+
   @Input() brandName: string = 'DIGIGOLD';
   @Input() logoUrl?: string;
-  @Input() primaryColor: string = '#d97706'; // Default Amber-600
+  @Input() primaryColor: string = '#d97706';
 }
