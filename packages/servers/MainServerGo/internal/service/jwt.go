@@ -255,3 +255,24 @@ func (s *JWTService) ValidateAdminToken(tokenStr string) (*AdminClaims, error) {
 	}
 	return claims, nil
 }
+
+// ValidateAdminRefreshToken validates a refresh token issued by GenerateAdminTokens and returns AdminClaims.
+func (s *JWTService) ValidateAdminRefreshToken(tokenStr string) (*AdminClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, interfaces.ErrInvalidToken
+		}
+		return s.refreshKey, nil
+	})
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, interfaces.ErrTokenExpired
+		}
+		return nil, interfaces.ErrInvalidToken
+	}
+	claims, ok := token.Claims.(*AdminClaims)
+	if !ok || !token.Valid {
+		return nil, interfaces.ErrInvalidToken
+	}
+	return claims, nil
+}

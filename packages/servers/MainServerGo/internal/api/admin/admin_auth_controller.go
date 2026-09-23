@@ -23,6 +23,7 @@ func (c *AdminAuthController) RegisterRoutes(router fiber.Router) {
 	authGroup.Post("/login", c.Login)
 	authGroup.Post("/totp/setup", c.TOTPSetup)
 	authGroup.Post("/totp/verify", c.TOTPVerify)
+	authGroup.Post("/refresh", c.Refresh)
 }
 
 type AdminLoginRequest struct {
@@ -81,12 +82,34 @@ func (c *AdminAuthController) TOTPVerify(ctx fiber.Ctx) error {
 	}
 
 	clientIP := ctx.IP()
-	accessToken, err := c.adminAuthService.VerifyTOTP(ctx.Context(), req.TempToken, req.Code, clientIP)
+	accessToken, refreshToken, err := c.adminAuthService.VerifyTOTP(ctx.Context(), req.TempToken, req.Code, clientIP)
 	if err != nil {
 		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return ctx.JSON(fiber.Map{
-		"access_token": accessToken,
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+	})
+}
+
+type AdminRefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (c *AdminAuthController) Refresh(ctx fiber.Ctx) error {
+	var req AdminRefreshRequest
+	if err := ctx.Bind().Body(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	accessToken, refreshToken, err := c.adminAuthService.RefreshAdminTokens(ctx.Context(), req.RefreshToken)
+	if err != nil {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return ctx.JSON(fiber.Map{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
 	})
 }

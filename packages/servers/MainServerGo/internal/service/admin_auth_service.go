@@ -145,31 +145,31 @@ func (s *AdminAuthService) SetupTOTP(ctx context.Context, tempToken string) (str
 }
 
 // 3. Verify TOTP (Validates code, issues final JWTs)
-func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip string) (string, error) {
+func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip string) (string, string, error) {
 	payload, err := s.verifyTempToken(ctx, tempToken)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	admin, err := s.AdminRepo.GetFullAdminByUUID(ctx, payload.TenantID, payload.AdminID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	if admin.TOTPSecret == "" {
-		return "", fmt.Errorf("TOTP secret not found, please call setup first")
+		return "", "", fmt.Errorf("TOTP secret not found, please call setup first")
 	}
 
 	// Validate TOTP Code
 	valid := totp.Validate(code, admin.TOTPSecret)
 	if !valid {
-		return "", fmt.Errorf("invalid TOTP code")
+		return "", "", fmt.Errorf("invalid TOTP code")
 	}
 
 	// Begin TX for event sourcing
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to begin transaction: %w", err)
+		return "", "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -177,7 +177,7 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 		admin.IsTOTPEnabled = true
 		err = s.AdminRepo.UpdateFullAdminWithTx(ctx, tx, admin)
 		if err != nil {
-			return "", fmt.Errorf("failed to update admin TOTP status: %w", err)
+			return "", "", fmt.Errorf("failed to update admin TOTP status: %w", err)
 		}
 	}
 
@@ -186,27 +186,48 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 	loginEvent := events.GenerateAdminLoggedInEvent(tenantIdStr, admin.UUID, admin.Role, ip)
 	err = s.EventRepo.SaveEventWithTx(ctx, tx, &loginEvent.BaseEvent)
 	if err != nil {
-		return "", fmt.Errorf("failed to save login event: %w", err)
+		return "", "", fmt.Errorf("failed to save login event: %w", err)
 	}
 
 	err = tx.Commit()
 	if err != nil {
-		return "", fmt.Errorf("failed to commit transaction: %w", err)
+		return "", "", fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	// Issue final JWTs
 	accessToken, refreshToken, err := GetJWTService().GenerateAdminTokens(admin.UUID, admin.Role, admin.TenantID)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate access token: %w", err)
+		return "", "", fmt.Errorf("failed to generate access token: %w", err)
 	}
 
 	// Invalidate Temp Token
 	cacheKey := fmt.Sprintf("auth:temp_token:%s", tempToken)
 	_ = s.Redis.RemoveKey(context.Background(), cacheKey)
 
-	// Since we need to return both or just access token, I'll update the signature later if needed, but for now just return accessToken.
-	_ = refreshToken
-	return accessToken, nil
+	return accessToken, refreshToken, nil
+}
+
+func (s *AdminAuthService) RefreshAdminTokens(ctx context.Context, refreshToken string) (string, string, error) {
+	claims, err := GetJWTService().ValidateAdminRefreshToken(refreshToken)
+	if err != nil {
+		return "", "", err
+	}
+
+	admin, err := s.AdminRepo.GetFullAdminByUUID(ctx, claims.TenantID, claims.AdminUUID)
+	if err != nil {
+		return "", "", err
+	}
+
+	if !admin.IsActive {
+		return "", "", fmt.Errorf("admin user is deactivated")
+	}
+
+	newAccessToken, newRefreshToken, err := GetJWTService().GenerateAdminTokens(admin.UUID, admin.Role, admin.TenantID)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate access tokens: %w", err)
+	}
+
+	return newAccessToken, newRefreshToken, nil
 }
 
 func (s *AdminAuthService) verifyTempToken(ctx context.Context, tempToken string) (*TempTokenPayload, error) {
