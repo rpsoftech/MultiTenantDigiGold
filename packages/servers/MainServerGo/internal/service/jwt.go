@@ -234,3 +234,24 @@ func (s *JWTService) ValidateRegistrationToken(tokenStr string) (string, string,
 
 	return claims.Phone, claims.TenantUUID, nil
 }
+
+// ValidateAdminToken validates a JWT issued by GenerateAdminTokens and returns AdminClaims.
+func (s *JWTService) ValidateAdminToken(tokenStr string) (*AdminClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, interfaces.ErrInvalidToken
+		}
+		return s.accessKey, nil
+	})
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, interfaces.ErrTokenExpired
+		}
+		return nil, interfaces.ErrInvalidToken
+	}
+	claims, ok := token.Claims.(*AdminClaims)
+	if !ok || !token.Valid {
+		return nil, interfaces.ErrInvalidToken
+	}
+	return claims, nil
+}

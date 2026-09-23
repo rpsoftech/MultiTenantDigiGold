@@ -7,9 +7,10 @@ out-tsc
 install-state.gz
 build
 __debug_*
+api
+
 # dependencies
 node_modules
-
 docs/
 
 # IDEs and editors

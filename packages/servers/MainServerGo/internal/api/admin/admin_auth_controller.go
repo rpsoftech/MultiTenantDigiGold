@@ -2,6 +2,7 @@ package admin
 
 import (
 	"github.com/gofiber/fiber/v3"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/service"
 )
 
@@ -16,14 +17,15 @@ func NewAdminAuthController() *AdminAuthController {
 }
 
 func (c *AdminAuthController) RegisterRoutes(router fiber.Router) {
-	authGroup := router.Group("/auth")
+	// TenantInterceptor resolves X-Tenant-ID UUID → int64 for all auth routes.
+	// No JWT required here — this IS the login flow.
+	authGroup := router.Group("/auth", middleware.TenantInterceptor)
 	authGroup.Post("/login", c.Login)
 	authGroup.Post("/totp/setup", c.TOTPSetup)
 	authGroup.Post("/totp/verify", c.TOTPVerify)
 }
 
 type AdminLoginRequest struct {
-	TenantID int64  `json:"tenant_id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
@@ -34,11 +36,8 @@ func (c *AdminAuthController) Login(ctx fiber.Ctx) error {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	// Assuming Tier 1 (Master) Tenant ID is 1 if not provided, or frontend provides it.
-	tenantID := req.TenantID
-	// if tenantID == 0 {
-	// 	tenantID = 1 // default to Master Tenant
-	// }
+	// Tenant resolved from X-Tenant-ID header by TenantInterceptor — never from JSON body.
+	tenantID := middleware.GetTenantIntID(ctx)
 
 	tempToken, err := c.adminAuthService.AdminLogin(ctx.Context(), tenantID, req.Username, req.Password)
 	if err != nil {

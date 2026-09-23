@@ -122,6 +122,8 @@ func main() {
 	rateController.RegisterRoutes(ratesGroup)
 
 	// Admin Routes
+	// Note: auth/* is public (login, totp/setup, totp/verify — no JWT required)
+	//       tenants/* is guarded inside RegisterRoutes via TenantInterceptor + AdminJWTMiddleware + RequireRole
 	adminGroup := api.Group("/admin")
 	adminAuthController := admin_controllers.NewAdminAuthController()
 	adminAuthController.RegisterRoutes(adminGroup)

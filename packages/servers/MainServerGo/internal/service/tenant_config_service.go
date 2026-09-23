@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
@@ -118,6 +119,11 @@ func (s *TenantConfigService) updateTenantConfigTx(ctx context.Context, tx *sql.
 }
 
 func (s *TenantConfigService) UpdateTenantConfig(ctx context.Context, newConfig *models.TenantInternalConfig, adminUUID string, tenantUUID string) error {
+	tenantIntID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil || tenantIntID == 0 {
+		return fmt.Errorf("invalid tenant UUID: %w", err)
+	}
+	newConfig.TenantID = tenantIntID
 
 	// 1. Initiate the ACID Transaction using the active HTTP context
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
@@ -158,6 +164,12 @@ func (s *TenantConfigService) UpdateTenantProfile(ctx context.Context, tenant *m
 
 // Stage 4: Margin Patch
 func (s *TenantConfigService) UpdateTenantMargins(ctx context.Context, margin *models.MarginConfig, adminUUID string, tenantUUID string) error {
+	tenantIntID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil || tenantIntID == 0 {
+		return fmt.Errorf("invalid tenant UUID: %w", err)
+	}
+	margin.TenantID = tenantIntID
+
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -208,6 +220,12 @@ func (s *TenantConfigService) UpdateTenantStatus(ctx context.Context, tenant *mo
 
 // Stage 5: KYC Add
 func (s *TenantConfigService) UpdateTenantKYCAdd(ctx context.Context, kycDoc *models.TenantKYCDocument, adminUUID string, tenantUUID string) error {
+	tenantIntID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil || tenantIntID == 0 {
+		return fmt.Errorf("invalid tenant UUID: %w", err)
+	}
+	kycDoc.TenantID = tenantIntID
+
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -229,6 +247,12 @@ func (s *TenantConfigService) UpdateTenantKYCAdd(ctx context.Context, kycDoc *mo
 
 // Stage 6: KYC Verify
 func (s *TenantConfigService) UpdateTenantKYCVerify(ctx context.Context, kycDoc *models.TenantKYCDocument, adminUUID string, tenantUUID string) error {
+	tenantIntID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil || tenantIntID == 0 {
+		return fmt.Errorf("invalid tenant UUID: %w", err)
+	}
+	kycDoc.TenantID = tenantIntID
+
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

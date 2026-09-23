@@ -2,6 +2,7 @@ package admin
 
 import (
 	"github.com/gofiber/fiber/v3"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/service"
 )
@@ -17,7 +18,16 @@ func NewAdminTenantController() *AdminTenantController {
 }
 
 func (c *AdminTenantController) RegisterRoutes(router fiber.Router) {
-	tenantsGroup := router.Group("/tenants")
+	// All tenant management routes:
+	//   - TenantInterceptor   → reads X-Tenant-ID header, resolves UUID→int64, injects into Locals
+	//   - AdminJWTMiddleware  → validates AdminClaims JWT, injects admin_uuid/role/tenant_id into Locals
+	// Only super_admin may manage tenants.
+	am := middleware.GetAdminAuthMiddleware()
+	tenantsGroup := router.Group("/tenants",
+		middleware.TenantInterceptor,
+		am.Intercept,
+		middleware.RequireRole("super_admin"),
+	)
 
 	// Stage 1: Stub
 	tenantsGroup.Post("/stub", c.CreateStub)
@@ -41,35 +51,36 @@ func (c *AdminTenantController) RegisterRoutes(router fiber.Router) {
 	tenantsGroup.Patch("/:uuid/status", c.UpdateStatus)
 }
 
-func getAdminUUID(ctx fiber.Ctx) string {
-	uuid, ok := ctx.Locals("admin_uuid").(string)
-	if !ok || uuid == "" {
-		// Fallback for testing, in production this should strictly come from JWT
-		uuid = "SYSTEM_ADMIN"
-	}
-	return uuid
-}
-
 type CreateStubRequest struct {
 	Tenant    models.Tenant          `json:"tenant"`
 	AdminUser models.TenantUserLogin `json:"admin_user"`
 }
 
+// CreateStub — Stage 1
+// X-Tenant-ID header is the MASTER tenant UUID (Tier-1), which the TenantInterceptor
+// resolves to an int64. The new sub-tenant being created lives entirely in req.Tenant.
 func (c *AdminTenantController) CreateStub(ctx fiber.Ctx) error {
 	var req CreateStubRequest
 	if err := ctx.Bind().Body(&req); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	adminUUID := getAdminUUID(ctx)
+	adminUUID := middleware.GetAdminUUID(ctx)
 
 	if err := c.tenantConfigService.CreateTenant(ctx.Context(), &req.Tenant, &req.AdminUser, adminUUID); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
-	return ctx.JSON(fiber.Map{"status": "success", "tenant_uuid": req.Tenant.UUID})
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"status":      "success",
+		"tenant_uuid": req.Tenant.UUID,
+	})
 }
 
+// UpdateProfile — Stage 2
+// :uuid in the path is the TARGET tenant's UUID.
+// TenantInterceptor resolves the master tenant from X-Tenant-ID; the path param
+// is passed directly to the service which does its own UUID-based UPDATE.
 func (c *AdminTenantController) UpdateProfile(ctx fiber.Ctx) error {
 	var tenant models.Tenant
 	if err := ctx.Bind().Body(&tenant); err != nil {
@@ -77,15 +88,16 @@ func (c *AdminTenantController) UpdateProfile(ctx fiber.Ctx) error {
 	}
 
 	tenant.UUID = ctx.Params("uuid")
-	adminUUID := getAdminUUID(ctx)
+	adminUUID := middleware.GetAdminUUID(ctx)
 
 	if err := c.tenantConfigService.UpdateTenantProfile(ctx.Context(), &tenant, adminUUID); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{"status": "success"})
 }
 
+// UpdateConfig — Stage 3
 func (c *AdminTenantController) UpdateConfig(ctx fiber.Ctx) error {
 	var config models.TenantInternalConfig
 	if err := ctx.Bind().Body(&config); err != nil {
@@ -93,15 +105,18 @@ func (c *AdminTenantController) UpdateConfig(ctx fiber.Ctx) error {
 	}
 
 	tenantUUID := ctx.Params("uuid")
-	adminUUID := getAdminUUID(ctx)
+	adminUUID := middleware.GetAdminUUID(ctx)
 
 	if err := c.tenantConfigService.UpdateTenantConfig(ctx.Context(), &config, adminUUID, tenantUUID); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{"status": "success"})
 }
 
+// UpdateMargins — Stage 4
+// MarginRepo uses tenant_id (int64) internally for the SELECT FOR UPDATE.
+// We resolve UUID → int64 via TenantInterceptor using the path param UUID.
 func (c *AdminTenantController) UpdateMargins(ctx fiber.Ctx) error {
 	var margin models.MarginConfig
 	if err := ctx.Bind().Body(&margin); err != nil {
@@ -109,15 +124,16 @@ func (c *AdminTenantController) UpdateMargins(ctx fiber.Ctx) error {
 	}
 
 	tenantUUID := ctx.Params("uuid")
-	adminUUID := getAdminUUID(ctx)
+	adminUUID := middleware.GetAdminUUID(ctx)
 
 	if err := c.tenantConfigService.UpdateTenantMargins(ctx.Context(), &margin, adminUUID, tenantUUID); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{"status": "success"})
 }
 
+// AddKYC — Stage 5
 func (c *AdminTenantController) AddKYC(ctx fiber.Ctx) error {
 	var kycDoc models.TenantKYCDocument
 	if err := ctx.Bind().Body(&kycDoc); err != nil {
@@ -125,15 +141,19 @@ func (c *AdminTenantController) AddKYC(ctx fiber.Ctx) error {
 	}
 
 	tenantUUID := ctx.Params("uuid")
-	adminUUID := getAdminUUID(ctx)
+	adminUUID := middleware.GetAdminUUID(ctx)
 
 	if err := c.tenantConfigService.UpdateTenantKYCAdd(ctx.Context(), &kycDoc, adminUUID, tenantUUID); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
-	return ctx.JSON(fiber.Map{"status": "success", "tkd_uuid": kycDoc.UUID})
+	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"status":   "success",
+		"tkd_uuid": kycDoc.UUID,
+	})
 }
 
+// VerifyKYC — Stage 6
 func (c *AdminTenantController) VerifyKYC(ctx fiber.Ctx) error {
 	var kycDoc models.TenantKYCDocument
 	if err := ctx.Bind().Body(&kycDoc); err != nil {
@@ -141,16 +161,17 @@ func (c *AdminTenantController) VerifyKYC(ctx fiber.Ctx) error {
 	}
 
 	tenantUUID := ctx.Params("uuid")
-	adminUUID := getAdminUUID(ctx)
+	adminUUID := middleware.GetAdminUUID(ctx)
 	kycDoc.VerifiedBy = adminUUID
 
 	if err := c.tenantConfigService.UpdateTenantKYCVerify(ctx.Context(), &kycDoc, adminUUID, tenantUUID); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{"status": "success"})
 }
 
+// UpdateStatus — Stage 7
 func (c *AdminTenantController) UpdateStatus(ctx fiber.Ctx) error {
 	var tenant models.Tenant
 	if err := ctx.Bind().Body(&tenant); err != nil {
@@ -158,10 +179,10 @@ func (c *AdminTenantController) UpdateStatus(ctx fiber.Ctx) error {
 	}
 
 	tenant.UUID = ctx.Params("uuid")
-	adminUUID := getAdminUUID(ctx)
+	adminUUID := middleware.GetAdminUUID(ctx)
 
 	if err := c.tenantConfigService.UpdateTenantStatus(ctx.Context(), &tenant, adminUUID); err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{"status": "success"})
