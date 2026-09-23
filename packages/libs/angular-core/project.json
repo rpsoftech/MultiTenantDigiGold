@@ -4,18 +4,5 @@
   "sourceRoot": "packages/libs/angular-core/src",
   "projectType": "library",
   "tags": [],
-  "targets": {
-    "build": {
-      "executor": "@nx/esbuild:esbuild",
-      "outputs": ["{options.outputPath}"],
-      "options": {
-        "outputPath": "dist/packages/libs/angular-core",
-        "main": "packages/libs/angular-core/src/index.ts",
-        "tsConfig": "packages/libs/angular-core/tsconfig.lib.json",
-        "assets": [],
-        "format": ["cjs"],
-        "generatePackageJson": true
-      }
-    }
-  }
+  "targets": {}
 }

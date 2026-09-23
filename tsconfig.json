@@ -17,6 +17,15 @@
     },
     {
       "path": "./packages/apps/admin-app"
+    },
+    {
+      "path": "./packages/libs/shared-services"
+    },
+    {
+      "path": "./packages/libs/angular-core"
+    },
+    {
+      "path": "./packages/libs/shared-ui"
     }
   ],
   "compilerOptions": {

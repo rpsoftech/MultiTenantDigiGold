@@ -4,18 +4,5 @@
   "sourceRoot": "packages/libs/shared-services/src",
   "projectType": "library",
   "tags": [],
-  "targets": {
-    "build": {
-      "executor": "@nx/esbuild:esbuild",
-      "outputs": ["{options.outputPath}"],
-      "options": {
-        "outputPath": "dist/packages/libs/shared-services",
-        "main": "packages/libs/shared-services/src/index.ts",
-        "tsConfig": "packages/libs/shared-services/tsconfig.lib.json",
-        "assets": [],
-        "format": ["cjs"],
-        "generatePackageJson": true
-      }
-    }
-  }
+  "targets": {}
 }
