@@ -3,6 +3,7 @@ package interfaces
 type TradeExecutionRequest struct {
 	TenantID             int64   `json:"tenant_id"`
 	UserID               int64   `json:"user_id"`
+	Action               string  `json:"action"` // "BUY" or "SELL"
 	RequestedRatePerGram float64 `json:"requested_rate_per_gram"`
 	WeightGrams          float64 `json:"weight_grams"`
 	TotalAmountINR       float64 `json:"total_amount_inr"`

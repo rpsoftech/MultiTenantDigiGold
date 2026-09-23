@@ -252,3 +252,55 @@ func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, 
 
 	return u, nil
 }
+
+func (r *UserRepository) GetUsersByTenant(ctx context.Context, tenantID int64, limit int, offset int) ([]*models.User, error) {
+	query := fmt.Sprintf(`
+		SELECT 
+			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s
+		WHERE %s = $1
+		ORDER BY %s DESC
+		LIMIT $2 OFFSET $3
+	`, schema.ColUserUUID, schema.ColUserFullName, schema.ColUserPhoneNumber, schema.ColUserEmailID,
+		schema.ColUserKYCStatus, schema.ColUserStatusApprovedBy, schema.ColUserDocumentJSON,
+		schema.ColUserERPUniqueID, schema.ColUserVaultBalance, schema.ColUserCreatedAt,
+		schema.TableUsers, schema.ColUserTenantID, schema.ColUserCreatedAt)
+
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		var u models.User
+		var fullName, emailID, erpID sql.NullString
+		var approvedBy sql.NullInt64
+		var docJSON []byte
+
+		err := rows.Scan(
+			&u.UUID, &fullName, &u.PhoneNumber, &emailID,
+			&u.KYCStatus, &approvedBy, &docJSON, &erpID, &u.VaultBalance, &u.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user row: %w", err)
+		}
+		
+		if fullName.Valid {
+			u.FullName = &fullName.String
+		}
+		if emailID.Valid {
+			u.EmailID = &emailID.String
+		}
+		if approvedBy.Valid {
+			u.StatusApprovedBy = &approvedBy.Int64
+		}
+		if erpID.Valid {
+			u.ERPUniqueID = &erpID.String
+		}
+		u.DocumentJSON = docJSON
+		users = append(users, &u)
+	}
+	return users, nil
+}

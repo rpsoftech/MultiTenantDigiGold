@@ -16,6 +16,7 @@ import (
 	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
+	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
@@ -137,6 +138,14 @@ func main() {
 
 	adminEventsController := admin_controllers.NewAdminEventsController()
 	adminEventsController.RegisterRoutes(adminGroup)
+
+	adminStoreController := admin_controllers.NewAdminStoreController()
+	adminStoreController.RegisterRoutes(adminGroup)
+
+	// Customer Routes
+	customerTradeGroup := api.Group("/", middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
+	customerTradeController := trade_api.NewCustomerTradeController(rateHub)
+	customerTradeController.RegisterRoutes(customerTradeGroup)
 
 	// 7. Start Background Workers
 	log.Println("🚀 Starting background event consumer and outbox recovery...")

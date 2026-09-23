@@ -17,6 +17,7 @@
     "GLMCX",
     "GLUUID",
     "godotenv",
+    "gofmt",
     "jackc",
     "joho",
     "libpeerconnection",

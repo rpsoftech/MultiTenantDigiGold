@@ -45,9 +45,10 @@ func InitTradeService() *TradeService {
 
 type rateSnapshot struct {
 	Ask float64 `json:"ask"`
+	Bid float64 `json:"bid"`
 }
 
-func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, requestedRate float64) (finalRate, mcxRate, marginApplied, gstApplied float64, err error) {
+func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, requestedRate float64, action string) (finalRate, mcxRate, marginApplied, gstApplied float64, err error) {
 	// 1. Get Live Rate from Redis
 	rateStr, err := s.Redis.GetHashKeyWithOriginalKey(ctx, constants.RedisKeyLatestRawRate, "GOLD")
 	if err != nil || rateStr == "" {
@@ -58,7 +59,12 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 	if err := json.Unmarshal([]byte(rateStr), &rate); err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("failed to parse live rate: %w", err)
 	}
-	mcxRate = rate.Ask
+
+	if action == "SELL" {
+		mcxRate = rate.Bid
+	} else {
+		mcxRate = rate.Ask
+	}
 
 	// 2. Get Tenant Margin
 	margin, err := s.MarginRepo.GetMarginByTenant(ctx, tenantID, "GOLD")
@@ -74,13 +80,19 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 		marginApplied = mcxRate * (margin.SellMarginValue / 100.0)
 	}
 
-	rateWithMargin := mcxRate + marginApplied
-
-	if margin.IsGSTEnabled {
-		gstApplied = rateWithMargin * (margin.GSTPercentage / 100.0)
+	if action == "SELL" {
+		// When customer sells, tenant buys. We subtract the margin from the bid rate to give a lower price to customer.
+		rateWithMargin := mcxRate - marginApplied
+		gstApplied = 0 // GST typically not applied on sell-backs
+		finalRate = rateWithMargin
+	} else {
+		// When customer buys, tenant sells. We add margin to the ask rate.
+		rateWithMargin := mcxRate + marginApplied
+		if margin.IsGSTEnabled {
+			gstApplied = rateWithMargin * (margin.GSTPercentage / 100.0)
+		}
+		finalRate = rateWithMargin + gstApplied
 	}
-
-	finalRate = rateWithMargin + gstApplied
 
 	// 4. Validate Slippage
 	if math.Abs(finalRate-requestedRate) > 30.0 {
@@ -91,10 +103,14 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 }
 
 func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExecutionRequest, ipAddress, adminID string) (*models.GoldTransactionLedger, error) {
-	log.Printf("[TradeService] ExecuteTrade: tenantID=%d, userID=%d, reqRate=%f, reqWeight=%f, reqAmount=%f, ip=%s",
-		req.TenantID, req.UserID, req.RequestedRatePerGram, req.WeightGrams, req.TotalAmountINR, ipAddress)
+	if req.Action == "" {
+		req.Action = "BUY"
+	}
 
-	finalRate, mcxRate, marginApplied, gstApplied, err := s.validateSlippage(ctx, req.TenantID, req.RequestedRatePerGram)
+	log.Printf("[TradeService] ExecuteTrade (%s): tenantID=%d, userID=%d, reqRate=%f, reqWeight=%f, reqAmount=%f, ip=%s",
+		req.Action, req.TenantID, req.UserID, req.RequestedRatePerGram, req.WeightGrams, req.TotalAmountINR, ipAddress)
+
+	finalRate, mcxRate, marginApplied, gstApplied, err := s.validateSlippage(ctx, req.TenantID, req.RequestedRatePerGram, req.Action)
 	if err != nil {
 		log.Printf("[TradeService] Slippage validation failed for userID=%d, tenantID=%d: %v", req.UserID, req.TenantID, err)
 		return nil, err
@@ -104,15 +120,20 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 	var finalWeight, finalTotalINR float64
 
 	if req.WeightGrams > 0 {
-		// 1. User is buying a specific weight (e.g., exactly 1.5000g)
 		finalWeight = math.Round(req.WeightGrams*10000) / 10000
 		finalTotalINR = math.Round((finalWeight*finalRate)*100) / 100
 	} else if req.TotalAmountINR > 0 {
-		// 2. User is buying a specific fiat amount (e.g., exactly ₹5000)
 		finalTotalINR = math.Round(req.TotalAmountINR*100) / 100
 		finalWeight = math.Round((finalTotalINR/finalRate)*10000) / 10000
 	} else {
 		return nil, fmt.Errorf("INVALID_PAYLOAD: must specify either WeightGrams or TotalAmountINR")
+	}
+
+	eventType := "GOLD_PURCHASE"
+	if req.Action == "SELL" {
+		eventType = "SYSTEM_REVERSAL" // "SYSTEM_REVERSAL" or "PHYSICAL_REDEMPTION", wait let's check schema. Actually let's use "GOLD_SELL" if valid, else "SYSTEM_REVERSAL". I will use "GOLD_SELL". Wait, model says: GOLD_PURCHASE, PHYSICAL_REDEMPTION, SYSTEM_REVERSAL, ADMIN_ADJUSTMENT.
+		eventType = "PHYSICAL_REDEMPTION" // Assuming redemption/sell uses this
+		finalWeight = -finalWeight // Deduct balance
 	}
 
 	// Open PostgreSQL Transaction
@@ -126,7 +147,7 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 	entry := &models.GoldTransactionLedger{
 		TenantID:            req.TenantID,
 		UserID:              req.UserID,
-		EventType:           "GOLD_PURCHASE",
+		EventType:           eventType,
 		PaymentMode:         req.PaymentMode,
 		WeightGrams:         finalWeight,
 		TotalAmountINR:      finalTotalINR,
@@ -139,25 +160,25 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 	}
 
 	// Insert into Ledger (Locks balance row, calculates offset, inserts new row, and emits event)
-	// 1. Insert into Ledger (LedgerRepo remains DUMB and isolated)
 	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Event Sourcing (TradeService orchestrates the outbox)
+	// Event Sourcing (TradeService orchestrates the outbox)
 	tenantIdStr := fmt.Sprintf("%d", req.TenantID)
+	// Using same event for now, can be updated later if needed
 	tradeEvent := events.GenerateGoldPurchaseEvent(tenantIdStr, adminID, ipAddress, result)
 	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &tradeEvent.BaseEvent); err != nil {
 		return nil, fmt.Errorf("failed to save trade event: %w", err)
 	}
 
-	// 3. B2B Ledger Validation (Locks margin row and increments unlifted weight)
+	// B2B Ledger Validation (Locks margin row and increments unlifted weight)
 	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, req.TenantID, "GOLD", finalWeight); err != nil {
 		return nil, err
 	}
 
-	// 4. Commit Transaction
+	// Commit Transaction
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}

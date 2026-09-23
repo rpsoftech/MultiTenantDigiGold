@@ -138,3 +138,91 @@ func (r *GoldLedgerRepository) RecordTransactionWithTX(ctx context.Context, tx *
 
 	return entry, nil
 }
+
+func (r *GoldLedgerRepository) GetTransactionHistory(ctx context.Context, tenantID int64, userID int64, limit int, offset int) ([]*models.GoldTransactionLedger, error) {
+	query := fmt.Sprintf(`
+		SELECT 
+			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s 
+		WHERE %s = $1 AND %s = $2
+		ORDER BY %s DESC
+		LIMIT $3 OFFSET $4
+	`, schema.ColGLUUID, schema.ColGLEventType, schema.ColGLPaymentMode, schema.ColGLWeightGrams,
+		schema.ColGLTotalAmountINR, schema.ColGLRunningGoldBalanceGrams, schema.ColGLMCXBaseRate,
+		schema.ColGLTenantMarginApplied, schema.ColGLGSTApplied, schema.ColGLFinalRatePerGram,
+		schema.ColGLReferenceID, schema.ColGLMetadataJSON, schema.ColGLCreatedAt,
+		schema.TableGoldTransactionLedger, schema.ColGLTenantID, schema.ColGLUserID, schema.ColGLCreatedAt)
+
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction history: %w", err)
+	}
+	defer rows.Close()
+
+	var history []*models.GoldTransactionLedger
+	for rows.Next() {
+		var entry models.GoldTransactionLedger
+		var refID sql.NullString
+		var metaJSON []byte
+		err := rows.Scan(
+			&entry.UUID, &entry.EventType, &entry.PaymentMode, &entry.WeightGrams,
+			&entry.TotalAmountINR, &entry.RunningGoldBalanceGrams, &entry.MCXBaseRate,
+			&entry.TenantMarginApplied, &entry.GSTApplied, &entry.FinalRatePerGram,
+			&refID, &metaJSON, &entry.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan ledger row: %w", err)
+		}
+		if refID.Valid {
+			entry.ReferenceID = refID.String
+		}
+		entry.MetadataJSON = metaJSON
+		history = append(history, &entry)
+	}
+
+	return history, nil
+}
+
+func (r *GoldLedgerRepository) GetLedgerByTenant(ctx context.Context, tenantID int64, limit int, offset int) ([]*models.GoldTransactionLedger, error) {
+	query := fmt.Sprintf(`
+		SELECT 
+			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s 
+		WHERE %s = $1
+		ORDER BY %s DESC
+		LIMIT $2 OFFSET $3
+	`, schema.ColGLUUID, schema.ColGLEventType, schema.ColGLPaymentMode, schema.ColGLWeightGrams,
+		schema.ColGLTotalAmountINR, schema.ColGLRunningGoldBalanceGrams, schema.ColGLMCXBaseRate,
+		schema.ColGLTenantMarginApplied, schema.ColGLGSTApplied, schema.ColGLFinalRatePerGram,
+		schema.ColGLReferenceID, schema.ColGLMetadataJSON, schema.ColGLCreatedAt,
+		schema.TableGoldTransactionLedger, schema.ColGLTenantID, schema.ColGLCreatedAt)
+
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant ledger: %w", err)
+	}
+	defer rows.Close()
+
+	var history []*models.GoldTransactionLedger
+	for rows.Next() {
+		var entry models.GoldTransactionLedger
+		var refID sql.NullString
+		var metaJSON []byte
+		err := rows.Scan(
+			&entry.UUID, &entry.EventType, &entry.PaymentMode, &entry.WeightGrams,
+			&entry.TotalAmountINR, &entry.RunningGoldBalanceGrams, &entry.MCXBaseRate,
+			&entry.TenantMarginApplied, &entry.GSTApplied, &entry.FinalRatePerGram,
+			&refID, &metaJSON, &entry.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan ledger row: %w", err)
+		}
+		if refID.Valid {
+			entry.ReferenceID = refID.String
+		}
+		entry.MetadataJSON = metaJSON
+		history = append(history, &entry)
+	}
+
+	return history, nil
+}
