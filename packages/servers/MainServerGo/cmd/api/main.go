@@ -20,6 +20,7 @@ import (
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/updater"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
 )
 
 var version string = "0" // Injected by deploy script
@@ -137,7 +138,12 @@ func main() {
 	adminEventsController := admin_controllers.NewAdminEventsController()
 	adminEventsController.RegisterRoutes(adminGroup)
 
-	// 7. Start the Server in a Goroutine
+	// 7. Start Background Workers
+	log.Println("🚀 Starting background event consumer and outbox recovery...")
+	go workers.StartEventConsumer(ctx)
+	go workers.StartOutboxRecoveryCron(ctx)
+
+	// 8. Start the Server in a Goroutine
 	go func() {
 		port := env.GetServerPort(env.PORT_KEY)
 		log.Println("✅ Fiber Server listening on port", port)
