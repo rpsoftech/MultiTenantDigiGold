@@ -81,3 +81,39 @@ func (r *HedgingRepository) UpdateStateWithTX(ctx context.Context, tx *sql.Tx, u
 	}
 	return nil
 }
+
+func (r *HedgingRepository) CreateHedgingOrderWithTX(ctx context.Context, tx *sql.Tx, order *models.MasterHedgingOrder) error {
+	query := `
+		INSERT INTO master_hedging_orders (
+			mho_lot_weight_grams, mho_status
+		) VALUES ($1, $2)
+		RETURNING mho_id, mho_external_id, mho_created_at
+	`
+	// Assuming mho_external_id maps to UUID in struct
+	err := tx.QueryRowContext(ctx, query, order.LotWeightGrams, order.Status).Scan(&order.ID, &order.UUID, &order.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create hedging order: %w", err)
+	}
+	return nil
+}
+
+func (r *HedgingRepository) UpdateHedgingOrderWithTX(ctx context.Context, tx *sql.Tx, order *models.MasterHedgingOrder) error {
+	query := `
+		UPDATE master_hedging_orders 
+		SET mho_status = $1, 
+		    mho_lp_execution_rate = $2, 
+		    mho_lp_total_amount_inr = $3, 
+		    mho_lp_order_reference = $4, 
+		    mho_error_log = $5,
+		    mho_completed_at = NOW()
+		WHERE mho_id = $6
+	`
+	_, err := tx.ExecContext(ctx, query,
+		order.Status, order.LPExecutionRate, order.LPTotalAmountINR,
+		order.LPOrderReference, order.ErrorLog, order.ID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update hedging order: %w", err)
+	}
+	return nil
+}

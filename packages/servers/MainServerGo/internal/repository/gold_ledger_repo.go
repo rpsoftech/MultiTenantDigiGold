@@ -226,3 +226,33 @@ func (r *GoldLedgerRepository) GetLedgerByTenant(ctx context.Context, tenantID i
 
 	return history, nil
 }
+
+type TenantAnalytics struct {
+	TotalVolumeGrams  float64 `json:"total_volume_grams"`
+	TotalRevenueINR   float64 `json:"total_revenue_inr"`
+	TotalMarginEarned float64 `json:"total_margin_earned"`
+	TotalTransactions int64   `json:"total_transactions"`
+}
+
+func (r *GoldLedgerRepository) GetTenantAnalytics(ctx context.Context, tenantID int64) (*TenantAnalytics, error) {
+	query := `
+		SELECT 
+			COALESCE(SUM(ABS(gl_weight_grams)), 0) as total_volume_grams,
+			COALESCE(SUM(ABS(gl_total_amount_inr)), 0) as total_revenue_inr,
+			COALESCE(SUM(gl_tenant_margin_applied), 0) as total_margin_earned,
+			COUNT(gl_id) as total_transactions
+		FROM gold_transaction_ledger
+		WHERE gl_tenant_id = $1 AND gl_event_type IN ('GOLD_PURCHASE', 'GOLD_SELL', 'PHYSICAL_REDEMPTION')
+	`
+	var analytics TenantAnalytics
+	err := r.DB.Db.QueryRowContext(ctx, query, tenantID).Scan(
+		&analytics.TotalVolumeGrams,
+		&analytics.TotalRevenueINR,
+		&analytics.TotalMarginEarned,
+		&analytics.TotalTransactions,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant analytics: %w", err)
+	}
+	return &analytics, nil
+}

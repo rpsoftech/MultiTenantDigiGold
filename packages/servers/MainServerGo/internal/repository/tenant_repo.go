@@ -498,3 +498,15 @@ func (r *TenantRepository) GetPartialTenantByShortName(ctx context.Context, shor
 	}
 	return t, nil
 }
+
+func (r *TenantRepository) GetFullTenantByID(ctx context.Context, id int64) (*models.Tenant, error) {
+	query := "SELECT tenant_id, tenant_uuid, tenant_full_name, tenant_short_name, tenant_domain, tenant_subdomain, tenant_domain_expiry, tenant_plan_expiry, tenant_renewal_cost, tenant_kyc_mode, tenant_markup_percentage, tenant_ui_json_config, tenant_created_at, tenant_modified_at FROM tenants WHERE tenant_id = $1"
+	t, err := r.scanFullRetrieval(r.DB.Db.QueryRowContext(ctx, query, id))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("tenant not found")
+		}
+		return nil, err
+	}
+	return t, nil
+}

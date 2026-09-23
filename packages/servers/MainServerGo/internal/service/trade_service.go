@@ -23,21 +23,23 @@ var (
 )
 
 type TradeService struct {
-	DB         *postgres.PostgresDBStruct
-	Redis      *redis_client.RedisClientStruct
-	LedgerRepo *repository.GoldLedgerRepository
-	EventRepo  *repository.EventRepository
-	MarginRepo *repository.MarginRepository
+	DB             *postgres.PostgresDBStruct
+	Redis          *redis_client.RedisClientStruct
+	LedgerRepo     *repository.GoldLedgerRepository
+	EventRepo      *repository.EventRepository
+	MarginRepo     *repository.MarginRepository
+	RedemptionRepo *repository.RedemptionRepository
 }
 
 func InitTradeService() *TradeService {
 	tradeServiceOnce.Do(func() {
 		tradeServiceInstance = &TradeService{
-			DB:         postgres.GetPostgresDB(),
-			Redis:      redis_client.InitRedisClient(),
-			LedgerRepo: repository.InitGoldLedgerRepo(),
-			EventRepo:  repository.GetEventRepository(),
-			MarginRepo: repository.InitMarginRepository(),
+			DB:             postgres.GetPostgresDB(),
+			Redis:          redis_client.InitRedisClient(),
+			LedgerRepo:     repository.InitGoldLedgerRepo(),
+			EventRepo:      repository.GetEventRepository(),
+			MarginRepo:     repository.InitMarginRepository(),
+			RedemptionRepo: repository.InitRedemptionRepo(),
 		}
 	})
 	return tradeServiceInstance
@@ -49,7 +51,6 @@ type rateSnapshot struct {
 }
 
 func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, requestedRate float64, action string) (finalRate, mcxRate, marginApplied, gstApplied float64, err error) {
-	// 1. Get Live Rate from Redis
 	rateStr, err := s.Redis.GetHashKeyWithOriginalKey(ctx, constants.RedisKeyLatestRawRate, "GOLD")
 	if err != nil || rateStr == "" {
 		return 0, 0, 0, 0, fmt.Errorf("failed to fetch live rate from Redis: %w", err)
@@ -60,19 +61,17 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 		return 0, 0, 0, 0, fmt.Errorf("failed to parse live rate: %w", err)
 	}
 
-	if action == "SELL" {
+	if action == "SELL" || action == "REDEEM" {
 		mcxRate = rate.Bid
 	} else {
 		mcxRate = rate.Ask
 	}
 
-	// 2. Get Tenant Margin
 	margin, err := s.MarginRepo.GetMarginByTenant(ctx, tenantID, "GOLD")
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("failed to get margin config: %w", err)
 	}
 
-	// 3. Calculate Final Rate
 	switch margin.SellMarginType {
 	case "FIXED_INR", "FLAT":
 		marginApplied = margin.SellMarginValue
@@ -80,13 +79,11 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 		marginApplied = mcxRate * (margin.SellMarginValue / 100.0)
 	}
 
-	if action == "SELL" {
-		// When customer sells, tenant buys. We subtract the margin from the bid rate to give a lower price to customer.
+	if action == "SELL" || action == "REDEEM" {
 		rateWithMargin := mcxRate - marginApplied
-		gstApplied = 0 // GST typically not applied on sell-backs
+		gstApplied = 0
 		finalRate = rateWithMargin
 	} else {
-		// When customer buys, tenant sells. We add margin to the ask rate.
 		rateWithMargin := mcxRate + marginApplied
 		if margin.IsGSTEnabled {
 			gstApplied = rateWithMargin * (margin.GSTPercentage / 100.0)
@@ -94,7 +91,6 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 		finalRate = rateWithMargin + gstApplied
 	}
 
-	// 4. Validate Slippage
 	if math.Abs(finalRate-requestedRate) > 30.0 {
 		return 0, 0, 0, 0, fmt.Errorf("SLIPPAGE_EXCEEDED: Live rate moved beyond allowable tolerance. Expected: %f, Live: %f", requestedRate, finalRate)
 	}
@@ -116,7 +112,6 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 		return nil, err
 	}
 
-	// Calculate mathematically binding totals and round them/align them precisely
 	var finalWeight, finalTotalINR float64
 
 	if req.WeightGrams > 0 {
@@ -130,20 +125,17 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 	}
 
 	eventType := "GOLD_PURCHASE"
-	if req.Action == "SELL" {
-		eventType = "SYSTEM_REVERSAL" // "SYSTEM_REVERSAL" or "PHYSICAL_REDEMPTION", wait let's check schema. Actually let's use "GOLD_SELL" if valid, else "SYSTEM_REVERSAL". I will use "GOLD_SELL". Wait, model says: GOLD_PURCHASE, PHYSICAL_REDEMPTION, SYSTEM_REVERSAL, ADMIN_ADJUSTMENT.
-		eventType = "PHYSICAL_REDEMPTION" // Assuming redemption/sell uses this
-		finalWeight = -finalWeight // Deduct balance
+	if req.Action == "SELL" || req.Action == "REDEEM" {
+		eventType = "PHYSICAL_REDEMPTION"
+		finalWeight = -finalWeight
 	}
 
-	// Open PostgreSQL Transaction
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Initialize the Ledger Entry
 	entry := &models.GoldTransactionLedger{
 		TenantID:            req.TenantID,
 		UserID:              req.UserID,
@@ -152,39 +144,107 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 		WeightGrams:         finalWeight,
 		TotalAmountINR:      finalTotalINR,
 		MCXBaseRate:         mcxRate,
-		MasterMarginApplied: 0, // Future use
+		MasterMarginApplied: 0,
 		TenantMarginApplied: marginApplied,
 		GSTApplied:          gstApplied,
 		FinalRatePerGram:    finalRate,
 		ReferenceID:         req.ReferenceID,
 	}
 
-	// Insert into Ledger (Locks balance row, calculates offset, inserts new row, and emits event)
 	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry)
 	if err != nil {
 		return nil, err
 	}
 
-	// Event Sourcing (TradeService orchestrates the outbox)
+	if req.Action == "REDEEM" {
+		addressJSON, _ := json.Marshal(req.ShippingAddress)
+		fulfillment := &models.RedemptionFulfillment{
+			TenantID:           req.TenantID,
+			UserID:             req.UserID,
+			LedgerID:           result.ID,
+			ItemSKU:            "CUSTOM_GRAMS", // Or parse from req
+			FulfillmentStatus:  "PENDING",
+			ShippingDetailJSON: addressJSON,
+		}
+		if err := s.RedemptionRepo.CreateRedemptionFulfillmentWithTX(ctx, tx, fulfillment); err != nil {
+			return nil, fmt.Errorf("failed to save redemption details: %w", err)
+		}
+	}
+
 	tenantIdStr := fmt.Sprintf("%d", req.TenantID)
-	// Using same event for now, can be updated later if needed
 	tradeEvent := events.GenerateGoldPurchaseEvent(tenantIdStr, adminID, ipAddress, result)
 	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &tradeEvent.BaseEvent); err != nil {
 		return nil, fmt.Errorf("failed to save trade event: %w", err)
 	}
 
-	// B2B Ledger Validation (Locks margin row and increments unlifted weight)
 	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, req.TenantID, "GOLD", finalWeight); err != nil {
 		return nil, err
 	}
 
-	// Commit Transaction
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	log.Printf("[TradeService] Trade successful: tenantID=%d, userID=%d, weight=%f, amount=%f, ledgerUUID=%s",
 		req.TenantID, req.UserID, finalWeight, finalTotalINR, result.UUID)
+
+	return result, nil
+}
+
+func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, ledgerUUID string, adminID string, ipAddress string) (*models.GoldTransactionLedger, error) {
+	// 1. Fetch original ledger
+	query := `
+		SELECT gl_id, gl_user_id, gl_weight_grams, gl_total_amount_inr, gl_mcx_base_rate, gl_tenant_margin_applied, gl_gst_applied, gl_final_rate_per_gram, gl_reference_id
+		FROM gold_transaction_ledger
+		WHERE gl_uuid = $1 AND gl_tenant_id = $2
+	`
+	var original models.GoldTransactionLedger
+	err := s.DB.Db.QueryRowContext(ctx, query, ledgerUUID, tenantID).Scan(
+		&original.ID, &original.UserID, &original.WeightGrams, &original.TotalAmountINR, &original.MCXBaseRate, &original.TenantMarginApplied, &original.GSTApplied, &original.FinalRatePerGram, &original.ReferenceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("transaction not found: %w", err)
+	}
+
+	tx, err := s.DB.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	reversalEntry := &models.GoldTransactionLedger{
+		TenantID:            tenantID,
+		UserID:              original.UserID,
+		EventType:           "SYSTEM_REVERSAL",
+		PaymentMode:         "SYSTEM",
+		WeightGrams:         -original.WeightGrams,
+		TotalAmountINR:      -original.TotalAmountINR,
+		MCXBaseRate:         original.MCXBaseRate,
+		MasterMarginApplied: 0,
+		TenantMarginApplied: -original.TenantMarginApplied,
+		GSTApplied:          -original.GSTApplied,
+		FinalRatePerGram:    original.FinalRatePerGram,
+		ReferenceID:         fmt.Sprintf("REVERSAL_%s", ledgerUUID),
+	}
+
+	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, reversalEntry)
+	if err != nil {
+		return nil, err
+	}
+
+	tenantIdStr := fmt.Sprintf("%d", tenantID)
+	reversalEvent := events.GenerateGoldPurchaseEvent(tenantIdStr, adminID, ipAddress, result)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &reversalEvent.BaseEvent); err != nil {
+		return nil, fmt.Errorf("failed to save reversal event: %w", err)
+	}
+
+	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, tenantID, "GOLD", -original.WeightGrams); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit reversal: %w", err)
+	}
 
 	return result, nil
 }

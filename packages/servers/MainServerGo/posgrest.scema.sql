@@ -271,3 +271,23 @@ CREATE TABLE master_hedging_orders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hedging_orders_status ON master_hedging_orders(mho_status, mho_created_at DESC);
+
+-- 12. redemption_fulfillments
+CREATE TABLE redemption_fulfillments (
+    rf_id BIGSERIAL PRIMARY KEY,
+    rf_uuid UUID UNIQUE NOT NULL DEFAULT uuidv7(),
+    rf_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id),
+    rf_user_id BIGINT NOT NULL REFERENCES users(user_id),
+    rf_ledger_id BIGINT NOT NULL REFERENCES gold_transaction_ledger(gl_id),
+    
+    rf_item_sku VARCHAR(100) NOT NULL,
+    rf_fulfillment_status VARCHAR(20) DEFAULT 'PENDING',
+    rf_courier_name VARCHAR(100),
+    rf_tracking_number VARCHAR(100),
+    rf_shipping_detail_json JSONB NOT NULL,
+    rf_is_exported BOOLEAN DEFAULT FALSE,
+    rf_exported_at TIMESTAMPTZ,
+    
+    rf_created_at TIMESTAMPTZ DEFAULT NOW(),
+    rf_modified_at TIMESTAMPTZ DEFAULT NOW()
+);

@@ -18,10 +18,11 @@ import (
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
 	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
+	otel_setup "github.com/rpsoftech/DigiGold/MainServerGo/utility/otel"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/updater"
-	"github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
 )
 
 var version string = "0" // Injected by deploy script
@@ -34,6 +35,18 @@ func main() {
 	// 1. Move the termination channel to the top so our background workers can trigger a restart
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	tp, err := otel_setup.InitTracer(ctx, "digigold-api")
+	if err != nil {
+		log.Printf("⚠️ OpenTelemetry failed to initialize: %v (Proceeding without tracing)\n", err)
+	} else {
+		defer func() {
+			if err := tp.Shutdown(context.Background()); err != nil {
+				log.Printf("Error shutting down tracer provider: %v", err)
+			}
+		}()
+	}
+
 	// 2. The 5-Minute OTA Updater Daemon
 	// 2. The 5-Minute OTA Updater Daemon
 	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION || env.Env.APP_ENV == env.APP_ENV_STAGING {
@@ -100,6 +113,9 @@ func main() {
 		},
 	})
 
+	// Add OpenTelemetry Tracing Middleware
+	app.Use(middleware.OtelInterceptor)
+
 	app.Use(logger.New(logger.Config{
 		// Define your exact output log format using Fiber v3 tags
 		Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
@@ -111,6 +127,12 @@ func main() {
 	}))
 	// 5. Initialize Controllers
 	authController := auth_controllers.NewAuthController()
+
+	// 5b. Setup Swagger API Docs in Non-Production
+	if string(env.Env.APP_ENV) == "DEVELOPMENT" || string(env.Env.APP_ENV) == "LOCAL" || string(env.Env.APP_ENV) == "STAGING" {
+		setupSwagger(app)
+		log.Println("📚 Swagger UI is available at /docs")
+	}
 
 	// 6. Setup Route Groups & Apply Tenancy Middleware
 	api := app.Group("/api/v1")
@@ -147,10 +169,15 @@ func main() {
 	customerTradeController := trade_api.NewCustomerTradeController(rateHub)
 	customerTradeController.RegisterRoutes(customerTradeGroup)
 
+	// Webhooks (Public)
+	webhookController := trade_api.NewWebhookController()
+	webhookController.RegisterRoutes(api)
+
 	// 7. Start Background Workers
-	log.Println("🚀 Starting background event consumer and outbox recovery...")
+	log.Println("🚀 Starting background event consumer, outbox recovery, and hedging cron...")
 	go workers.StartEventConsumer(ctx)
 	go workers.StartOutboxRecoveryCron(ctx)
+	go workers.StartHedgingCron(ctx)
 
 	// 8. Start the Server in a Goroutine
 	go func() {
