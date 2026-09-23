@@ -60,118 +60,136 @@ import { TradeService, LiveRateService, AuthService } from '@dg/services';
           </div>
 
           <div class="p-6">
-            <!-- Live Rate Display -->
-            <div
-              class="flex justify-between items-center mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100"
-            >
-              <div class="flex items-center gap-2">
-                <span
-                  class="w-2 h-2 rounded-full bg-green-500 animate-pulse"
-                ></span>
-                <span
-                  class="text-xs font-bold text-slate-500 uppercase tracking-wider"
-                  >Live Rate / gm</span
-                >
-              </div>
-              <div class="text-xl font-black text-slate-800">
-                ₹{{ currentRateStr() }}
-              </div>
-            </div>
-
-            <!-- Input Mode Toggle -->
-            <div class="flex bg-slate-100 rounded-lg p-1 mb-6">
-              <button
-                (click)="inputMode.set('INR')"
-                class="flex-1 py-1.5 text-sm font-bold rounded-md transition-all"
-                [class.bg-white]="inputMode() === 'INR'"
-                [class.shadow-sm]="inputMode() === 'INR'"
-                [class.text-slate-800]="inputMode() === 'INR'"
-                [class.text-slate-500]="inputMode() !== 'INR'"
+            @if (successMsg()) {
+              <div
+                class="bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl mb-6 text-center font-bold"
               >
-                In Rupees
-              </button>
-              <button
-                (click)="inputMode.set('GRAMS')"
-                class="flex-1 py-1.5 text-sm font-bold rounded-md transition-all"
-                [class.bg-white]="inputMode() === 'GRAMS'"
-                [class.shadow-sm]="inputMode() === 'GRAMS'"
-                [class.text-slate-800]="inputMode() === 'GRAMS'"
-                [class.text-slate-500]="inputMode() !== 'GRAMS'"
-              >
-                In Grams
-              </button>
-            </div>
-
-            <!-- Dynamic Input -->
-            <div class="mb-6">
-              <div class="relative">
-                <span
-                  class="absolute left-4 top-3.5 text-slate-400 font-bold text-xl"
+                {{ successMsg() }}
+                <button
+                  (click)="successMsg.set(''); isOpen.set(false)"
+                  class="mt-3 w-full py-2 bg-green-600 text-white rounded-lg"
                 >
-                  {{ inputMode() === 'INR' ? '₹' : '' }}
-                </span>
-
-                <input
-                  type="number"
-                  [ngModel]="displayValue()"
-                  (ngModelChange)="onInputChange($event)"
-                  [placeholder]="inputMode() === 'INR' ? '1000' : '0.1500'"
-                  class="w-full px-8 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:outline-none transition-all font-black text-slate-800 text-2xl text-center"
-                  [class.border-green-500]="action() === 'BUY'"
-                  [class.border-red-400]="action() === 'SELL'"
-                  [class.border-slate-200]="!displayValue()"
-                />
-
-                <span class="absolute right-4 top-4 text-slate-400 font-bold">
-                  {{ inputMode() === 'GRAMS' ? 'gm' : '' }}
-                </span>
+                  Done
+                </button>
+              </div>
+            } @else {
+              <!-- Live Rate Display -->
+              <div
+                class="flex justify-between items-center mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100"
+              >
+                <div class="flex items-center gap-2">
+                  <span
+                    class="w-2 h-2 rounded-full bg-green-500 animate-pulse"
+                  ></span>
+                  <span
+                    class="text-xs font-bold text-slate-500 uppercase tracking-wider"
+                    >Live Rate / gm</span
+                  >
+                </div>
+                <div class="text-xl font-black text-slate-800">
+                  ₹{{ currentRateStr() }}
+                </div>
               </div>
 
-              <!-- Equivalent Value Text -->
-              <p class="text-center text-sm font-semibold mt-3 text-slate-500">
-                @if (displayValue() > 0) {
-                  Equivalent to
-                  <span class="text-slate-800 font-black">
-                    {{
-                      inputMode() === 'INR'
-                        ? (grams() | number: '1.4-4') + ' gm'
-                        : '₹' + (inr() | number: '1.2-2')
-                    }}
+              <!-- Input Mode Toggle -->
+              <div class="flex bg-slate-100 rounded-lg p-1 mb-6">
+                <button
+                  (click)="inputMode.set('INR')"
+                  class="flex-1 py-1.5 text-sm font-bold rounded-md transition-all"
+                  [class.bg-white]="inputMode() === 'INR'"
+                  [class.shadow-sm]="inputMode() === 'INR'"
+                  [class.text-slate-800]="inputMode() === 'INR'"
+                  [class.text-slate-500]="inputMode() !== 'INR'"
+                >
+                  In Rupees
+                </button>
+                <button
+                  (click)="inputMode.set('GRAMS')"
+                  class="flex-1 py-1.5 text-sm font-bold rounded-md transition-all"
+                  [class.bg-white]="inputMode() === 'GRAMS'"
+                  [class.shadow-sm]="inputMode() === 'GRAMS'"
+                  [class.text-slate-800]="inputMode() === 'GRAMS'"
+                  [class.text-slate-500]="inputMode() !== 'GRAMS'"
+                >
+                  In Grams
+                </button>
+              </div>
+
+              <!-- Dynamic Input -->
+              <div class="mb-6">
+                <div class="relative">
+                  <span
+                    class="absolute left-4 top-3.5 text-slate-400 font-bold text-xl"
+                  >
+                    {{ inputMode() === 'INR' ? '₹' : '' }}
                   </span>
+
+                  <input
+                    type="number"
+                    [ngModel]="displayValue()"
+                    (ngModelChange)="onInputChange($event)"
+                    [placeholder]="inputMode() === 'INR' ? '1000' : '0.1500'"
+                    class="w-full px-8 py-3 bg-white border-2 rounded-xl focus:ring-0 focus:outline-none transition-all font-black text-slate-800 text-2xl text-center"
+                    [class.border-green-500]="action() === 'BUY'"
+                    [class.border-red-400]="action() === 'SELL'"
+                    [class.border-slate-200]="!displayValue()"
+                  />
+
+                  <span class="absolute right-4 top-4 text-slate-400 font-bold">
+                    {{ inputMode() === 'GRAMS' ? 'gm' : '' }}
+                  </span>
+                </div>
+
+                <!-- Equivalent Value Text -->
+                <p
+                  class="text-center text-sm font-semibold mt-3 text-slate-500"
+                >
+                  @if (displayValue() > 0) {
+                    Equivalent to
+                    <span class="text-slate-800 font-black">
+                      {{
+                        inputMode() === 'INR'
+                          ? (grams() | number: '1.4-4') + ' gm'
+                          : '₹' + (inr() | number: '1.2-2')
+                      }}
+                    </span>
+                  } @else {
+                    Enter an amount to continue
+                  }
+                </p>
+              </div>
+
+              <!-- Execution Button -->
+              <button
+                (click)="executeTrade()"
+                [disabled]="inr() <= 0 || currentRateNum() === 0 || isLoading()"
+                class="w-full py-4 text-white font-black text-lg rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center"
+                [class.bg-green-600]="action() === 'BUY'"
+                [class.hover:bg-green-700]="action() === 'BUY'"
+                [class.bg-red-500]="action() === 'SELL'"
+                [class.hover:bg-red-600]="action() === 'SELL'"
+              >
+                @if (isLoading()) {
+                  <span class="animate-pulse">Processing...</span>
+                } @else if (currentRateNum() === 0) {
+                  Waiting for live price...
                 } @else {
-                  Enter an amount to continue
+                  {{ action() === 'BUY' ? 'Quick Buy' : 'Confirm Sell' }}
                 }
-              </p>
-            </div>
+              </button>
 
-            <!-- Execution Button -->
-            <button
-              (click)="executeTrade()"
-              [disabled]="inr() <= 0 || isLoading()"
-              class="w-full py-4 text-white font-black text-lg rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center"
-              [class.bg-green-600]="action() === 'BUY'"
-              [class.hover:bg-green-700]="action() === 'BUY'"
-              [class.bg-red-500]="action() === 'SELL'"
-              [class.hover:bg-red-600]="action() === 'SELL'"
-            >
-              @if (isLoading()) {
-                <span class="animate-pulse">Processing...</span>
-              } @else {
-                {{ action() === 'BUY' ? 'Quick Buy' : 'Confirm Sell' }}
+              @if (errorMsg()) {
+                <p class="text-red-500 text-sm font-bold text-center mt-3">
+                  {{ errorMsg() }}
+                </p>
               }
-            </button>
 
-            @if (errorMsg()) {
-              <p class="text-red-500 text-sm font-bold text-center mt-3">
-                {{ errorMsg() }}
+              <p
+                class="text-[10px] text-center text-slate-400 mt-4 font-medium uppercase tracking-wider"
+              >
+                Prices lock automatically for 3 seconds before execution
               </p>
             }
-
-            <p
-              class="text-[10px] text-center text-slate-400 mt-4 font-medium uppercase tracking-wider"
-            >
-              Prices lock automatically for 3 seconds before execution
-            </p>
           </div>
         </div>
       </div>
@@ -192,6 +210,7 @@ export class TradeModalComponent {
 
   isLoading = signal(false);
   errorMsg = signal('');
+  successMsg = signal('');
 
   currentRateStr = computed(() => {
     const rate = this.liveRate.currentRate();
@@ -243,17 +262,24 @@ export class TradeModalComponent {
 
       if (this.action() === 'BUY') {
         const res = await this.tradeService.initiateBuy(payload);
-        // Normally redirect to PG here. For now we simulate success.
-        alert(`Buy Initiated! Order ID: ${res.order_id}`);
+        this.successMsg.set(`Buy Initiated! Order ID: ${res.order_id}`);
       } else {
         const res = await this.tradeService.executeSell(payload);
-        alert(`Sell Executed! Transaction: ${res.transaction_id}`);
+        this.successMsg.set(
+          `Sell Executed! Transaction: ${res.transaction_id}`,
+        );
       }
-
-      this.isOpen.set(false);
       this.displayValue.set(0);
     } catch (e: any) {
-      this.errorMsg.set(e?.error?.message || 'Trade Execution Failed');
+      if (
+        e?.error?.code === 'KYC_REQUIRED' ||
+        e?.error?.message?.includes('KYC')
+      ) {
+        this.isOpen.set(false);
+        this.auth.isKycModalOpen.set(true);
+      } else {
+        this.errorMsg.set(e?.error?.message || 'Trade Execution Failed');
+      }
     }
 
     this.isLoading.set(false);

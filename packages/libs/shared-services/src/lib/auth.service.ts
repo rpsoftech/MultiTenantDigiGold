@@ -1,7 +1,9 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject, signal, PLATFORM_ID } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { isPlatformBrowser } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { TenantConfigService } from './tenant-config.service';
+import { API_BASE_URL } from './tokens';
 
 export interface AuthState {
   isAuthenticated: boolean;
@@ -15,17 +17,31 @@ export interface AuthState {
 export class AuthService {
   private http = inject(HttpClient);
   private tenantService = inject(TenantConfigService);
+  private apiBase = inject(API_BASE_URL);
+  private platformId = inject(PLATFORM_ID);
 
-  // The API URL will route to our Go Backend
-  private API_URL = 'http://localhost:8080/api/v1/auth';
+  private get API_URL() {
+    return `${this.apiBase}/api/v1/auth`;
+  }
 
   public isLoginModalOpen = signal<boolean>(false);
+  public isKycModalOpen = signal<boolean>(false);
 
   public state = signal<AuthState>({
     isAuthenticated: false,
     user: null,
     token: null,
   });
+
+  constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      const token = localStorage.getItem('dg_token');
+      const phone = localStorage.getItem('dg_phone');
+      if (token && phone) {
+        this.state.set({ isAuthenticated: true, user: { phone }, token });
+      }
+    }
+  }
 
   private get headers() {
     return {
@@ -63,7 +79,10 @@ export class AuthService {
         user: { phone },
         token: res.access_token,
       });
-      // In production, save to localStorage here
+      if (isPlatformBrowser(this.platformId)) {
+        localStorage.setItem('dg_token', res.access_token);
+        localStorage.setItem('dg_phone', phone);
+      }
     }
 
     return res;
@@ -72,6 +91,7 @@ export class AuthService {
   async register(
     registration_token: string,
     full_name: string,
+    phone: string,
     location: string = 'India',
   ) {
     const res = await firstValueFrom(
@@ -85,9 +105,13 @@ export class AuthService {
     if (res.access_token) {
       this.state.set({
         isAuthenticated: true,
-        user: { phone: '...', fullName: full_name },
+        user: { phone, fullName: full_name },
         token: res.access_token,
       });
+      if (isPlatformBrowser(this.platformId)) {
+        localStorage.setItem('dg_token', res.access_token);
+        localStorage.setItem('dg_phone', phone);
+      }
     }
 
     return res;
@@ -99,5 +123,9 @@ export class AuthService {
       user: null,
       token: null,
     });
+    if (isPlatformBrowser(this.platformId)) {
+      localStorage.removeItem('dg_token');
+      localStorage.removeItem('dg_phone');
+    }
   }
 }

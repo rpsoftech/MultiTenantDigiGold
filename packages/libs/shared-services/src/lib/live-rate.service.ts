@@ -1,11 +1,12 @@
 import {
   Injectable,
   signal,
-  OnDestroy,
   PLATFORM_ID,
   inject,
+  DestroyRef,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { API_BASE_URL } from './tokens';
 
 export interface GoldRate {
   buy_price: number;
@@ -16,18 +17,27 @@ export interface GoldRate {
 @Injectable({
   providedIn: 'root',
 })
-export class LiveRateService implements OnDestroy {
+export class LiveRateService {
   // Angular Signal to hold the absolute latest rate. UI updates will be surgical and instant!
   readonly currentRate = signal<GoldRate | null>(null);
 
   private eventSource: EventSource | null = null;
-  private readonly STREAM_URL = 'http://localhost:8080/api/v1/rates/stream'; // Base URL can be dynamic via env
+  private apiBase = inject(API_BASE_URL);
+  private get STREAM_URL() {
+    return `${this.apiBase}/api/v1/rates/stream`;
+  }
   private platformId = inject(PLATFORM_ID);
+  private destroyRef = inject(DestroyRef);
+  private retryTimeout: any;
 
   constructor() {
     // ONLY connect to SSE in the Browser to prevent NodeJS SSR errors (EventSource is not defined on server)
     if (isPlatformBrowser(this.platformId)) {
       this.connectToSse();
+      this.destroyRef.onDestroy(() => {
+        if (this.retryTimeout) clearTimeout(this.retryTimeout);
+        if (this.eventSource) this.eventSource.close();
+      });
     }
   }
 
@@ -49,12 +59,8 @@ export class LiveRateService implements OnDestroy {
 
     this.eventSource.onerror = (err: any) => {
       console.error('[LiveRateService] SSE connection error. Retrying...', err);
+      this.eventSource?.close();
+      this.retryTimeout = setTimeout(() => this.connectToSse(), 5000);
     };
-  }
-
-  ngOnDestroy() {
-    if (this.eventSource) {
-      this.eventSource.close();
-    }
   }
 }

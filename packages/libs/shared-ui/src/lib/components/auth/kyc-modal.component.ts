@@ -134,7 +134,7 @@ export class KycModalComponent {
   public auth = inject(AuthService);
 
   // In a real app this would be triggered via a signal or a service call
-  isOpen = signal(false);
+  isOpen = this.auth.isKycModalOpen;
 
   panNumber = signal('');
   isLoading = signal(false);

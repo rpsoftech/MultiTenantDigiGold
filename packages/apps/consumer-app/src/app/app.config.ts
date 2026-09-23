@@ -10,7 +10,7 @@ import {
   provideClientHydration,
   withEventReplay,
 } from '@angular/platform-browser';
-import { TenantConfigService } from '@dg/services';
+import { TenantConfigService, API_BASE_URL } from '@dg/services';
 
 // Factory function to initialize the app state before rendering
 export function initializeApp(tenantConfig: TenantConfigService) {
@@ -25,6 +25,7 @@ export const appConfig: ApplicationConfig = {
     provideClientHydration(withEventReplay()),
     provideBrowserGlobalErrorListeners(),
     provideRouter(appRoutes),
+    { provide: API_BASE_URL, useValue: 'http://localhost:8080' },
     {
       provide: APP_INITIALIZER,
       useFactory: initializeApp,

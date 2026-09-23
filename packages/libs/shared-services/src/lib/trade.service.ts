@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from './auth.service';
 import { TenantConfigService } from './tenant-config.service';
+import { API_BASE_URL } from './tokens';
 
 export interface TradeExecutionRequest {
   action: 'BUY' | 'SELL';
@@ -19,11 +20,14 @@ export class TradeService {
   private http = inject(HttpClient);
   private auth = inject(AuthService);
   private tenant = inject(TenantConfigService);
+  private apiBase = inject(API_BASE_URL);
 
   public isTradeModalOpen = signal(false);
   public tradeAction = signal<'BUY' | 'SELL'>('BUY');
 
-  private API_URL = 'http://localhost:8080/api/v1/trade';
+  private get API_URL() {
+    return `${this.apiBase}/api/v1/trade`;
+  }
 
   private get headers() {
     return {

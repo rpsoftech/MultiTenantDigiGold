@@ -105,7 +105,7 @@ import { AuthService, TenantConfigService } from '@dg/services';
                 </p>
 
                 <input
-                  type="text"
+                  type="tel"
                   [(ngModel)]="otp"
                   maxlength="6"
                   placeholder="• • • • • •"
@@ -133,7 +133,7 @@ import { AuthService, TenantConfigService } from '@dg/services';
                   >Full Name</label
                 >
                 <input
-                  type="text"
+                  type="tel"
                   [(ngModel)]="fullName"
                   placeholder="As per PAN Card"
                   class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all font-semibold text-slate-800"
@@ -228,7 +228,11 @@ export class LoginModalComponent {
     this.isLoading.set(true);
     this.errorMsg.set('');
     try {
-      await this.auth.register(this.registrationToken, this.fullName());
+      await this.auth.register(
+        this.registrationToken,
+        this.fullName(),
+        this.phone(),
+      );
       this.auth.isLoginModalOpen.set(false);
       this.reset();
     } catch (e: any) {

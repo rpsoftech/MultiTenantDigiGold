@@ -3,3 +3,4 @@ export * from './lib/live-rate.service';
 export * from './lib/tenant-config.service';
 export * from './lib/auth.service';
 export * from './lib/trade.service';
+export * from './lib/tokens';

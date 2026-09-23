@@ -10,6 +10,7 @@ import { HttpClient } from '@angular/common/http';
 import { isPlatformServer } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { SDUIComponentConfig } from '@dg/angular-core';
+import { API_BASE_URL } from './tokens';
 
 export interface TenantInfo {
   tenant_uuid: string;
@@ -28,6 +29,7 @@ export class TenantConfigService {
   private http = inject(HttpClient);
   private transferState = inject(TransferState);
   private platformId = inject(PLATFORM_ID);
+  private apiBase = inject(API_BASE_URL);
 
   // A reactive signal holding the hydrated config
   readonly config = signal<TenantInfo | null>(null);
@@ -47,7 +49,7 @@ export class TenantConfigService {
 
     // 2. Fetch from the Go API
     // In SSR, this must be an absolute URL. In a real environment, you'd pull the URL from an env variable.
-    const apiUrl = 'http://localhost:8080/api/v1/tenant/info';
+    const apiUrl = `${this.apiBase}/api/v1/tenant/info`;
 
     // In production, we would inject the incoming `Host` header here via Angular SSR Request object
     // and pass it as the X-Tenant-Id header to dynamically resolve the tenant.
