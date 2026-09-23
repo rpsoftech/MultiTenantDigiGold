@@ -1,12 +1,17 @@
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { LoginModalComponent } from '@dg/ui';
+import { LoginModalComponent, TradeModalComponent } from '@dg/ui';
 import { SduiRendererComponent } from '@dg/ui';
 import { TenantConfigService } from '@dg/services';
 
 @Component({
   standalone: true,
-  imports: [RouterModule, SduiRendererComponent, LoginModalComponent],
+  imports: [
+    RouterModule,
+    SduiRendererComponent,
+    LoginModalComponent,
+    TradeModalComponent,
+  ],
   selector: 'app-root',
   template: `
     <div class="min-h-screen bg-gray-50 flex flex-col font-sans pb-20">
@@ -22,6 +27,7 @@ import { TenantConfigService } from '@dg/services';
       }
     </div>
     <dg-login-modal></dg-login-modal>
+    <dg-trade-modal></dg-trade-modal>
   `,
   styleUrl: './app.scss',
 })

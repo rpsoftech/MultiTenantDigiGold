@@ -1,5 +1,6 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { TradeService } from '@dg/services';
 
 @Component({
   selector: 'dg-quick-actions-1',
@@ -11,6 +12,7 @@ import { CommonModule } from '@angular/common';
     >
       <!-- BUY -->
       <button
+        (click)="openTrade('BUY')"
         class="flex flex-col items-center justify-center gap-3 p-2 group transition-transform active:scale-95"
       >
         <div
@@ -36,6 +38,7 @@ import { CommonModule } from '@angular/common';
 
       <!-- SELL -->
       <button
+        (click)="openTrade('SELL')"
         class="flex flex-col items-center justify-center gap-3 p-2 group transition-transform active:scale-95"
       >
         <div
@@ -112,6 +115,12 @@ import { CommonModule } from '@angular/common';
   `,
 })
 export class QuickActions1Component {
-  // Can accept JSON props to hide/show specific buttons or change their links!
+  private tradeService = inject(TradeService);
+
   @Input() showDelivery: boolean = true;
+
+  openTrade(action: 'BUY' | 'SELL') {
+    this.tradeService.tradeAction.set(action);
+    this.tradeService.isTradeModalOpen.set(true);
+  }
 }
