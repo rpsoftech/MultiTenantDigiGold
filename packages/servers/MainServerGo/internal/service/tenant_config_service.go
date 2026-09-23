@@ -77,6 +77,17 @@ func (s *TenantConfigService) GetTenantKYC(ctx context.Context, tenantUUID strin
 	return kycRepo.GetKYCDocsByTenantID(ctx, tenantIntID)
 }
 
+func (s *TenantConfigService) GetEventsPaginated(ctx context.Context, tenantUUID, eventType, from, to string, page, limit int) ([]*events.BaseEvent, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+	return s.EventRepo.GetEventsPaginated(ctx, tenantUUID, eventType, from, to, limit, offset)
+}
+
 func (s *TenantConfigService) CreateTenant(ctx context.Context, tenant *models.Tenant, adminUser *models.TenantUserLogin, adminUUID string) error {
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {

@@ -131,6 +131,12 @@ func main() {
 	adminTenantController := admin_controllers.NewAdminTenantController()
 	adminTenantController.RegisterRoutes(adminGroup)
 
+	adminUserController := admin_controllers.NewAdminUserController()
+	adminUserController.RegisterRoutes(adminGroup)
+
+	adminEventsController := admin_controllers.NewAdminEventsController()
+	adminEventsController.RegisterRoutes(adminGroup)
+
 	// 7. Start the Server in a Goroutine
 	go func() {
 		port := env.GetServerPort(env.PORT_KEY)

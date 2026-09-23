@@ -26,6 +26,8 @@ type EventRepository struct {
 	stmtInsertEvent      *sql.Stmt
 	stmtMarkProcessed    *sql.Stmt
 	stmtFetchUnprocessed *sql.Stmt
+	stmtGetEvents        *sql.Stmt
+	stmtCountEvents      *sql.Stmt
 }
 
 var (
@@ -85,12 +87,51 @@ func GetEventRepository() *EventRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare FetchUnprocessedEvents: %v", err))
 		}
 
+		queryGetEvents := fmt.Sprintf(`
+			SELECT 
+				%s, %s, %s, %s, %s, %s, %s, %s, %s 
+			FROM %s 
+			WHERE ($1 = '' OR %s = $1) 
+			  AND ($2 = '' OR %s = $2)
+			  AND ($3 = '' OR %s >= cast(nullif($3, '') as timestamp))
+			  AND ($4 = '' OR %s <= cast(nullif($4, '') as timestamp))
+			ORDER BY %s DESC 
+			LIMIT $5 OFFSET $6`,
+			schema.ColEventId, schema.ColKeyId, schema.ColTenantId, schema.ColEventName, schema.ColParentNames,
+			schema.ColPayload, schema.ColIpAddressOccurredFrom, schema.ColAdminId, schema.ColOccurredAt,
+			schema.TableSystemEvents,
+			schema.ColTenantId, schema.ColEventName, schema.ColOccurredAt, schema.ColOccurredAt, schema.ColOccurredAt,
+		)
+
+		stmtGetEvents, err := db.Db.Prepare(queryGetEvents)
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetEvents: %v", err))
+		}
+
+		queryCountEvents := fmt.Sprintf(`
+			SELECT COUNT(*)
+			FROM %s 
+			WHERE ($1 = '' OR %s = $1) 
+			  AND ($2 = '' OR %s = $2)
+			  AND ($3 = '' OR %s >= cast(nullif($3, '') as timestamp))
+			  AND ($4 = '' OR %s <= cast(nullif($4, '') as timestamp))`,
+			schema.TableSystemEvents,
+			schema.ColTenantId, schema.ColEventName, schema.ColOccurredAt, schema.ColOccurredAt,
+		)
+
+		stmtCountEvents, err := db.Db.Prepare(queryCountEvents)
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountEvents: %v", err))
+		}
+
 		eventRepoInstance = &EventRepository{
 			DB:                   db,
 			Redis:                rdb,
 			stmtInsertEvent:      stmtInsert,
 			stmtMarkProcessed:    stmtMark,
 			stmtFetchUnprocessed: stmtFetch,
+			stmtGetEvents:        stmtGetEvents,
+			stmtCountEvents:      stmtCountEvents,
 		}
 	})
 	return eventRepoInstance
@@ -267,4 +308,56 @@ func (r *EventRepository) FetchUnprocessedEvents(ctx context.Context) ([]*events
 	}
 
 	return unprocessedEvents, nil
+}
+
+func (r *EventRepository) GetEventsPaginated(ctx context.Context, tenantUUID, eventType, from, to string, limit, offset int) ([]*events.BaseEvent, int64, error) {
+	var total int64
+	err := r.stmtCountEvents.QueryRowContext(ctx, tenantUUID, eventType, from, to).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.stmtGetEvents.QueryContext(ctx, tenantUUID, eventType, from, to, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var pagedEvents []*events.BaseEvent
+	for rows.Next() {
+		var evt events.BaseEvent
+		var payloadBytes []byte
+		var parentNames pq.StringArray
+		var ipAddress sql.NullString
+		var adminID sql.NullString
+
+		if err := rows.Scan(
+			&evt.Id, &evt.KeyId, &evt.TenantId, &evt.EventName, &parentNames,
+			&payloadBytes, &ipAddress, &adminID, &evt.OccurredAt,
+		); err != nil {
+			return nil, 0, err
+		}
+
+		evt.ParentNames = parentNames
+
+		if err := json.Unmarshal(payloadBytes, &evt.Payload); err != nil {
+			return nil, 0, err
+		}
+
+		if adminID.Valid {
+			evt.AdminId = adminID.String
+		}
+		if ipAddress.Valid {
+			evt.IpAddressAOccurredFrom = ipAddress.String
+		}
+
+		evt.ObjId = evt.Id
+		pagedEvents = append(pagedEvents, &evt)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return pagedEvents, total, nil
 }

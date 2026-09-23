@@ -22,8 +22,12 @@ type TenantUserLoginRepository struct {
 	stmtGetFullUUID     *sql.Stmt
 	stmtGetFullPhone    *sql.Stmt
 	stmtGetFullUsername *sql.Stmt
-	stmtCreateAdmin     *sql.Stmt
-	stmtUpdateAdmin     *sql.Stmt
+	stmtCreateAdmin            *sql.Stmt
+	stmtUpdateAdmin            *sql.Stmt
+	stmtGetAllAdmins           *sql.Stmt
+	stmtCountAllAdmins         *sql.Stmt
+	stmtGetAllAdminsByTenant   *sql.Stmt
+	stmtCountAllAdminsByTenant *sql.Stmt
 }
 
 var (
@@ -71,6 +75,27 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare GetFullAdminByUsername: %v", err))
 		}
 
+		// Pagination Queries
+		stmtGetAllAdmins, err := db.Db.Prepare(fmt.Sprintf(`%s ORDER BY %s DESC LIMIT $1 OFFSET $2`, queryFullSelect, schema.ColTUCreatedAt))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetAllAdmins: %v", err))
+		}
+		
+		stmtCountAllAdmins, err := db.Db.Prepare(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, schema.TableTenantUserLogins))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountAllAdmins: %v", err))
+		}
+
+		stmtGetAllAdminsByTenant, err := db.Db.Prepare(fmt.Sprintf(`%s WHERE %s = $1 ORDER BY %s DESC LIMIT $2 OFFSET $3`, queryFullSelect, schema.ColTUTenantID, schema.ColTUCreatedAt))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetAllAdminsByTenant: %v", err))
+		}
+		
+		stmtCountAllAdminsByTenant, err := db.Db.Prepare(fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s = $1`, schema.TableTenantUserLogins, schema.ColTUTenantID))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountAllAdminsByTenant: %v", err))
+		}
+
 		// ==========================================
 		// 2. CREATE QUERY
 		// ==========================================
@@ -116,8 +141,12 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 			stmtGetFullUUID:     stmtUUID,
 			stmtGetFullPhone:    stmtPhone,
 			stmtGetFullUsername: stmtUsername,
-			stmtCreateAdmin:     stmtCreate,
-			stmtUpdateAdmin:     stmtUpdate,
+			stmtCreateAdmin:            stmtCreate,
+			stmtUpdateAdmin:            stmtUpdate,
+			stmtGetAllAdmins:           stmtGetAllAdmins,
+			stmtCountAllAdmins:         stmtCountAllAdmins,
+			stmtGetAllAdminsByTenant:   stmtGetAllAdminsByTenant,
+			stmtCountAllAdminsByTenant: stmtCountAllAdminsByTenant,
 		}
 	})
 	return adminRepoInstance
@@ -293,4 +322,56 @@ func (r *TenantUserLoginRepository) GetActiveAdminByUsername(ctx context.Context
 
 	go r.createAdminCaches(context.Background(), a)
 	return a, nil
+}
+
+func (r *TenantUserLoginRepository) scanMultipleFullRetrieval(rows *sql.Rows) ([]*models.TenantUserLogin, error) {
+	var admins []*models.TenantUserLogin
+	for rows.Next() {
+		var a models.TenantUserLogin
+		if err := rows.Scan(
+			&a.ID, &a.UUID, &a.TenantID, &a.Username, &a.PhoneNumber,
+			&a.PasswordHash, &a.TOTPSecret, &a.IsTOTPEnabled, &a.Role,
+			&a.IsActive, &a.PermissionsJSON,
+			&a.CreatedAt, &a.ModifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		admins = append(admins, &a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return admins, nil
+}
+
+func (r *TenantUserLoginRepository) GetAllAdminsPaginated(ctx context.Context, limit, offset int) ([]*models.TenantUserLogin, int64, error) {
+	var total int64
+	if err := r.stmtCountAllAdmins.QueryRowContext(ctx).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.stmtGetAllAdmins.QueryContext(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	admins, err := r.scanMultipleFullRetrieval(rows)
+	return admins, total, err
+}
+
+func (r *TenantUserLoginRepository) GetAllAdminsByTenantPaginated(ctx context.Context, tenantID int64, limit, offset int) ([]*models.TenantUserLogin, int64, error) {
+	var total int64
+	if err := r.stmtCountAllAdminsByTenant.QueryRowContext(ctx, tenantID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.stmtGetAllAdminsByTenant.QueryContext(ctx, tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	admins, err := r.scanMultipleFullRetrieval(rows)
+	return admins, total, err
 }
