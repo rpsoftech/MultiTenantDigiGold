@@ -2,7 +2,7 @@
   "name": "AdminApp",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "projectType": "application",
-  "prefix": "app",
+  "prefix": "dg",
   "sourceRoot": "packages/apps/admin-app/src",
   "tags": [],
   "targets": {

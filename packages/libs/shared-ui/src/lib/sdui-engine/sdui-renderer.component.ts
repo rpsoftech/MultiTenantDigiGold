@@ -8,9 +8,13 @@ import { SduiRegistryService } from './sdui-registry.service';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <ng-container
-      *ngComponentOutlet="resolvedComponent; inputs: componentInputs"
-    ></ng-container>
+    @if (resolvedComponent) {
+      <ng-container
+        *ngComponentOutlet="resolvedComponent; inputs: componentInputs"
+      ></ng-container>
+    } @else {
+      <!-- Optional skeletal loader could go here while the chunk is downloaded -->
+    }
 
     <!-- Render children recursively if they exist -->
     @if (config?.children && config!.children!.length > 0) {
@@ -30,19 +34,28 @@ export class SduiRendererComponent implements OnInit {
   resolvedComponent: any = null;
   componentInputs: Record<string, unknown> = {};
 
-  ngOnInit() {
+  async ngOnInit() {
     if (this.config) {
-      this.resolvedComponent = this.registry.getComponent(
+      const loader = this.registry.getComponentLoader(
         this.config.type,
         this.config.variant,
       );
-      if (!this.resolvedComponent) {
+      if (loader) {
+        try {
+          this.resolvedComponent = await loader();
+          // Pass the props as @Input bindings to the resolved component
+          this.componentInputs = { ...this.config.props };
+        } catch (err) {
+          console.error(
+            `[SDUI] Failed to lazy load chunk for: ${this.config.type}_${this.config.variant}`,
+            err,
+          );
+        }
+      } else {
         console.warn(
           `[SDUI] Component not found in registry: ${this.config.type}_${this.config.variant}`,
         );
       }
-      // Pass the props as @Input bindings to the resolved component
-      this.componentInputs = { ...this.config.props };
     }
   }
 }

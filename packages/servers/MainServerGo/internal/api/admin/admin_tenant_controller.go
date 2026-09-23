@@ -56,6 +56,9 @@ func (c *AdminTenantController) RegisterRoutes(router fiber.Router) {
 
 	// Stage 7: Status/Launch
 	tenantsGroup.Patch("/:uuid/status", c.UpdateStatus)
+
+	// Stage 8: UI Layout
+	tenantsGroup.Patch("/:uuid/ui-layout", c.UpdateUILayout)
 }
 
 type CreateStubRequest struct {
@@ -260,4 +263,23 @@ func (c *AdminTenantController) GetTenantKYC(ctx fiber.Ctx) error {
 	return ctx.JSON(fiber.Map{
 		"data": docs,
 	})
+}
+
+// UpdateUILayout — Stage 8
+func (c *AdminTenantController) UpdateUILayout(ctx fiber.Ctx) error {
+	var req struct {
+		UIJSONConfig []interface{} `json:"ui_json_config"`
+	}
+	if err := ctx.Bind().Body(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	tenantUUID := ctx.Params("uuid")
+	adminUUID := middleware.GetAdminUUID(ctx)
+
+	if err := c.tenantConfigService.UpdateTenantUILayout(ctx.Context(), tenantUUID, req.UIJSONConfig, adminUUID); err != nil {
+		return err
+	}
+
+	return ctx.JSON(fiber.Map{"status": "success"})
 }

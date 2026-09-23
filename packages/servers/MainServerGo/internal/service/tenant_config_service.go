@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"encoding/json"
+	"github.com/google/uuid"
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
@@ -317,4 +319,38 @@ func (s *TenantConfigService) UpdateTenantKYCVerify(ctx context.Context, kycDoc 
 	}
 
 	return tx.Commit()
+}
+
+func (s *TenantConfigService) UpdateTenantUILayout(ctx context.Context, tenantUUID string, uiConfig []interface{}, adminUUID string) error {
+	tenantID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil {
+		return err
+	}
+
+	configBytes, err := json.Marshal(uiConfig)
+	if err != nil {
+		return err
+	}
+
+	err = s.TenantRepo.UpdateTenantUILayout(ctx, tenantID, configBytes)
+	if err != nil {
+		return err
+	}
+
+	// 10. Write Audit Event
+	payload := map[string]interface{}{
+		"updated_by": adminUUID,
+		"ui_config":  uiConfig,
+	}
+
+	s.EventRepo.SaveEventWithContext(ctx, &events.BaseEvent{
+		Id:          uuid.New().String(),
+		TenantId:    tenantUUID,
+		EventName:   "TENANT_UI_LAYOUT_UPDATED",
+		ParentNames: []string{"TENANT"},
+		KeyId:       tenantUUID,
+		Payload:     payload,
+	})
+
+	return nil
 }

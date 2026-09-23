@@ -1,10 +1,6 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import {
-  SduiRendererComponent,
-  SduiRegistryService,
-  Hero1Component,
-} from '@dg/ui';
+import { SduiRendererComponent } from '@dg/ui';
 import { SDUIComponentConfig } from '@dg/angular-core';
 
 @Component({
@@ -17,7 +13,7 @@ import { SDUIComponentConfig } from '@dg/angular-core';
         This is where the magic happens!
         The entire layout is rendered purely from the JSON below.
       -->
-      <div class="w-full max-w-4xl space-y-8">
+      <div class="w-full max-w-5xl space-y-8">
         @for (comp of pageLayout; track comp.id) {
           <dg-sdui-renderer [config]="comp"></dg-sdui-renderer>
         }
@@ -27,8 +23,6 @@ import { SDUIComponentConfig } from '@dg/angular-core';
   styleUrl: './app.scss',
 })
 export class App implements OnInit {
-  private sduiRegistry = inject(SduiRegistryService);
-
   // In production, this JSON comes directly from the Go Backend (posgrest) based on the current X-Tenant-Id
   pageLayout: SDUIComponentConfig[] = [
     {
@@ -43,10 +37,15 @@ export class App implements OnInit {
         backgroundColor: '#0f172a', // Tenant specific brand color injection
       },
     },
+    {
+      id: 'comp_2',
+      type: 'LiveRate',
+      variant: '1',
+      props: {}, // Signal takes care of the state internally
+    },
   ];
 
   ngOnInit() {
-    // Register the component variants explicitly so the Tree-shaker doesn't strip them
-    this.sduiRegistry.register('Hero_1', Hero1Component);
+    // Registry is auto-hydrated by the shared-ui module's internal manifest
   }
 }

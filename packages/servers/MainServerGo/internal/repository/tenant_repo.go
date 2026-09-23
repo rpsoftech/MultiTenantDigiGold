@@ -510,3 +510,20 @@ func (r *TenantRepository) GetFullTenantByID(ctx context.Context, id int64) (*mo
 	}
 	return t, nil
 }
+
+func (r *TenantRepository) UpdateTenantUILayout(ctx context.Context, tenantID int64, uiConfigBytes []byte) error {
+	query := `
+		UPDATE tenants 
+		SET tenant_ui_json_config = $1, tenant_modified_at = NOW()
+		WHERE tenant_id = $2
+	`
+	_, err := r.DB.Db.ExecContext(ctx, query, string(uiConfigBytes), tenantID)
+	if err != nil {
+		return err
+	}
+
+	// Optional: invalidate cache if needed
+	// r.invalidateTenantCaches(ctx, &models.Tenant{ID: tenantID}) // Not implemented with ID only
+
+	return nil
+}
