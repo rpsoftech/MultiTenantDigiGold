@@ -41,6 +41,42 @@ func GetTenantConfigService() *TenantConfigService {
 	return tenantConfigServiceInstance
 }
 
+// ==========================================
+// READ OPERATIONS (Phase B)
+// ==========================================
+
+func (s *TenantConfigService) GetTenantsPaginated(ctx context.Context, page, limit int) ([]*models.Tenant, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+	return s.TenantRepo.GetAllTenantsPaginated(ctx, limit, offset)
+}
+
+func (s *TenantConfigService) GetTenantByUUID(ctx context.Context, uuid string) (*models.Tenant, error) {
+	return s.TenantRepo.GetFullTenantByUUID(ctx, uuid)
+}
+
+func (s *TenantConfigService) GetTenantMargins(ctx context.Context, tenantUUID string) ([]*models.MarginConfig, error) {
+	tenantIntID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil || tenantIntID == 0 {
+		return nil, fmt.Errorf("invalid tenant UUID: %w", err)
+	}
+	return s.MarginRepo.GetAllMarginsByTenant(ctx, tenantIntID)
+}
+
+func (s *TenantConfigService) GetTenantKYC(ctx context.Context, tenantUUID string) ([]*models.TenantKYCDocument, error) {
+	tenantIntID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
+	if err != nil || tenantIntID == 0 {
+		return nil, fmt.Errorf("invalid tenant UUID: %w", err)
+	}
+	kycRepo := repository.GetTenantKYCRepository()
+	return kycRepo.GetKYCDocsByTenantID(ctx, tenantIntID)
+}
+
 func (s *TenantConfigService) CreateTenant(ctx context.Context, tenant *models.Tenant, adminUser *models.TenantUserLogin, adminUUID string) error {
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {

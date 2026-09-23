@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"strconv"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -28,6 +30,11 @@ func (c *AdminTenantController) RegisterRoutes(router fiber.Router) {
 		am.Intercept,
 		middleware.RequireRole("super_admin"),
 	)
+	// Phase B: Read Operations
+	tenantsGroup.Get("/", c.GetTenantsList)
+	tenantsGroup.Get("/:uuid", c.GetTenantDetail)
+	tenantsGroup.Get("/:uuid/margins", c.GetTenantMargins)
+	tenantsGroup.Get("/:uuid/kyc", c.GetTenantKYC)
 
 	// Stage 1: Stub
 	tenantsGroup.Post("/stub", c.CreateStub)
@@ -186,4 +193,71 @@ func (c *AdminTenantController) UpdateStatus(ctx fiber.Ctx) error {
 	}
 
 	return ctx.JSON(fiber.Map{"status": "success"})
+}
+
+// ==========================================
+// Phase B: READ HANDLERS
+// ==========================================
+
+func (c *AdminTenantController) GetTenantsList(ctx fiber.Ctx) error {
+	pageStr := ctx.Query("page", "1")
+	limitStr := ctx.Query("limit", "20")
+
+	page, _ := strconv.Atoi(pageStr)
+	limit, _ := strconv.Atoi(limitStr)
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+
+	tenants, total, err := c.tenantConfigService.GetTenantsPaginated(ctx.Context(), page, limit)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(fiber.Map{
+		"data":  tenants,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+func (c *AdminTenantController) GetTenantDetail(ctx fiber.Ctx) error {
+	uuid := ctx.Params("uuid")
+	tenant, err := c.tenantConfigService.GetTenantByUUID(ctx.Context(), uuid)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(fiber.Map{
+		"data": tenant,
+	})
+}
+
+func (c *AdminTenantController) GetTenantMargins(ctx fiber.Ctx) error {
+	uuid := ctx.Params("uuid")
+	margins, err := c.tenantConfigService.GetTenantMargins(ctx.Context(), uuid)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(fiber.Map{
+		"data": margins,
+	})
+}
+
+func (c *AdminTenantController) GetTenantKYC(ctx fiber.Ctx) error {
+	uuid := ctx.Params("uuid")
+	docs, err := c.tenantConfigService.GetTenantKYC(ctx.Context(), uuid)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(fiber.Map{
+		"data": docs,
+	})
 }

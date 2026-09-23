@@ -20,13 +20,14 @@ var (
 )
 
 type MarginRepository struct {
-	DB                      *postgres.PostgresDBStruct
-	Redis                   *redis_client.RedisClientStruct
-	stmtGetMarginByTenant   *sql.Stmt
-	stmtGetMarginForUpdate  *sql.Stmt
-	stmtUpdateUnliftedGrams *sql.Stmt
-	stmtCreateMargin        *sql.Stmt // NEW: For Stage 1 Bootstrapping
-	stmtUpdateMargin        *sql.Stmt // NEW: For Stage 2 Admin Patching
+	DB                        *postgres.PostgresDBStruct
+	Redis                     *redis_client.RedisClientStruct
+	stmtGetMarginByTenant     *sql.Stmt
+	stmtGetAllMarginsByTenant *sql.Stmt
+	stmtGetMarginForUpdate    *sql.Stmt
+	stmtUpdateUnliftedGrams   *sql.Stmt
+	stmtCreateMargin          *sql.Stmt // NEW: For Stage 1 Bootstrapping
+	stmtUpdateMargin          *sql.Stmt // NEW: For Stage 2 Admin Patching
 }
 
 func InitMarginRepository() *MarginRepository {
@@ -58,6 +59,19 @@ func InitMarginRepository() *MarginRepository {
 		stmt, err := db.Db.Prepare(query)
 		if err != nil {
 			panic(fmt.Errorf("error preparing stmtGetMarginByTenant: %w", err))
+		}
+
+		queryAllByTenant := fmt.Sprintf(
+			"SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s FROM %s WHERE %s = $1",
+			schema.ColMCID, schema.ColMCUUID, schema.ColMCTenantID, schema.ColMCCommodityType,
+			schema.ColMCSellMarginType, schema.ColMCSellMarginValue, schema.ColMCIsGSTEnabled,
+			schema.ColMCGSTPercentage, schema.ColMCTenantCreditLimitGrams, schema.ColMCTenantUnliftedGrams,
+			schema.ColMCIsActive, schema.ColMCCreatedAt, schema.ColMCModifiedAt,
+			schema.TableMarginConfigs, schema.ColMCTenantID,
+		)
+		stmtAll, err := db.Db.Prepare(queryAllByTenant)
+		if err != nil {
+			panic(fmt.Errorf("error preparing stmtGetAllMarginsByTenant: %w", err))
 		}
 
 		queryForUpdate := query + " FOR UPDATE"
@@ -114,13 +128,14 @@ func InitMarginRepository() *MarginRepository {
 			panic(fmt.Errorf("error preparing stmtUpdateMargin: %w", err))
 		}
 		marginRepoInstance = &MarginRepository{
-			DB:                      db,
-			Redis:                   rdb,
-			stmtGetMarginByTenant:   stmt,
-			stmtGetMarginForUpdate:  stmtForUpdate,
-			stmtUpdateUnliftedGrams: stmtUpdate,
-			stmtCreateMargin:        stmtCreate,
-			stmtUpdateMargin:        stmtUpdateAdmin,
+			DB:                        db,
+			Redis:                     rdb,
+			stmtGetMarginByTenant:     stmt,
+			stmtGetAllMarginsByTenant: stmtAll,
+			stmtGetMarginForUpdate:    stmtForUpdate,
+			stmtUpdateUnliftedGrams:   stmtUpdate,
+			stmtCreateMargin:          stmtCreate,
+			stmtUpdateMargin:          stmtUpdateAdmin,
 		}
 	})
 	return marginRepoInstance
@@ -173,6 +188,33 @@ func (r *MarginRepository) GetMarginByTenant(ctx context.Context, tenantID int64
 	}(margin)
 
 	return &margin, nil
+}
+
+func (r *MarginRepository) GetAllMarginsByTenant(ctx context.Context, tenantID int64) ([]*models.MarginConfig, error) {
+	rows, err := r.stmtGetAllMarginsByTenant.QueryContext(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var margins []*models.MarginConfig
+	for rows.Next() {
+		var m models.MarginConfig
+		if err := rows.Scan(
+			&m.ID, &m.UUID, &m.TenantID, &m.CommodityType,
+			&m.SellMarginType, &m.SellMarginValue, &m.IsGSTEnabled,
+			&m.GSTPercentage, &m.TenantCreditLimitGrams, &m.TenantUnLiftedGrams,
+			&m.IsActive, &m.CreatedAt, &m.ModifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		margins = append(margins, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return margins, nil
 }
 
 func (r *MarginRepository) createCacheKey(tenantID int64, commodityType string) string {
