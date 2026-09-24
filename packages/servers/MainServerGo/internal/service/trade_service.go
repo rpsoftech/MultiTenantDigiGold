@@ -65,6 +65,56 @@ type rateSnapshot struct {
 	Bid float64 `json:"bid"`
 }
 
+// TradeQuote is the server-side price and size of a trade. Online buys lock a
+// quote when the order is created and execute it when the payment is captured.
+type TradeQuote struct {
+	FinalRatePerGram float64 `json:"final_rate_per_gram"`
+	MCXBaseRate      float64 `json:"mcx_base_rate"`
+	MarginApplied    float64 `json:"margin_applied"`
+	GSTApplied       float64 `json:"gst_applied"`
+	WeightGrams      float64 `json:"weight_grams"`
+	TotalAmountINR   float64 `json:"total_amount_inr"`
+	ExpiresAt        int64   `json:"expires_at"` // unix seconds
+}
+
+// Expired reports whether the quote can no longer be executed at time now.
+func (q *TradeQuote) Expired(now time.Time) bool {
+	return now.Unix() > q.ExpiresAt
+}
+
+func isDebitAction(action string) bool {
+	return action == "SELL" || action == "REDEEM"
+}
+
+// ledgerEventType maps a trade action to its gold_transaction_ledger event type.
+func ledgerEventType(action string) string {
+	switch action {
+	case "SELL":
+		return "GOLD_SELL"
+	case "REDEEM":
+		return ledgerEventRedemption
+	default:
+		return "GOLD_PURCHASE"
+	}
+}
+
+// sizeTrade derives the traded grams and INR amount from either a weight or an amount.
+func sizeTrade(weightGrams, totalAmountINR, finalRate float64) (weight, total float64, err error) {
+	if weightGrams > 0 {
+		weight = math.Round(weightGrams*10000) / 10000
+		total = math.Round((weight*finalRate)*100) / 100
+	} else if totalAmountINR > 0 {
+		total = math.Round(totalAmountINR*100) / 100
+		weight = math.Round((total/finalRate)*10000) / 10000
+	} else {
+		return 0, 0, interfaces.ErrInvalidTradePayload
+	}
+	if weight <= 0 || total <= 0 {
+		return 0, 0, interfaces.ErrInvalidTradePayload
+	}
+	return weight, total, nil
+}
+
 // TradeQuote is the server-side price and size of a buy. Online buys lock a
 // quote when the order is created and execute it when the payment is captured.
 type TradeQuote struct {

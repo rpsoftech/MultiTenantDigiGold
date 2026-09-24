@@ -216,6 +216,7 @@ CREATE TYPE payment_mode_enum AS ENUM (
 
 CREATE TYPE ledger_event_type_enum AS ENUM (
     'GOLD_PURCHASE',       
+    'GOLD_SELL',           -- Customer sold gold back to the store
     'PHYSICAL_REDEMPTION', 
     'SYSTEM_REVERSAL',     
     'ADMIN_ADJUSTMENT'     

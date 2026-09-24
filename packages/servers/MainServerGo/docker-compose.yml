@@ -12,7 +12,7 @@ services:
       - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql # PostgreSQL 18 images keep data under this path
-    # The schema is created by migrations: the API runs them on startup.
+      - ./posgrest.scema.sql:/docker-entrypoint-initdb.d/posgrest.scema.sql
     restart: unless-stopped
 
   redis:
