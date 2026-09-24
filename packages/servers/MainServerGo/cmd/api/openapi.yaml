@@ -211,6 +211,7 @@ components:
             enum:
               [
                 GOLD_PURCHASE,
+                GOLD_SELL,
                 PHYSICAL_REDEMPTION,
                 SYSTEM_REVERSAL,
                 ADMIN_ADJUSTMENT,
@@ -533,9 +534,12 @@ paths:
       tags: [Customer]
       summary: Start an online buy (creates a Razorpay order)
       description: |
-        Priced by amount only: `weight_grams` is ignored and gold is credited from
-        the amount paid. The trade executes when Razorpay sends `payment.captured`
-        to `/webhook/razorpay`. Amounts above ₹50,000 need verified KYC.
+        Priced by amount only: `weight_grams` is ignored. The server checks the
+        rate (±₹30 of `requested_rate_per_gram`) and the store's gold credit, then
+        locks the quote for 15 minutes. The trade executes at that quote when
+        Razorpay sends `payment.captured` to `/webhook/razorpay`. A payment
+        captured after the quote expires is refunded in full. Amounts above
+        ₹50,000 need verified KYC.
       security: [{ CustomerToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -558,10 +562,21 @@ paths:
                 properties:
                   success: { type: boolean }
                   order_id: { type: string, example: order_Nx1234 }
-                  amount: { type: number }
+                  amount:
+                    { type: number, description: Amount to charge in INR. }
+                  weight_grams:
+                    { type: number, description: Grams credited on capture. }
+                  final_rate_per_gram: { type: number }
+                  quote_expires_at:
+                    { type: integer, description: Unix seconds. }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Rate moved (`SLIPPAGE_EXCEEDED`) or the store is out of gold credit (`CREDIT_LIMIT_EXCEEDED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /trade/sell:
     post:
@@ -892,7 +907,7 @@ paths:
       operationId: postAdminStoreLedgerReverse
       tags: [Admin Store]
       summary: Reverse a ledger entry
-      description: Posts an opposite `SYSTEM_REVERSAL` entry. Each entry can be reversed once; reversals cannot be reversed. Fails if the customer no longer holds the gold.
+      description: Posts an opposite `SYSTEM_REVERSAL` entry. Each entry can be reversed once; reversals cannot be reversed. Fails if the customer no longer holds the gold. Reversing a redemption also cancels its shipment and fails if the shipment is no longer `PENDING`.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -918,7 +933,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: Already reversed or not reversible.
+          description: Already reversed, not reversible, or redemption no longer pending.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1112,6 +1127,7 @@ paths:
       operationId: postAdminStoreRedemptionsFulfill
       tags: [Admin Store]
       summary: Mark a redemption as shipped
+      description: Only a `PENDING` redemption can be shipped; otherwise `409 REDEMPTION_NOT_PENDING`.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1140,6 +1156,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: Redemption is no longer pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ------------------------------------------------------------------ Admin tenants
   /admin/tenants:

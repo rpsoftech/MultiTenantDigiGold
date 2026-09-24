@@ -101,7 +101,15 @@ func (wc *WebhookController) RazorpayWebhook(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing amount"})
 	}
 
-	if err := wc.PGService.ProcessPaymentSuccess(c.Context(), tenantID, orderID, paymentID, int64(amountPaise)); err != nil {
+	source, _ := notes["source"].(string)
+	payment := service.CapturedPayment{
+		TenantID:  tenantID,
+		OrderID:   orderID,
+		PaymentID: paymentID,
+		PaidPaise: int64(amountPaise),
+		Source:    source,
+	}
+	if err := wc.PGService.ProcessPaymentSuccess(c.Context(), payment, config.PaymentConfig); err != nil {
 		log.Printf("❌ Webhook Payment Processing Failed: %v\n", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "processing failed"})
 	}

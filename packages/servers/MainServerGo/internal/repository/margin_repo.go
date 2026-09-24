@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/schema"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
@@ -254,13 +255,15 @@ func (r *MarginRepository) IncrementUnliftedGramsWithTx(ctx context.Context, tx 
 
 	newUnliftedGrams := margin.TenantUnLiftedGrams + tradeWeight
 	if newUnliftedGrams > margin.TenantCreditLimitGrams {
-		return fmt.Errorf("B2B_CREDIT_EXCEEDED: trade of %f grams exceeds available capacity", tradeWeight)
+		return fmt.Errorf("%w: trade of %f grams exceeds available capacity", interfaces.ErrCreditLimitExceeded, tradeWeight)
 	}
 
 	_, err = tx.StmtContext(ctx, r.stmtUpdateUnliftedGrams).ExecContext(ctx, newUnliftedGrams, margin.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update unlifted grams: %w", err)
 	}
+
+	margin.TenantUnLiftedGrams = newUnliftedGrams
 
 	// Invalidate cache asynchronously
 	go func() {
@@ -327,5 +330,25 @@ func (r *MarginRepository) UpdateMarginConfigWithTx(ctx context.Context, tx *sql
 		r.Redis.RemoveKey(bgCtx, cacheKey)
 	}()
 
+	return nil
+}
+
+// CheckCreditCapacity reports whether the tenant's B2B credit can absorb a buy of
+// tradeWeight grams. It reads the database without locking; the final check
+// happens again under lock in IncrementUnliftedGramsWithTx.
+func (r *MarginRepository) CheckCreditCapacity(ctx context.Context, tenantID int64, commodityType string, tradeWeight float64) error {
+	var m models.MarginConfig
+	err := r.stmtGetMarginByTenant.QueryRowContext(ctx, tenantID, commodityType).Scan(
+		&m.ID, &m.UUID, &m.TenantID, &m.CommodityType,
+		&m.SellMarginType, &m.SellMarginValue, &m.IsGSTEnabled,
+		&m.GSTPercentage, &m.TenantCreditLimitGrams, &m.TenantUnLiftedGrams,
+		&m.IsActive, &m.CreatedAt, &m.ModifiedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to read margin config: %w", err)
+	}
+	if m.TenantUnLiftedGrams+tradeWeight > m.TenantCreditLimitGrams {
+		return fmt.Errorf("%w: trade of %f grams exceeds available capacity", interfaces.ErrCreditLimitExceeded, tradeWeight)
+	}
 	return nil
 }

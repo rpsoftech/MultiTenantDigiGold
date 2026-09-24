@@ -125,6 +125,22 @@ func ParseDBError(err error) *RequestError {
 			Name:       "ERROR_LEDGER_REVERSAL",
 		}
 
+	case errors.Is(err, ErrCreditLimitExceeded):
+		return &RequestError{
+			StatusCode: 409,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "This store cannot accept the trade right now. Please try a smaller amount or contact the store.",
+			Name:       "CREDIT_LIMIT_EXCEEDED",
+		}
+
+	case errors.Is(err, ErrRedemptionNotPending):
+		return &RequestError{
+			StatusCode: 409,
+			Code:       ERROR_LEDGER_REVERSAL,
+			Message:    "Redemption is no longer pending.",
+			Name:       "REDEMPTION_NOT_PENDING",
+		}
+
 	case errors.Is(err, ErrMaxVerifyAttempts):
 		return &RequestError{
 			StatusCode:    429,

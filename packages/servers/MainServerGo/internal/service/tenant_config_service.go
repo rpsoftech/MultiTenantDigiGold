@@ -141,7 +141,9 @@ func (s *TenantConfigService) CreateTenant(ctx context.Context, tenant *models.T
 	if adminUser.UUID == "" {
 		adminUser.UUID = utility_functions.GenerateNewUUID()
 	}
-	adminUser.Role = "super_admin"
+	// The store's root admin manages only this store. super_admin is reserved for
+	// platform staff: AdminAuthMiddleware lets it act on any tenant.
+	adminUser.Role = "manager"
 	adminUser.IsActive = true
 	adminUser.IsTOTPEnabled = true // Mandatory TOTP on first login
 

@@ -100,15 +100,25 @@ func (tc *CustomerTradeController) InitiateBuy(c fiber.Ctx) error {
 		}
 	}
 
-	orderID, err := tc.PGService.CreateOrder(c.Context(), req, config.PaymentConfig)
+	// Lock the price now. The webhook credits gold at this quote, so a rate move
+	// between order and capture cannot strand a paid order.
+	quote, err := tc.TradeService.QuoteBuy(c.Context(), req)
+	if err != nil {
+		return err
+	}
+
+	orderID, err := tc.PGService.CreateOrder(c.Context(), req, quote, config.PaymentConfig)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(fiber.Map{
-		"success":  true,
-		"order_id": orderID,
-		"amount":   req.TotalAmountINR,
+		"success":             true,
+		"order_id":            orderID,
+		"amount":              quote.TotalAmountINR,
+		"weight_grams":        quote.WeightGrams,
+		"final_rate_per_gram": quote.FinalRatePerGram,
+		"quote_expires_at":    quote.ExpiresAt,
 	})
 }
 
@@ -142,6 +152,9 @@ func (tc *CustomerTradeController) Sell(c fiber.Ctx) error {
 	req.TenantID = tenantID
 	req.UserID = user.ID
 	req.Action = "SELL"
+	// No money reaches the store in a customer sell or redemption; the client
+	// never chooses the payment mode.
+	req.PaymentMode = "NONE"
 
 	ipAddress := c.IP()
 
@@ -252,6 +265,9 @@ func (tc *CustomerTradeController) Redeem(c fiber.Ctx) error {
 	req.TenantID = tenantID
 	req.UserID = user.ID
 	req.Action = "REDEEM"
+	// No money reaches the store in a customer sell or redemption; the client
+	// never chooses the payment mode.
+	req.PaymentMode = "NONE"
 
 	ipAddress := c.IP()
 

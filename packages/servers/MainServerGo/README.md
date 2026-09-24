@@ -232,7 +232,8 @@ POST /admin/auth/totp/verify  {temp_token, code}   → access + refresh token
 POST /admin/auth/refresh      {refresh_token}      → new token pair
 ```
 
-Roles in the schema: `super_admin` (platform), `manager` (shop), `custom`. The event log also
+Roles in the schema: `super_admin` (platform), `manager` (shop), `custom`. Tenant
+onboarding creates the store's root admin as `manager`. The event log also
 accepts `auditor`, but the `tu_role` CHECK constraint does not allow that value yet.
 
 ### Live rates
@@ -253,7 +254,8 @@ without blocking. Slow clients skip ticks.
 4. In one transaction:
    - locks the user row (scoped to the tenant),
    - rejects a negative resulting balance,
-   - writes a signed ledger entry (+ credit, − debit),
+   - writes a signed ledger entry (+ credit, − debit) with event type `GOLD_PURCHASE`,
+     `GOLD_SELL` or `PHYSICAL_REDEMPTION`,
    - creates the redemption record (redeem only),
    - writes the audit event,
    - updates tenant unlifted grams.
@@ -263,15 +265,30 @@ Online buy:
 
 ```
 POST /trade/buy/initiate {total_amount_inr, requested_rate_per_gram}
-  → Razorpay order + trade intent in Redis (15 min)
+  → price check + store credit check → quote locked for 15 min
+  → Razorpay order + trade intent (request + quote) in Redis (7 days)
 Razorpay → POST /webhook/razorpay (payment.captured)
-  → verify signature, event type, tenant and amount → ExecuteTrade
+  → verify signature, event type, tenant, amount and quote expiry
+  → ExecuteQuotedTrade at the locked quote (no second price check)
 ```
 
-Online buys are priced by amount only. Counter trades (`POST /admin/store/trade/counter`)
-identify the customer by `user_uuid` and accept `COUNTER_CASH` or `COUNTER_UPI`.
+Online buys are priced by amount only. The response includes the locked `weight_grams`,
+`final_rate_per_gram` and `quote_expires_at`.
+
+If a captured payment can never be settled, the webhook **refunds it in full** through the
+Razorpay refund API and writes a `TRADE_PAYMENT_REFUNDED` audit event. This happens when
+the quote expired before capture, the amount does not match, the intent is missing, or
+the trade is rejected (store out of credit, user gone). A missing intent is refunded only
+for orders tagged `notes.source = "digigold"`. Transient failures (database, Redis,
+Razorpay refund call) return `500` so Razorpay retries.
+
+Customer sells and redemptions always record `payment_mode = NONE`. Counter trades
+(`POST /admin/store/trade/counter`) identify the customer by `user_uuid` and accept
+`COUNTER_CASH` or `COUNTER_UPI`.
 
 Reversals (`POST /admin/store/ledger/reverse`) post an opposite `SYSTEM_REVERSAL` entry.
+Reversing a redemption also cancels its shipment, and fails with `409` if the shipment
+has already left `PENDING`. A shipment can be fulfilled only while `PENDING`.
 The ledger is append-only; rows are never updated.
 
 ### Events and the outbox

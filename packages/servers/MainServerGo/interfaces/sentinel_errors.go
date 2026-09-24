@@ -30,4 +30,6 @@ var (
 	ErrLedgerNotReversible   = errors.New("ledger entry cannot be reversed")
 	ErrSlippageExceeded      = errors.New("live rate moved beyond allowable tolerance")
 	ErrInvalidTradePayload   = errors.New("must specify a positive weight_grams or total_amount_inr")
+	ErrCreditLimitExceeded   = errors.New("trade exceeds the store's available gold credit")
+	ErrRedemptionNotPending  = errors.New("redemption is not pending")
 )
