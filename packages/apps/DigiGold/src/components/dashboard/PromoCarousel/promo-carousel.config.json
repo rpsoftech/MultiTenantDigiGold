@@ -5,7 +5,7 @@
       "id": "festive-offer",
       "imageUrl": "/marketplace/banner-11.jpg",
       "imageAlt": "Festive gold savings offer",
-      "linkUrl": "/marketplace/jewelry",
+      "linkUrl": "/jewellery",
       "enabled": true,
       "order": 1
     },

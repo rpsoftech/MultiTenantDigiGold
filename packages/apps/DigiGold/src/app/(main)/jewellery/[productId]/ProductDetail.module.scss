@@ -1,0 +1,69 @@
+.page { min-height: 100%; padding: 20px 24px 64px; background: #fbfaf7; color: #3d2b1d; }
+.breadcrumbs, .layout { max-width: 1280px; margin-inline: auto; }
+.breadcrumbs { display: flex; gap: 10px; align-items: center; margin-bottom: 22px; color: #8f806d; font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; }
+.breadcrumbs a { color: inherit; }
+.breadcrumbs strong { color: #3d2b1d; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(390px, .88fr); gap: 40px; align-items: start; }
+.gallery { min-width: 0; }
+.imageFrame { position: relative; aspect-ratio: 1 / 1; overflow: hidden; border: 1px solid #e8dfd1; border-radius: 20px; background: #eeeae5; box-shadow: 0 12px 30px rgba(70, 52, 25, .08); }
+.imageFrame img { object-fit: cover; }
+.certification { position: absolute; top: 18px; left: 18px; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 10px 15px; background: rgba(255, 255, 255, .94); color: #3d2b1d; font-size: .75rem; font-weight: 700; box-shadow: 0 4px 12px rgba(45, 31, 10, .16); }
+.certification svg, .trust svg { color: #b27d24; }
+.imageFavorite { position: absolute; top: 18px; right: 18px; display: grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; background: #bf8d35; color: #fff; box-shadow: 0 5px 12px rgba(45, 31, 10, .2); cursor: pointer; transition: transform .2s ease, box-shadow .2s ease; }
+.imageFavorite:hover, .imageFavorite:focus-visible { transform: scale(1.08); background: #bf8d35; box-shadow: 0 7px 16px rgba(45, 31, 10, .28); }
+.imageFavorite:focus-visible { outline: 2px solid #c99a43; outline-offset: 3px; }
+.imageFavorite svg { stroke-width: 1.8; }
+.imageFavoriteActive { background: #211f1d; color: #d4af37; }
+.mediaStrip { display: flex; gap: 12px; margin-top: 16px; padding-left: 18px; }
+.mediaThumbnail { position: relative; width: 76px; height: 76px; overflow: hidden; border: 2px solid #c99a43; border-radius: 12px; padding: 0; background: #eeeae5; box-shadow: 0 4px 10px rgba(70, 52, 25, .1); cursor: pointer; }
+.mediaThumbnail img { object-fit: cover; }
+.mediaThumbnail:focus-visible { outline: 2px solid #3d2b1d; outline-offset: 3px; }
+.details { padding-top: 8px; }
+.detailTopline { min-height: 30px; }
+.detailTopline span { padding: 7px 15px; font-size: .72rem; }
+.details h1 { margin: 20px 0 13px; color: #211d1a; font-family: Georgia, serif; font-size: clamp(2.25rem, 3.6vw, 3.15rem); font-weight: 700; line-height: 1.06; }
+.reference { margin: 0 0 22px; color: #6f6254; font-size: .68rem; letter-spacing: .08em; }
+.reference span { color: #2a7951; font-weight: 700; }
+.specs { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; border: 1px solid #eadfce; border-radius: 15px; background: #fff; }
+.specs div { display: grid; gap: 8px; justify-items: center; padding: 17px 8px; border-right: 1px solid #eee5d8; text-align: center; }
+.specs div:last-child { border-right: 0; }
+.specs span, .priceBox > span, .choices label { color: #9a8060; font-size: .62rem; letter-spacing: .13em; text-transform: uppercase; }
+.specs strong { color: #3d2b1d; font-size: 1rem; }
+.priceBox { display: grid; gap: 7px; margin-top: 24px; padding: 25px 24px; border: 1px solid #eadfce; border-left: 4px solid #c9973b; border-radius: 17px; background: #fff; box-shadow: 0 6px 16px rgba(70, 52, 25, .04); }
+.priceBox strong { color: #3d2b1d; font-family: Georgia, serif; font-size: 2.1rem; }
+.priceBox em { color: #867b6d; font-size: .65rem; }
+.choices { display: grid; gap: 24px; margin-top: 26px; }
+.choices fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.choices legend { margin-bottom: 11px; color: #4e443c; font-size: .88rem; font-weight: 700; letter-spacing: .02em; text-transform: none; }
+.choiceOptions, .colorOptions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.choiceOptions button, .colorOptions button { display: flex; align-items: center; justify-content: space-between; min-height: 58px; border: 2px solid #e4e1de; border-radius: 14px; padding: 0 16px; background: #fff; color: #4e4945; font: inherit; font-size: .98rem; font-weight: 600; cursor: pointer; transition: border-color .2s ease, background .2s ease, box-shadow .2s ease, transform .2s ease; }
+.choiceOptions button:hover, .colorOptions button:hover { transform: translateY(-1px); }
+.choiceOptions button:hover, .colorOptions button:hover, .choiceOptions .choiceSelected, .colorOptions .choiceSelected { border-color: #c99a43; background: #fffdf8; box-shadow: 0 0 0 2px rgba(201, 154, 67, .1); }
+.choiceOptions button span { color: #b27d24; font-size: 1.15rem; }
+.colorOptions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.colorOptions button { justify-content: center; gap: 10px; }
+.colorDot { width: 17px; height: 17px; border: 1px solid #d5d1cb; border-radius: 50%; background: #f3c517; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.colorDot.rose { background: #f2a5af; }
+.colorDot.white { background: #e8edf3; }
+.choiceField { position: relative; min-width: 0; padding: 13px 14px 12px; border: 1px solid #eadfce; border-radius: 12px; background: #fffdf9; transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; }
+.choiceField:focus-within, .choiceField:has([aria-expanded='true']) { border-color: #c99a43; background: #fff; box-shadow: 0 0 0 3px rgba(201, 154, 67, .14); }
+.choiceLabel { display: block; margin-bottom: 7px; color: #9a8060; font-size: .62rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.choiceTrigger { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; padding: 0; background: transparent; color: #3d2b1d; font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; text-align: left; }
+.choiceChevron { width: 7px; height: 7px; margin: -4px 3px 0 10px; border-right: 1.5px solid #b27d24; border-bottom: 1.5px solid #b27d24; transform: rotate(45deg); transition: transform .2s ease; }
+.choiceChevronOpen { margin-top: 4px; transform: rotate(225deg); }
+.choiceOptions { position: static; z-index: auto; overflow: visible; border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }
+.actions { display: grid; grid-template-columns: minmax(0, 1fr) 58px; gap: 12px; margin-top: 24px; }
+.buyButton, .favoriteButton { border: 0; border-radius: 13px; cursor: pointer; }
+.buyButton { display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 0 24px; background: #c99a43; color: #fff; font-size: .82rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 7px 16px rgba(170, 122, 42, .2); }
+.buyButton:hover { background: #b88631; }
+.favoriteButton { display: grid; place-items: center; border: 1px solid #eadfce; background: #211f1d; color: #fff; box-shadow: 0 5px 12px rgba(45, 31, 10, .12); transition: transform .2s ease, background .2s ease, color .2s ease, box-shadow .2s ease; }
+.favoriteButton:hover, .favoriteButton:focus-visible, .favoriteActive { background: #f5ead6; color: #b27d24; box-shadow: 0 8px 16px rgba(70, 52, 25, .16); transform: translateY(-2px); }
+.favoriteButton:focus-visible { outline: 2px solid #c99a43; outline-offset: 3px; }
+.favoriteButton svg { stroke-width: 1.8; }
+.trust { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 24px; padding: 20px 12px; border: 1px solid #eadfce; border-radius: 17px; background: #fffdf9; color: #655646; font-size: .82rem; }
+.trust span { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 34px; border-right: 1px solid #eee5d8; }
+.trust span:last-child { border-right: 0; }
+.trust svg { width: 24px; height: 24px; flex: 0 0 auto; }
+.trust small { font-size: inherit; white-space: nowrap; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; gap: 28px; } .details { max-width: 720px; } }
+@media (max-width: 560px) { .page { padding: 18px 16px 48px; } .breadcrumbs { margin-bottom: 18px; font-size: .62rem; } .imageFrame { border-radius: 15px; } .details h1 { font-size: 2rem; } .specs strong { font-size: .78rem; } .trust { grid-template-columns: 1fr; gap: 10px; padding: 16px; } .trust span { border-right: 0; justify-content: flex-start; } }

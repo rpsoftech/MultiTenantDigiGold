@@ -14,9 +14,9 @@
       "icon": "home"
     },
     {
-      "id": "marketplace",
-      "label": "Marketplace",
-      "url": "/marketplace",
+      "id": "jewellery",
+      "label": "Jewellery",
+      "url": "/jewellery/category/bangles",
       "enabled": true,
       "order": 2
     },

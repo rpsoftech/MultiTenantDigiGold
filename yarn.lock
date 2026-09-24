@@ -9730,20 +9730,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"MainServer@workspace:packages/servers/MainServer":
-  version: 0.0.0-use.local
-  resolution: "MainServer@workspace:packages/servers/MainServer"
-  dependencies:
-    "@nestjs/common": "npm:^11.0.0"
-    "@nestjs/core": "npm:^11.0.0"
-    "@nestjs/platform-express": "npm:^11.0.0"
-    "@nestjs/testing": "npm:^11.0.0"
-    reflect-metadata: "npm:^0.2.0"
-    rxjs: "npm:^7.8.0"
-    tslib: "npm:^2.3.0"
-  languageName: unknown
-  linkType: soft
-
 "abbrev@npm:^4.0.0":
   version: 4.0.0
   resolution: "abbrev@npm:4.0.0"
