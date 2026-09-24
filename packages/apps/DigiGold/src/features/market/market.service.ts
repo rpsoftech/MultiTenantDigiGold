@@ -1,14 +1,26 @@
 import { apiClient } from '@/lib/api/client';
-import type { ApiResponse } from '@/types/api.types';
 import type { MarketRate } from './market.types';
-import { mockGetLiveRate } from './market.mock';
+import { MARKET_PURITY_LABEL } from './market.types';
+import { mockGetLastRate } from './market.mock';
+import { parseRateFrameToPrice } from './market.utils';
 
 const USE_MOCK_MARKET = process.env.NEXT_PUBLIC_USE_MOCK_MARKET === 'true';
 
+// GET /api/v1/rates/last-rate → { latest_rate: "<sse data frame>" }
+type LastRateResponse = { latest_rate: string };
+
 export const marketService = {
-  getLiveRate: async (): Promise<MarketRate> => {
-    if (USE_MOCK_MARKET) return mockGetLiveRate();
-    const response = await apiClient.get<ApiResponse<MarketRate>>('/market/live-rate');
-    return response.data.data;
+  getLastRate: async (): Promise<MarketRate | null> => {
+    if (USE_MOCK_MARKET) return mockGetLastRate();
+
+    const response = await apiClient.get<LastRateResponse>('/rates/last-rate');
+    const price = parseRateFrameToPrice(response.data.latest_rate);
+    if (price === null) return null;
+
+    return {
+      pricePerGramInr: price,
+      purityLabel: MARKET_PURITY_LABEL,
+      updatedAt: new Date().toISOString(),
+    };
   },
 };
