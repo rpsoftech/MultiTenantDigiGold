@@ -9,6 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/database"
+	otel_setup "github.com/rpsoftech/DigiGold/MainServerGo/utility/otel"
+
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	workers "github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
@@ -26,6 +29,18 @@ func main() {
 	// 1. Create a cancellable context listening for OS termination signals (Docker Stop, Ctrl+C)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	// Traces and metrics go to the OTLP collector (OTEL_EXPORTER_OTLP_ENDPOINT, default localhost:4317).
+	if tp, err := otel_setup.InitTracer(ctx, "digigold-worker"); err != nil {
+		log.Printf("⚠️ OpenTelemetry failed to initialize: %v (Proceeding without tracing)\n", err)
+	} else {
+		defer func() { _ = tp.Shutdown(context.Background()) }()
+	}
+	if mp, err := otel_setup.InitMeter(ctx, "digigold-worker"); err != nil {
+		log.Printf("⚠️ OpenTelemetry metrics failed to initialize: %v (Proceeding without metrics)\n", err)
+	} else {
+		defer func() { _ = mp.Shutdown(context.Background()) }()
+	}
 
 	// 2. The 5-Minute OTA Updater Daemon (Worker Target)
 	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION || env.Env.APP_ENV == env.APP_ENV_STAGING {
@@ -70,6 +85,10 @@ func main() {
 	db := postgres.GetPostgresDB()
 	if err := db.Db.PingContext(ctx); err != nil {
 		log.Fatalf("FATAL: PostgreSQL connection failed: %v", err)
+	}
+	// Apply pending schema migrations before any repository prepares its statements.
+	if err := database.MigrateUp(db.Db); err != nil {
+		log.Fatalf("FATAL: %v", err)
 	}
 	log.Println("✅ PostgreSQL connected successfully.")
 

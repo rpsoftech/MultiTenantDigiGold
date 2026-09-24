@@ -2,10 +2,11 @@ package middleware
 
 import (
 	"errors"
-	"log"
+	"fmt"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	// "github.com/getsentry/sentry-go" // Uncomment when Sentry is installed
 )
 
@@ -42,8 +43,8 @@ func GlobalErrorHandler(c fiber.Ctx, err error) error {
 	// We only want to spam Sentry for actual server crashes (500+),
 	// not because a user typed the wrong OTP (400/401).
 	if code >= 500 {
-		log.Printf("🚨 CRITICAL SENTRY ALERT: %v\n", err) // We log the ORIGINAL 'err' to keep the stack trace
-		// sentry.CaptureException(err)
+		// Report the ORIGINAL err (with details) to monitoring; the client gets a generic message.
+		monitoring.Critical(c.Context(), monitoring.KindHTTP5xx, fmt.Errorf("%s %s: %w", c.Method(), c.Path(), err))
 
 		// Never send internal details (DB errors, stack info) to clients.
 		message = "Internal Server Error"

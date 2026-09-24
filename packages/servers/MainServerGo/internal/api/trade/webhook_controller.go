@@ -2,10 +2,12 @@ package trade_api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/service"
 )
@@ -110,7 +112,7 @@ func (wc *WebhookController) RazorpayWebhook(c fiber.Ctx) error {
 		Source:    source,
 	}
 	if err := wc.PGService.ProcessPaymentSuccess(c.Context(), payment, config.PaymentConfig); err != nil {
-		log.Printf("❌ Webhook Payment Processing Failed: %v\n", err)
+		monitoring.Critical(c.Context(), monitoring.KindWebhookFailed, fmt.Errorf("payment %s: %w", paymentID, err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "processing failed"})
 	}
 

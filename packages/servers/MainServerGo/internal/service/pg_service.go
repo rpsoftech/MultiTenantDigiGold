@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
@@ -65,7 +67,7 @@ func (s *PaymentGatewayService) CreateOrder(ctx context.Context, req interfaces.
 		return "", fmt.Errorf("tenant payment gateway is not configured properly")
 	}
 
-	client := razorpay.NewClient(tenantConfig.KeyID, tenantConfig.KeySecret)
+	client := newRazorpayClient(tenantConfig)
 
 	// Razorpay accepts amount in paise (INR * 100)
 	amountPaise := toPaise(quote.TotalAmountINR)
@@ -112,6 +114,17 @@ func (s *PaymentGatewayService) VerifyWebhookSignature(webhookBody, signature, s
 		return fmt.Errorf("invalid razorpay webhook signature")
 	}
 	return nil
+}
+
+// newRazorpayClient returns a Razorpay client for the tenant's keys.
+// RAZORPAY_BASE_URL overrides the API host; only the integration tests set it,
+// to point at a fake Razorpay server.
+func newRazorpayClient(cfg *models.PaymentConfigJSON) *razorpay.Client {
+	client := razorpay.NewClient(cfg.KeyID, cfg.KeySecret)
+	if baseURL := os.Getenv("RAZORPAY_BASE_URL"); baseURL != "" {
+		client.Request.BaseURL = baseURL
+	}
+	return client
 }
 
 func toPaise(inr float64) int64 {
@@ -216,14 +229,18 @@ func isPermanentTradeError(err error) bool {
 func (s *PaymentGatewayService) refund(ctx context.Context, p CapturedPayment, tenantConfig *models.PaymentConfigJSON, reason refundReason, settled *bool) error {
 	log.Printf("[PGService] Refunding payment %s (order %s): %s", p.PaymentID, p.OrderID, reason)
 
-	client := razorpay.NewClient(tenantConfig.KeyID, tenantConfig.KeySecret)
+	client := newRazorpayClient(tenantConfig)
 	body, err := client.Payment.Refund(p.PaymentID, int(p.PaidPaise), map[string]interface{}{
 		"notes": map[string]interface{}{"reason": string(reason)},
 	}, nil)
 	if err != nil {
-		return fmt.Errorf("failed to refund payment %s: %w", p.PaymentID, err)
+		// The customer has paid and holds no gold until a retry succeeds.
+		err = fmt.Errorf("failed to refund payment %s (%s): %w", p.PaymentID, reason, err)
+		monitoring.Critical(ctx, monitoring.KindRefundFailed, err)
+		return err
 	}
 	*settled = true
+	monitoring.PaymentRefunded(ctx, string(reason))
 	s.Redis.Client.Del(ctx, fmt.Sprintf("digiGold:trade_intent:%s", p.OrderID))
 
 	refundID, _ := body["id"].(string)
@@ -236,7 +253,8 @@ func (s *PaymentGatewayService) refund(ctx context.Context, p CapturedPayment, t
 	})
 	if err := s.TradeService.EventRepo.SaveEventWithContext(ctx, &refundEvent.BaseEvent); err != nil {
 		// The money is already back with the customer; a missing audit row must not trigger a retry.
-		log.Printf("CRITICAL: refund %s for payment %s not recorded in event log: %v", refundID, p.PaymentID, err)
+		monitoring.Critical(ctx, monitoring.KindRefundNotLogged,
+			fmt.Errorf("refund %s for payment %s not recorded in event log: %w", refundID, p.PaymentID, err))
 	}
 	return nil
 }

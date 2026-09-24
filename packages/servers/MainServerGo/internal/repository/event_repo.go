@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 
 	// Ensure this import matches your actual Redis utility path
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
@@ -216,7 +216,7 @@ func (r *EventRepository) SaveEventWithContext(ctx context.Context, event *event
 		if pubErr := r.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
 			// Trigger a critical log here so you know Redis dropped the message.
 			// Your PostgreSQL Cron job will pick this up automatically because is_processed is still false!
-			fmt.Printf("CRITICAL: Failed to publish Event %s to Redis: %v\n", evt.Id, pubErr)
+			monitoring.Critical(bgCtx, monitoring.KindEventPublish, fmt.Errorf("event %s not published to Redis: %w", evt.Id, pubErr))
 		}
 	}(event)
 
@@ -262,7 +262,7 @@ func (r *EventRepository) PublishAsync(evts ...*events.BaseEvent) {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if pubErr := r.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
-				log.Printf("CRITICAL: Failed to publish Event %s to Redis: %v\n", evt.Id, pubErr)
+				monitoring.Critical(bgCtx, monitoring.KindEventPublish, fmt.Errorf("event %s not published to Redis: %w", evt.Id, pubErr))
 			}
 		}(evt)
 	}
