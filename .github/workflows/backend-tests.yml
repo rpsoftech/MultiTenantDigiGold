@@ -1,0 +1,53 @@
+name: Backend Tests
+
+on:
+  pull_request:
+    paths:
+      - 'packages/servers/MainServerGo/**'
+      - '.github/workflows/backend-tests.yml'
+  push:
+    branches: [staging, main]
+    paths:
+      - 'packages/servers/MainServerGo/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/servers/MainServerGo
+
+    services:
+      postgres:
+        image: postgres:18-alpine # uuidv7() needs PostgreSQL 18+
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: adminpassword
+          POSTGRES_DB: digigold_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U admin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: packages/servers/MainServerGo/go.sum
+
+      # Service containers cannot take a command, and the app needs a Redis password.
+      - name: Start Redis
+        run: docker run -d --name redis -p 6379:6379 redis:7-alpine redis-server --requirepass localredispass
+
+      - name: Vet
+        run: go vet ./... && go vet -tags=integration ./internal/integration/...
+
+      - name: Unit tests
+        run: go test -count=1 ./...
+
+      - name: Integration tests
+        run: go test -tags=integration -count=1 -v ./internal/integration/...

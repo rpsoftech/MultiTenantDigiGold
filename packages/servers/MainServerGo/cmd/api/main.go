@@ -13,13 +13,14 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
-	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/api/tenant"
 	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/database"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
-	"github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/server"
+	workers "github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
 	otel_setup "github.com/rpsoftech/DigiGold/MainServerGo/utility/otel"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
@@ -46,6 +47,13 @@ func main() {
 				log.Printf("Error shutting down tracer provider: %v", err)
 			}
 		}()
+	}
+
+	mp, err := otel_setup.InitMeter(ctx, "digigold-api")
+	if err != nil {
+		log.Printf("⚠️ OpenTelemetry metrics failed to initialize: %v (Proceeding without metrics)\n", err)
+	} else {
+		defer func() { _ = mp.Shutdown(context.Background()) }()
 	}
 
 	// 2. The 5-Minute OTA Updater Daemon
@@ -84,10 +92,18 @@ func main() {
 	}
 	// 3. Pre-flight Infrastructure Checks
 	db := postgres.GetPostgresDB()
+	defer db.Db.Close()
+
 	if err := db.Db.Ping(); err != nil {
 		log.Fatalf("FATAL: PostgreSQL connection failed: %v", err)
 	}
+	// Apply pending schema migrations before any repository prepares its statements.
+	if err := database.MigrateUp(db.Db); err != nil {
+		log.Fatalf("FATAL: %v", err)
+	}
 	rdb := redis_client.InitRedisClient()
+	defer rdb.Client.Close()
+
 	if err := rdb.Client.Ping(context.Background()).Err(); err != nil {
 		log.Fatalf("FATAL: Redis connection failed: %v", err)
 	}
@@ -100,19 +116,8 @@ func main() {
 	// You MUST start the Hub in a background Goroutine so it listens to Redis forever
 	go rateHub.Start(ctx)
 
-	// 4. Initialize Fiber App with Strict Timeouts
-	app := fiber.New(fiber.Config{
-		ReadTimeout: 5 * time.Second,
-		// WriteTimeout: 10 * time.Second,
-		WriteTimeout: 0, // Set to 0 for persistent SSE streaming connections!
-		AppName:      "Digi Gold API v1",
-		ErrorHandler: middleware.GlobalErrorHandler, // Centralized Error Handling
-		TrustProxy:   true,
-		ProxyHeader:  fiber.HeaderXForwardedFor,
-		TrustProxyConfig: fiber.TrustProxyConfig{
-			Loopback: true, // True if Nginx is on 127.0.0.1
-		},
-	})
+	// 4. Build the Fiber app with every route (shared with the integration tests).
+	app := server.NewApp(rateHub)
 
 	// Add OpenTelemetry Tracing Middleware
 	app.Use(middleware.OtelInterceptor)
@@ -184,6 +189,7 @@ func main() {
 	go workers.StartEventConsumer(ctx)
 	go workers.StartOutboxRecoveryCron(ctx)
 	go workers.StartHedgingCron(ctx)
+	go workers.StartPartitionCron(ctx)
 
 	// 8. Start the Server in a Goroutine
 	go func() {

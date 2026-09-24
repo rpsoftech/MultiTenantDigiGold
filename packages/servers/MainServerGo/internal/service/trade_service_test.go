@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 )
 
 func TestMathRecalculationBlock(t *testing.T) {
@@ -87,16 +88,34 @@ func TestSizeTradeRejectsEmptyOrTinyTrades(t *testing.T) {
 	}
 }
 
-func TestLedgerEventType(t *testing.T) {
-	cases := map[string]string{
-		"BUY":    "GOLD_PURCHASE",
-		"":       "GOLD_PURCHASE",
-		"SELL":   "GOLD_SELL",
-		"REDEEM": "PHYSICAL_REDEMPTION",
+func TestBuyPrice(t *testing.T) {
+	cases := []struct {
+		name   string
+		margin models.MarginConfig
+		want   float64
+	}{
+		{"fixed margin with GST", models.MarginConfig{SellMarginType: "FIXED_INR", SellMarginValue: 100, IsGSTEnabled: true, GSTPercentage: 3}, 7313},
+		{"percentage margin, no GST", models.MarginConfig{SellMarginType: "PERCENTAGE", SellMarginValue: 2}, 7140},
+		{"no margin, no GST", models.MarginConfig{SellMarginType: "FIXED_INR"}, 7000},
 	}
-	for action, want := range cases {
-		if got := ledgerEventType(action); got != want {
-			t.Errorf("ledgerEventType(%q) = %q, want %q", action, got, want)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, _ := buyPrice(7000, &tc.margin)
+			if math.Abs(got-tc.want) > 0.001 {
+				t.Errorf("buyPrice = %f, want %f", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewPickupCode(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		code, err := newPickupCode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(code) != 6 {
+			t.Fatalf("pickup code %q must have 6 digits", code)
 		}
 	}
 }

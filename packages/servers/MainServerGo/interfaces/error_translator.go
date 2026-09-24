@@ -141,6 +141,22 @@ func ParseDBError(err error) *RequestError {
 			Name:       "REDEMPTION_NOT_PENDING",
 		}
 
+	case errors.Is(err, ErrRedemptionNotFound):
+		return &RequestError{
+			StatusCode: 404,
+			Code:       ERROR_ENTITY_NOT_FOUND,
+			Message:    "Redemption request not found.",
+			Name:       "REDEMPTION_NOT_FOUND",
+		}
+
+	case errors.Is(err, ErrInvalidPickupCode):
+		return &RequestError{
+			StatusCode: 400,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "Pickup code does not match.",
+			Name:       "INVALID_PICKUP_CODE",
+		}
+
 	case errors.Is(err, ErrMaxVerifyAttempts):
 		return &RequestError{
 			StatusCode:    429,

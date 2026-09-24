@@ -1,7 +1,8 @@
 # DigiGold Backend (MainServerGo)
 
 Go backend for DigiGold, a multi-tenant digital gold platform. Jewelry shops (tenants)
-offer their customers gold buying, selling and physical redemption at live market rates.
+let their customers buy gold at live market rates. Customers never sell: gold leaves a
+vault only as physical gold collected at the store counter.
 The platform aggregates customer exposure across tenants and hedges it with a liquidity
 provider.
 
@@ -29,8 +30,9 @@ The spec is [`cmd/api/openapi.yaml`](cmd/api/openapi.yaml).
 7. [Coding conventions](#coding-conventions)
 8. [Adding an endpoint](#adding-an-endpoint)
 9. [Testing](#testing)
-10. [Deployment](#deployment)
-11. [Known gaps](#known-gaps)
+10. [Monitoring](#monitoring)
+11. [Deployment](#deployment)
+12. [Known gaps](#known-gaps)
 
 ---
 
@@ -85,16 +87,21 @@ interfaces/       Request DTOs, RequestError, error codes, sentinel errors, erro
 internal/
   api/            Fiber controllers, one package per area (auth, trade, rates, admin, tenant)
   constants/      Redis keys and channels for the rate feed
+  database/       Migration runner (golang-migrate), event partition upkeep, seed data
+  integration/    Integration tests (build tag `integration`)
   middleware/     Tenant resolution, customer/admin JWT, roles, rate limit, error handler, tracing
+  monitoring/     Critical-error and refund reporting to OpenTelemetry
   models/         Structs that map to database tables
   repository/     Data access (prepared statements, tenant-scoped queries, caches)
   schema/         Table and column name constants (no SQL strings with raw names elsewhere)
-  service/        Business logic: trade, OTP, JWT, admin auth, payments, hedging, tenants
+  server/         Builds the Fiber app with every route (used by cmd/api and the tests)
+  service/        Business logic: trade, redemption, OTP, JWT, admin auth, payments, hedging, tenants
   worker/         Event consumer, WhatsApp OTP sender, hedging consumer, crons
 pkg/              Payment and WhatsApp provider clients
 utility/          Postgres/Redis clients, OTA updater, OpenTelemetry, helpers
 scripts/deploy.go Build and publish binaries for the OTA updater
-posgrest.scema.sql  PostgreSQL schema (source of truth)
+migrations/       Versioned SQL migrations (source of truth for the schema), embedded in the binaries
+cmd/dbtool/       CLI: migrate up/down/version/force, seed
 schema.sql          Legacy MySQL schema. Not used.
 ```
 
@@ -114,7 +121,7 @@ cd packages/servers/MainServerGo
 docker compose up -d db redis
 ```
 
-The first start loads `posgrest.scema.sql` into the database. If you have an old
+The API creates the schema itself: it runs all pending migrations on startup. If you have an old
 `pgdata` volume from PostgreSQL 15, remove it first (`docker compose down -v`); the
 data format is not compatible.
 
@@ -148,19 +155,44 @@ With `LOCAL`, `DEVELOP` or `STAGING` it serves Swagger UI at `/docs`.
 
 ### 4. Seed data
 
-There is no seed script yet. To try the API you need at least:
-
-1. A row in `tenants` (its `tenant_uuid` is your `X-Tenant-ID`).
-2. An admin in `tenant_user_logins` with a bcrypt `tu_password_hash` and role `super_admin`.
-3. A `margin_configurations` row for the tenant with `mc_commodity_type = 'GOLD'`.
-4. A live rate in Redis:
-
 ```sh
-redis-cli -a localredispass HSET LastRate GOLD '{"bid":7085.5,"ask":7102.25}'
-redis-cli -a localredispass PUBLISH rate/GOLD '{"bid":7085.5,"ask":7102.25}'
+cd cmd/api && go run ../dbtool seed
 ```
 
-A tenant with `tenant_short_name = 'default'` supplies the fallback WhatsApp config.
+The seed is idempotent and refuses to run when `APP_ENV=PRODUCTION`. It creates:
+
+| What                    | Value                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| Platform tenant         | `01900000-0000-7000-8000-000000000001` (`default`, fallback WhatsApp config)  |
+| Demo store              | `01900000-0000-7000-8000-000000000002` (₹100/g margin, 3% GST, 1000 g credit) |
+| Second store            | `01900000-0000-7000-8000-000000000003` (for tenant-isolation checks)          |
+| Admins                  | `platform-admin` (super_admin), `demo-manager`, `other-manager` (manager)     |
+| Customers of demo store | `9999900001` (KYC verified), `9999900002` (KYC pending)                       |
+| Live rate (Redis)       | ask 7000 / bid 6950, only if no rate exists yet                               |
+
+Admin password and TOTP secret come from `SEED_ADMIN_PASSWORD` (default `DigiGold@123`) and
+`SEED_ADMIN_TOTP_SECRET` (default `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`; add it to any
+authenticator app). Store Razorpay keys come from `SEED_RAZORPAY_KEY_ID`,
+`SEED_RAZORPAY_KEY_SECRET` and `SEED_RAZORPAY_WEBHOOK_SECRET`.
+
+### Schema migrations
+
+Files live in `migrations/` as `NNNNNN_name.up.sql` / `.down.sql`. The API and the worker
+apply pending migrations on startup (golang-migrate holds a PostgreSQL advisory lock, so
+both can start together). To change the schema, add the next numbered pair; never edit a
+migration that has already run anywhere.
+
+```sh
+cd cmd/api
+go run ../dbtool migrate up          # apply pending
+go run ../dbtool migrate version     # show version
+go run ../dbtool migrate down 1      # revert the last one
+go run ../dbtool migrate force 1     # clear a failed (dirty) run after fixing it by hand
+```
+
+`system_events` is partitioned by month. `ensure_system_events_partitions()` keeps the
+current month and the next three; the API calls it on startup and daily. A `DEFAULT`
+partition catches anything outside them, so event writes never fail for lack of a partition.
 
 ### Postman
 
@@ -187,6 +219,7 @@ process environment.
 | `REDIS_DB_DATABASE`                                                            | yes      | Redis DB index (0-100)                                                 |
 | `REDIS_DEFAULT_KEY`                                                            | yes      | Prefix for app keys (e.g. `digiGold:`)                                 |
 | `REDIS_DEFAULT_CHANNEL`                                                        | yes      | Prefix for event channels (e.g. `digiGold:`)                           |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                  | no       | OTLP gRPC collector for traces and metrics (default `localhost:4317`)  |
 
 Per-tenant secrets (Razorpay keys, webhook secret, WhatsApp credentials) are stored
 in `tenant_internal_configs` and set through `PATCH /admin/tenants/{uuid}/config`.
@@ -245,20 +278,21 @@ without blocking. Slow clients skip ticks.
 
 ### Trading
 
-`TradeService.ExecuteTrade`:
+Customers only **buy** gold. There is no sell. Gold leaves a vault only through a
+**redemption**: the customer collects physical gold at the store counter. No money moves
+out of the system.
+
+`TradeService.ExecuteTrade` (buy):
 
 1. Reads the live rate from Redis.
-2. Price: buy = ask + margin + GST; sell/redeem = bid − margin.
+2. Price: ask + margin + GST.
 3. Rejects the trade if the price differs from `requested_rate_per_gram` by more than ₹30
    (`409 SLIPPAGE_EXCEEDED`).
 4. In one transaction:
    - locks the user row (scoped to the tenant),
-   - rejects a negative resulting balance,
-   - writes a signed ledger entry (+ credit, − debit) with event type `GOLD_PURCHASE`,
-     `GOLD_SELL` or `PHYSICAL_REDEMPTION`,
-   - creates the redemption record (redeem only),
+   - writes a `GOLD_PURCHASE` ledger entry (+ grams),
    - writes the audit event,
-   - updates tenant unlifted grams.
+   - updates tenant unlifted grams (rejects the buy past the store's credit limit).
 5. Publishes the event to Redis after commit.
 
 Online buy:
@@ -282,13 +316,25 @@ the trade is rejected (store out of credit, user gone). A missing intent is refu
 for orders tagged `notes.source = "digigold"`. Transient failures (database, Redis,
 Razorpay refund call) return `500` so Razorpay retries.
 
-Customer sells and redemptions always record `payment_mode = NONE`. Counter trades
-(`POST /admin/store/trade/counter`) identify the customer by `user_uuid` and accept
-`COUNTER_CASH` or `COUNTER_UPI`.
+Counter buys (`POST /admin/store/trade/counter`) identify the customer by `user_uuid` and
+accept `COUNTER_CASH` or `COUNTER_UPI`.
+
+Redemption (counter pickup):
+
+```
+POST /trade/redeem {weight_grams}
+  → PHYSICAL_REDEMPTION ledger entry (− grams, payment_mode NONE, amount 0)
+  → redemption request PENDING + 6-digit pickup code (shown to the customer only)
+Customer shows the code at the counter
+  → GET  /admin/store/redemptions/pending?phone=...   (staff find the request)
+  → POST /admin/store/redemptions/collect {redemption_uuid, pickup_code}  → COLLECTED
+```
+
+A `PENDING` request can be cancelled by the customer (`POST /trade/redemptions/{uuid}/cancel`)
+or by staff (`POST /admin/store/redemptions/cancel`). Cancelling posts a `SYSTEM_REVERSAL`
+that returns the grams to the vault. A collected request cannot be cancelled or reversed.
 
 Reversals (`POST /admin/store/ledger/reverse`) post an opposite `SYSTEM_REVERSAL` entry.
-Reversing a redemption also cancels its shipment, and fails with `409` if the shipment
-has already left `PENDING`. A shipment can be fulfilled only while `PENDING`.
 The ledger is append-only; rows are never updated.
 
 ### Events and the outbox
@@ -304,7 +350,7 @@ The ledger is append-only; rows are never updated.
 - Audit-only events are marked processed with no side effect.
 
 Handled today: `OTPReqEvent` (send WhatsApp OTP) and `TRADE_GOLD_PURCHASE` (update hedging
-exposure; also emitted for sells, redemptions and reversals with signed grams).
+exposure; also emitted for redemptions and reversals with signed grams).
 
 ### Hedging
 
@@ -384,14 +430,48 @@ The full rule set is in [`.agents/skills/digigold-backend-architecture/SKILL.md`
 ## Testing
 
 ```sh
-go build ./...
 go vet ./...
-go test ./...
+go test ./...                                                   # unit tests, no database
+go test -tags=integration -count=1 -v ./internal/integration/...  # integration tests
 ```
 
-Current tests: trade math (`internal/service/trade_service_test.go`) and JWT token-kind
-isolation (`internal/service/jwt_test.go`). There are no integration tests yet; see
-[Known gaps](#known-gaps).
+The integration tests start the real app in-process (`internal/server`) against a real
+PostgreSQL 18 and Redis, and a fake Razorpay server (`RAZORPAY_BASE_URL`). By default they
+use the `docker compose up -d db redis` services. They **wipe** the database and Redis DB
+they use, so they refuse to run unless `PG_DATABASE` ends in `_test` (default
+`digigold_test`, created if missing) and `REDIS_DB_DATABASE=15`.
+
+Covered flows: online buy (initiate, signed webhook, locked quote, duplicate webhook, bad
+signature, amount mismatch refund, expired quote refund, slippage, store out of credit, KYC
+limit), counter buy, counter redemption with pickup code (collect, wrong code, customer
+and staff cancel, overdraw), reversal, tenant isolation, and event partitions. Customer
+tokens are minted directly because OTP login needs WhatsApp.
+
+CI runs both suites on every pull request that touches the backend
+(`.github/workflows/backend-tests.yml`).
+
+To add a test: put a `//go:build integration` file in `internal/integration/`, then use
+`call(...)` to hit an endpoint, `customerToken`/`adminToken` to authenticate, and
+`balance`/`expectGrams`/`expectError` to assert.
+
+---
+
+## Monitoring
+
+The API and worker export traces and metrics over OTLP gRPC (`OTEL_EXPORTER_OTLP_ENDPOINT`).
+Report anything that needs a human with `monitoring.Critical(ctx, kind, err)`: it logs the
+error, marks the current span failed, and increments `digigold.critical_errors{kind}`.
+
+| Metric (Prometheus name)         | Labels   | Alert when                     |
+| -------------------------------- | -------- | ------------------------------ |
+| `digigold_critical_errors_total` | `kind`   | any increase                   |
+| `digigold_payment_refunds_total` | `reason` | unusual rate (a pricing issue) |
+
+`kind` values: `http_5xx`, `refund_failed` (customer paid, no gold, refund not done yet),
+`refund_not_logged`, `webhook_processing`, `event_publish`, `event_consumer`,
+`outbox_republish`, `partition_maintenance`, `whatsapp_send`.
+
+Example Grafana alert: `sum by (kind) (increase(digigold_critical_errors_total[5m])) > 0`.
 
 ---
 
@@ -404,7 +484,8 @@ docker compose up -d --build
 ```
 
 Builds the API image (`Dockerfile`) and runs it with PostgreSQL and Redis. The API reads
-secrets from `cmd/api/digiGold.env`; compose overrides the database and Redis hosts.
+secrets from `cmd/api/digiGold.env`; compose overrides the database and Redis hosts. The
+image also contains `dbtool`: `docker compose run --rm api ./dbtool seed`.
 
 ### OTA binaries (staging / production)
 
@@ -425,12 +506,8 @@ must restart them.
 ## Known gaps
 
 - Liquidity provider hedging is mocked.
-- There is no payout for sells and no automatic refund when a paid trade fails
-  (for example, slippage between order and payment).
-- There is one margin config for both buy and sell.
-- There is no `GOLD_SELL` ledger type; sells are recorded as `PHYSICAL_REDEMPTION`.
-- OTP codes are stored in `system_events` payloads, which the admin event log can read.
+- OTP codes are stored in `system_events` payloads. This is by design: only platform
+  staff can read the event log.
 - Some admin routes return `{"error": "..."}` instead of the standard error shape.
-- There is no seed script and there are no integration tests.
-- Sentry is not wired; 5xx errors are only logged.
+- Customer OTP login is not covered by the integration tests (it needs WhatsApp).
 - The `auditor` role is referenced in code but not allowed by the schema.

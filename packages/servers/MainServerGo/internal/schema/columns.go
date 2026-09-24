@@ -153,7 +153,24 @@ const (
 )
 
 // ------------------------------------------
-// 9. redemption_fulfillments
+// 9. redemption_requests
+// ------------------------------------------
+const (
+	ColRRID          = "rr_id"
+	ColRRUUID        = "rr_uuid"
+	ColRRTenantID    = "rr_tenant_id"
+	ColRRUserID      = "rr_user_id"
+	ColRRLedgerID    = "rr_ledger_id"
+	ColRRWeightGrams = "rr_weight_grams"
+	ColRRStatus      = "rr_status"
+	ColRRPickupCode  = "rr_pickup_code"
+	ColRRCollectedBy = "rr_collected_by"
+	ColRRCollectedAt = "rr_collected_at"
+	ColRRCancelledAt = "rr_cancelled_at"
+	ColRRCreatedAt   = "rr_created_at"
+	ColRRModifiedAt  = "rr_modified_at"
+)
+
 // ------------------------------------------
 const (
 	ColRFID                 = "rf_id"

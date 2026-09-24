@@ -17,6 +17,7 @@ COPY . .
 # Build the Go application
 # CGO_ENABLED=0 ensures a static binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o digigold-server ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dbtool ./cmd/dbtool
 
 # Final Stage
 FROM alpine:latest
@@ -28,6 +29,8 @@ RUN apk --no-cache add ca-certificates tzdata
 
 # Copy the pre-built binary from the builder stage
 COPY --from=builder /app/digigold-server .
+# dbtool: schema migrations and demo seed data (docker compose run --rm api ./dbtool seed)
+COPY --from=builder /app/dbtool .
 
 # Expose the API port
 EXPOSE 8080

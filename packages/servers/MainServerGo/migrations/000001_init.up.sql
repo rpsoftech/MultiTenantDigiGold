@@ -1,3 +1,5 @@
+-- 000001_init: baseline DigiGold schema (PostgreSQL 18+, needs uuidv7()).
+-- Never edit a migration that has run anywhere. Add a new numbered file instead.
 
 CREATE TABLE tenants (
     -- The internal ID for fast SQL JOINs
@@ -122,12 +124,32 @@ CREATE INDEX IF NOT EXISTS idx_system_events_tenant ON system_events (tenant_id,
 -- This index ONLY stores rows where is_processed is false, making queue lookups take <1 millisecond.
 CREATE INDEX IF NOT EXISTS idx_system_events_unprocessed ON system_events (is_processed) WHERE is_processed = false;
 
--- Create the partitions for the current and upcoming months
-CREATE TABLE system_events_2026_07 PARTITION OF system_events
-    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
+-- Monthly partitions. ensure_system_events_partitions() creates the current month
+-- and the next `months_ahead` months; the API calls it at startup and daily.
+-- The DEFAULT partition catches any row that falls outside them, so an event
+-- write never fails for lack of a partition.
+CREATE OR REPLACE FUNCTION ensure_system_events_partitions(months_ahead INT DEFAULT 3)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    first_month DATE := date_trunc('month', now())::date;
+    start_d DATE;
+    part_name TEXT;
+BEGIN
+    FOR i IN 0..months_ahead LOOP
+        start_d := (first_month + make_interval(months => i))::date;
+        part_name := format('system_events_%s', to_char(start_d, 'YYYY_MM'));
+        IF to_regclass(part_name) IS NULL THEN
+            EXECUTE format(
+                'CREATE TABLE %I PARTITION OF system_events FOR VALUES FROM (%L) TO (%L)',
+                part_name, start_d, (start_d + INTERVAL '1 month')::date
+            );
+        END IF;
+    END LOOP;
+END $$;
 
-CREATE TABLE system_events_2026_08 PARTITION OF system_events
-    FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+CREATE TABLE system_events_default PARTITION OF system_events DEFAULT;
+
+SELECT ensure_system_events_partitions(3);
 
 CREATE TABLE tenant_internal_configs (
     tic_id BIGSERIAL PRIMARY KEY,                     -- Internal fast joining ID
@@ -232,8 +254,6 @@ CREATE TABLE gold_transaction_ledger (
     
     gl_created_at TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_ledger_external_id ON gold_transaction_ledger(gl_external_id);
-CREATE INDEX IF NOT EXISTS idx_ledger_external_id ON gold_transaction_ledger(gl_uuid);
 CREATE INDEX IF NOT EXISTS idx_ledger_tenant_date ON gold_transaction_ledger(gl_tenant_id, gl_created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ledger_user_passbook ON gold_transaction_ledger(gl_user_id, gl_created_at DESC);
 
@@ -273,22 +293,30 @@ CREATE TABLE master_hedging_orders (
 
 CREATE INDEX IF NOT EXISTS idx_hedging_orders_status ON master_hedging_orders(mho_status, mho_created_at DESC);
 
--- 12. redemption_fulfillments
-CREATE TABLE redemption_fulfillments (
-    rf_id BIGSERIAL PRIMARY KEY,
-    rf_uuid UUID UNIQUE NOT NULL DEFAULT uuidv7(),
-    rf_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id),
-    rf_user_id BIGINT NOT NULL REFERENCES users(user_id),
-    rf_ledger_id BIGINT NOT NULL REFERENCES gold_transaction_ledger(gl_id),
-    
-    rf_item_sku VARCHAR(100) NOT NULL,
-    rf_fulfillment_status VARCHAR(20) DEFAULT 'PENDING',
-    rf_courier_name VARCHAR(100),
-    rf_tracking_number VARCHAR(100),
-    rf_shipping_detail_json JSONB NOT NULL,
-    rf_is_exported BOOLEAN DEFAULT FALSE,
-    rf_exported_at TIMESTAMPTZ,
-    
-    rf_created_at TIMESTAMPTZ DEFAULT NOW(),
-    rf_modified_at TIMESTAMPTZ DEFAULT NOW()
+-- 12. redemption_requests
+-- A customer withdraws gold only as physical gold collected at the store counter.
+-- The request debits the vault at once (PHYSICAL_REDEMPTION ledger entry) and
+-- issues a pickup code. Store staff enter the code to hand the gold over.
+-- Cancelling a PENDING request reverses the ledger entry.
+CREATE TABLE redemption_requests (
+    rr_id BIGSERIAL PRIMARY KEY,
+    rr_uuid UUID UNIQUE NOT NULL DEFAULT uuidv7(),
+    rr_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id),
+    rr_user_id BIGINT NOT NULL REFERENCES users(user_id),
+    rr_ledger_id BIGINT NOT NULL UNIQUE REFERENCES gold_transaction_ledger(gl_id),
+
+    rr_weight_grams NUMERIC(12, 4) NOT NULL CHECK (rr_weight_grams > 0),
+    rr_status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (rr_status IN ('PENDING', 'COLLECTED', 'CANCELLED')),
+    rr_pickup_code VARCHAR(6) NOT NULL,
+
+    rr_collected_by BIGINT REFERENCES tenant_user_logins(tu_id),
+    rr_collected_at TIMESTAMPTZ,
+    rr_cancelled_at TIMESTAMPTZ,
+
+    rr_created_at TIMESTAMPTZ DEFAULT NOW(),
+    rr_modified_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_rr_tenant_status ON redemption_requests(rr_tenant_id, rr_status, rr_created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rr_user ON redemption_requests(rr_user_id, rr_created_at DESC);

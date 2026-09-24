@@ -4,7 +4,8 @@ info:
   version: '1.1.0'
   description: |
     Multi-tenant digital gold platform. Jewelry shops (tenants) let their customers
-    buy, sell and redeem gold at live rates.
+    buy gold at live rates. Customers never sell: gold leaves a vault only as
+    physical gold collected at the store counter (redemption with a pickup code).
 
     ## Conventions
     - **Base path:** `/api/v1`.
@@ -211,7 +212,6 @@ components:
             enum:
               [
                 GOLD_PURCHASE,
-                GOLD_SELL,
                 PHYSICAL_REDEMPTION,
                 SYSTEM_REVERSAL,
                 ADMIN_ADJUSTMENT,
@@ -310,14 +310,19 @@ components:
     Redemption:
       type: object
       properties:
-        rf_uuid: { type: string, format: uuid }
-        item_sku: { type: string }
-        fulfillment_status:
-          { type: string, enum: [PENDING, DISPATCHED, DELIVERED, CANCELLED] }
-        courier_name: { type: string }
-        tracking_number: { type: string }
-        shipping_detail_json: {}
+        redemption_uuid: { type: string, format: uuid }
+        ledger_uuid: { type: string, format: uuid }
+        weight_grams: { type: number, example: 2 }
+        status: { type: string, enum: [PENDING, COLLECTED, CANCELLED] }
+        pickup_code:
+          type: string
+          example: '483920'
+          description: Returned to the customer only. Staff never see it.
+        collected_at: { type: string, format: date-time }
+        cancelled_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
+        customer_name: { type: string, description: Staff listings only. }
+        customer_phone: { type: string, description: Staff listings only. }
 
     SystemEvent:
       type: object
@@ -338,7 +343,7 @@ components:
         weight_grams:
           {
             type: number,
-            description: Grams to trade. Takes priority over `total_amount_inr`.,
+            description: Grams to buy. Takes priority over `total_amount_inr`.,
           }
         total_amount_inr: { type: number }
         payment_mode:
@@ -578,41 +583,15 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
-  /trade/sell:
-    post:
-      operationId: postTradeSell
-      tags: [Customer]
-      summary: Sell gold back at the live bid rate
-      security: [{ CustomerToken: [] }]
-      parameters: [{ $ref: '#/components/parameters/TenantId' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/TradeRequest' }
-      responses:
-        '200':
-          description: Trade executed.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success: { type: boolean }
-                  trade: { $ref: '#/components/schemas/LedgerEntry' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '409':
-          description: Slippage exceeded. Refresh the rate and retry.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
   /trade/redeem:
     post:
       operationId: postTradeRedeem
       tags: [Customer]
-      summary: Redeem gold as physical delivery
+      summary: Request physical gold for pickup at the store counter
+      description: |
+        Debits `weight_grams` from the vault at once (`PHYSICAL_REDEMPTION` ledger
+        entry) and returns a 6-digit pickup code. The customer shows the code at the
+        counter; staff enter it on `/admin/store/redemptions/collect`. No money moves.
       security: [{ CustomerToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -620,19 +599,71 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/TradeRequest'
-                - type: object
-                  required: [shipping_address]
-                  properties:
-                    shipping_address:
-                      type: object
-                      additionalProperties: true
-                      example:
-                        { line1: '12 MG Road', city: Surat, pincode: '395001' }
+              type: object
+              required: [weight_grams]
+              properties:
+                weight_grams: { type: number, example: 2 }
       responses:
         '200':
-          description: Redemption created with fulfillment status PENDING.
+          description: Redemption request created with status PENDING.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  redemption: { $ref: '#/components/schemas/Redemption' }
+        '400':
+          description: Invalid weight or insufficient gold balance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /trade/redemptions:
+    get:
+      operationId: getTradeRedemptions
+      tags: [Customer]
+      summary: The customer's redemption requests, with pickup codes
+      security: [{ CustomerToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Redemption requests, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Redemption' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /trade/redemptions/{uuid}/cancel:
+    post:
+      operationId: postTradeRedemptionCancel
+      tags: [Customer]
+      summary: Cancel your own pending redemption
+      description: Returns the grams to the vault with a `SYSTEM_REVERSAL` ledger entry.
+      security: [{ CustomerToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - {
+            name: uuid,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        '200':
+          description: Cancelled.
           content:
             application/json:
               schema:
@@ -641,10 +672,10 @@ paths:
                   success: { type: boolean }
                   message: { type: string }
                   trade: { $ref: '#/components/schemas/LedgerEntry' }
-        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: Slippage exceeded.
+          description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -907,7 +938,7 @@ paths:
       operationId: postAdminStoreLedgerReverse
       tags: [Admin Store]
       summary: Reverse a ledger entry
-      description: Posts an opposite `SYSTEM_REVERSAL` entry. Each entry can be reversed once; reversals cannot be reversed. Fails if the customer no longer holds the gold. Reversing a redemption also cancels its shipment and fails if the shipment is no longer `PENDING`.
+      description: Posts an opposite `SYSTEM_REVERSAL` entry. Each entry can be reversed once; reversals cannot be reversed. Fails if the customer no longer holds the gold. Reversing a redemption also cancels the request and fails once the gold was collected.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -977,7 +1008,7 @@ paths:
               allOf:
                 - $ref: '#/components/schemas/TradeRequest'
                 - type: object
-                  required: [user_uuid, action]
+                  required: [user_uuid]
                   properties:
                     user_uuid:
                       {
@@ -985,7 +1016,6 @@ paths:
                         format: uuid,
                         description: Customer of this tenant.,
                       }
-                    action: { type: string, enum: [BUY, SELL] }
                     payment_mode:
                       {
                         type: string,
@@ -1102,15 +1132,17 @@ paths:
     get:
       operationId: getAdminStoreRedemptionsPending
       tags: [Admin Store]
-      summary: Redemptions waiting to ship
+      summary: Redemptions waiting at the counter
+      description: Pass `phone` to find one customer's requests. Pickup codes are not returned.
       security: [{ AdminToken: [] }]
       parameters:
         - $ref: '#/components/parameters/TenantId'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
+        - { name: phone, in: query, required: false, schema: { type: string } }
       responses:
         '200':
-          description: Pending redemptions.
+          description: Pending redemptions, oldest first.
           content:
             application/json:
               schema:
@@ -1122,12 +1154,12 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/Redemption' }
 
-  /admin/store/redemptions/fulfill:
+  /admin/store/redemptions/collect:
     post:
-      operationId: postAdminStoreRedemptionsFulfill
+      operationId: postAdminStoreRedemptionsCollect
       tags: [Admin Store]
-      summary: Mark a redemption as shipped
-      description: Only a `PENDING` redemption can be shipped; otherwise `409 REDEMPTION_NOT_PENDING`.
+      summary: Hand physical gold to the customer
+      description: The customer's pickup code must match. Only a `PENDING` request can be collected.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1136,14 +1168,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [rf_uuid, courier_name, tracking_number]
+              required: [redemption_uuid, pickup_code]
               properties:
-                rf_uuid: { type: string, format: uuid }
-                courier_name: { type: string }
-                tracking_number: { type: string }
+                redemption_uuid: { type: string, format: uuid }
+                pickup_code: { type: string, example: '483920' }
       responses:
         '200':
-          description: Shipped.
+          description: Collected.
           content:
             application/json:
               schema:
@@ -1151,13 +1182,50 @@ paths:
                 properties:
                   success: { type: boolean }
                   message: { type: string }
+                  redemption: { $ref: '#/components/schemas/Redemption' }
         '400':
-          description: Missing fields.
+          description: Missing fields or wrong pickup code (`INVALID_PICKUP_CODE`).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SimpleError' }
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: Redemption is no longer pending.
+          description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/store/redemptions/cancel:
+    post:
+      operationId: postAdminStoreRedemptionsCancel
+      tags: [Admin Store]
+      summary: Cancel a pending redemption
+      description: Returns the grams to the customer's vault with a `SYSTEM_REVERSAL` ledger entry.
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [redemption_uuid]
+              properties:
+                redemption_uuid: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  trade: { $ref: '#/components/schemas/LedgerEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

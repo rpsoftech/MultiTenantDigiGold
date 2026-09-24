@@ -3,11 +3,13 @@ package workers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
@@ -89,7 +91,7 @@ const eventProcessTimeout = 30 * time.Second
 func (c *EventConsumer) routeEvent(ctx context.Context, payloadStr string) {
 	var baseEvent events.BaseEvent
 	if err := json.Unmarshal([]byte(payloadStr), &baseEvent); err != nil {
-		log.Printf("CRITICAL: Failed to unmarshal BaseEvent: %v\n", err)
+		monitoring.Critical(ctx, monitoring.KindEventConsumer, fmt.Errorf("unreadable event: %w", err))
 		return
 	}
 
@@ -124,7 +126,7 @@ func (c *EventConsumer) routeEvent(ctx context.Context, payloadStr string) {
 		log.Printf("ERROR: Processor failed for event %s (%s): %v\n", baseEvent.Id, baseEvent.EventName, processErr)
 		// Return the event to the outbox so the cron job retries it.
 		if err := c.EventRepo.ReleaseEvent(context.Background(), baseEvent.Id); err != nil {
-			log.Printf("CRITICAL: Failed to release event %s for retry: %v\n", baseEvent.Id, err)
+			monitoring.Critical(ctx, monitoring.KindEventConsumer, fmt.Errorf("event %s not released for retry: %w", baseEvent.Id, err))
 		}
 		return
 	}

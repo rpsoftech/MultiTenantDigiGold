@@ -1,9 +1,14 @@
 package middleware
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 )
 
 var tracer = otel.Tracer("fiber-server")
@@ -28,11 +33,24 @@ func OtelInterceptor(c fiber.Ctx) error {
 	// Execute next handler
 	err := c.Next()
 
-	// Record Response Status
-	span.SetAttributes(attribute.Int("http.status_code", c.Response().StatusCode()))
-
+	// Record the response status. A returned error is rendered later by
+	// GlobalErrorHandler (after this span ends), so take its status from the error.
+	status := c.Response().StatusCode()
 	if err != nil {
+		status = fiber.StatusInternalServerError
+		if reqErr, ok := errors.AsType[*interfaces.RequestError](interfaces.ParseDBError(err)); ok {
+			status = reqErr.StatusCode
+		} else if fiberErr, ok := errors.AsType[*fiber.Error](err); ok {
+			status = fiberErr.Code
+		}
 		span.SetAttributes(attribute.String("error", err.Error()))
+	}
+	span.SetAttributes(attribute.Int("http.status_code", status))
+	if status >= fiber.StatusInternalServerError {
+		if err != nil {
+			span.RecordError(err)
+		}
+		span.SetStatus(codes.Error, "server error")
 	}
 
 	return err

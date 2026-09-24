@@ -52,3 +52,20 @@ func GeneratePaymentRefundedEvent(tenantId string, refund *PaymentRefund) *Trade
 	event.CreateBaseEvent()
 	return event
 }
+
+const TradeEventRedemptionCollected = "TRADE_REDEMPTION_COLLECTED"
+
+// GenerateRedemptionCollectedEvent records that staff handed physical gold to a customer.
+func GenerateRedemptionCollectedEvent(tenantId string, adminId string, ipAddress string, redemption *models.RedemptionRequest) *TradeEvent {
+	event := &TradeEvent{
+		BaseEvent: BaseEvent{
+			TenantId:               tenantId,
+			EventName:              TradeEventRedemptionCollected,
+			Payload:                redemption,
+			IpAddressAOccurredFrom: ipAddress,
+			AdminId:                adminId,
+		},
+	}
+	event.CreateBaseEvent()
+	return event
+}

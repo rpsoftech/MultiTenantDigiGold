@@ -32,4 +32,6 @@ var (
 	ErrInvalidTradePayload   = errors.New("must specify a positive weight_grams or total_amount_inr")
 	ErrCreditLimitExceeded   = errors.New("trade exceeds the store's available gold credit")
 	ErrRedemptionNotPending  = errors.New("redemption is not pending")
+	ErrRedemptionNotFound    = errors.New("redemption request not found")
+	ErrInvalidPickupCode     = errors.New("pickup code does not match")
 )
