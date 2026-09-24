@@ -80,7 +80,7 @@ func (s *PaymentGatewayService) CreateOrder(ctx context.Context, req interfaces.
 		"notes": map[string]interface{}{
 			"tenant_id": fmt.Sprint(req.TenantID),
 			"user_id":   fmt.Sprint(req.UserID),
-			"action":    req.Action,
+			"action":    "BUY",
 			"source":    orderSource,
 		},
 	}

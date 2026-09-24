@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -47,12 +48,16 @@ func InitTradeService() *TradeService {
 }
 
 const (
-	ledgerEventReversal     = "SYSTEM_REVERSAL"
+	ledgerEventPurchase     = "GOLD_PURCHASE"
 	ledgerEventRedemption   = "PHYSICAL_REDEMPTION"
+	ledgerEventReversal     = "SYSTEM_REVERSAL"
 	reversalReferencePrefix = "REVERSAL_"
 
 	// quoteValidity is how long a priced online order may wait for its payment.
 	quoteValidity = 15 * time.Minute
+
+	// slippageToleranceINR is how far the live price may drift from the price the customer saw.
+	slippageToleranceINR = 30.0
 )
 
 type rateSnapshot struct {
@@ -60,7 +65,7 @@ type rateSnapshot struct {
 	Bid float64 `json:"bid"`
 }
 
-// TradeQuote is the server-side price and size of a trade. Online buys lock a
+// TradeQuote is the server-side price and size of a buy. Online buys lock a
 // quote when the order is created and execute it when the payment is captured.
 type TradeQuote struct {
 	FinalRatePerGram float64 `json:"final_rate_per_gram"`
@@ -75,22 +80,6 @@ type TradeQuote struct {
 // Expired reports whether the quote can no longer be executed at time now.
 func (q *TradeQuote) Expired(now time.Time) bool {
 	return now.Unix() > q.ExpiresAt
-}
-
-func isDebitAction(action string) bool {
-	return action == "SELL" || action == "REDEEM"
-}
-
-// ledgerEventType maps a trade action to its gold_transaction_ledger event type.
-func ledgerEventType(action string) string {
-	switch action {
-	case "SELL":
-		return "GOLD_SELL"
-	case "REDEEM":
-		return ledgerEventRedemption
-	default:
-		return "GOLD_PURCHASE"
-	}
 }
 
 // sizeTrade derives the traded grams and INR amount from either a weight or an amount.
@@ -110,60 +99,51 @@ func sizeTrade(weightGrams, totalAmountINR, finalRate float64) (weight, total fl
 	return weight, total, nil
 }
 
-func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, requestedRate float64, action string) (finalRate, mcxRate, marginApplied, gstApplied float64, err error) {
-	rateStr, err := s.Redis.GetHashKeyWithOriginalKey(ctx, constants.RedisKeyLatestRawRate, "GOLD")
-	if err != nil || rateStr == "" {
-		return 0, 0, 0, 0, fmt.Errorf("failed to fetch live rate from Redis: %w", err)
-	}
-
-	var rate rateSnapshot
-	if err := json.Unmarshal([]byte(rateStr), &rate); err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("failed to parse live rate: %w", err)
-	}
-
-	if isDebitAction(action) {
-		mcxRate = rate.Bid
-	} else {
-		mcxRate = rate.Ask
-	}
-
-	margin, err := s.MarginRepo.GetMarginByTenant(ctx, tenantID, "GOLD")
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("failed to get margin config: %w", err)
-	}
-
+// buyPrice applies the tenant margin and GST to the MCX ask rate.
+func buyPrice(ask float64, margin *models.MarginConfig) (finalRate, marginApplied, gstApplied float64) {
 	switch margin.SellMarginType {
 	case "FIXED_INR", "FLAT":
 		marginApplied = margin.SellMarginValue
 	case "PERCENTAGE":
-		marginApplied = mcxRate * (margin.SellMarginValue / 100.0)
+		marginApplied = ask * (margin.SellMarginValue / 100.0)
 	}
-
-	if isDebitAction(action) {
-		rateWithMargin := mcxRate - marginApplied
-		gstApplied = 0
-		finalRate = rateWithMargin
-	} else {
-		rateWithMargin := mcxRate + marginApplied
-		if margin.IsGSTEnabled {
-			gstApplied = rateWithMargin * (margin.GSTPercentage / 100.0)
-		}
-		finalRate = rateWithMargin + gstApplied
+	rateWithMargin := ask + marginApplied
+	if margin.IsGSTEnabled {
+		gstApplied = rateWithMargin * (margin.GSTPercentage / 100.0)
 	}
-
-	if math.Abs(finalRate-requestedRate) > 30.0 {
-		return 0, 0, 0, 0, fmt.Errorf("%w: expected %f, live %f", interfaces.ErrSlippageExceeded, requestedRate, finalRate)
-	}
-
-	return finalRate, mcxRate, marginApplied, gstApplied, nil
+	return rateWithMargin + gstApplied, marginApplied, gstApplied
 }
 
-// PriceTrade checks the requested rate against the live rate and sizes the trade.
+// liveRate reads the latest raw GOLD rate snapshot from Redis.
+func (s *TradeService) liveRate(ctx context.Context) (*rateSnapshot, error) {
+	rateStr, err := s.Redis.GetHashKeyWithOriginalKey(ctx, constants.RedisKeyLatestRawRate, "GOLD")
+	if err != nil || rateStr == "" {
+		return nil, fmt.Errorf("failed to fetch live rate from Redis: %w", err)
+	}
+	var rate rateSnapshot
+	if err := json.Unmarshal([]byte(rateStr), &rate); err != nil {
+		return nil, fmt.Errorf("failed to parse live rate: %w", err)
+	}
+	return &rate, nil
+}
+
+// PriceTrade prices a buy at the live rate, rejects it if the price moved more
+// than slippageToleranceINR from the requested rate, and sizes it.
 func (s *TradeService) PriceTrade(ctx context.Context, req interfaces.TradeExecutionRequest) (*TradeQuote, error) {
-	finalRate, mcxRate, marginApplied, gstApplied, err := s.validateSlippage(ctx, req.TenantID, req.RequestedRatePerGram, req.Action)
+	rate, err := s.liveRate(ctx)
 	if err != nil {
-		log.Printf("[TradeService] Slippage validation failed for userID=%d, tenantID=%d: %v", req.UserID, req.TenantID, err)
 		return nil, err
+	}
+	margin, err := s.MarginRepo.GetMarginByTenant(ctx, req.TenantID, "GOLD")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get margin config: %w", err)
+	}
+
+	finalRate, marginApplied, gstApplied := buyPrice(rate.Ask, margin)
+	if math.Abs(finalRate-req.RequestedRatePerGram) > slippageToleranceINR {
+		log.Printf("[TradeService] Slippage for userID=%d, tenantID=%d: requested %f, live %f",
+			req.UserID, req.TenantID, req.RequestedRatePerGram, finalRate)
+		return nil, fmt.Errorf("%w: expected %f, live %f", interfaces.ErrSlippageExceeded, req.RequestedRatePerGram, finalRate)
 	}
 
 	weight, total, err := sizeTrade(req.WeightGrams, req.TotalAmountINR, finalRate)
@@ -173,7 +153,7 @@ func (s *TradeService) PriceTrade(ctx context.Context, req interfaces.TradeExecu
 
 	return &TradeQuote{
 		FinalRatePerGram: finalRate,
-		MCXBaseRate:      mcxRate,
+		MCXBaseRate:      rate.Ask,
 		MarginApplied:    marginApplied,
 		GSTApplied:       gstApplied,
 		WeightGrams:      weight,
@@ -195,11 +175,8 @@ func (s *TradeService) QuoteBuy(ctx context.Context, req interfaces.TradeExecuti
 	return quote, nil
 }
 
-// ExecuteTrade prices the trade against the live rate and records it.
+// ExecuteTrade prices a buy against the live rate and records it.
 func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExecutionRequest, ipAddress, adminID string) (*models.GoldTransactionLedger, error) {
-	if req.Action == "" {
-		req.Action = "BUY"
-	}
 	quote, err := s.PriceTrade(ctx, req)
 	if err != nil {
 		return nil, err
@@ -207,20 +184,11 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 	return s.ExecuteQuotedTrade(ctx, req, quote, ipAddress, adminID)
 }
 
-// ExecuteQuotedTrade records a trade at an already computed quote. The caller
+// ExecuteQuotedTrade records a buy at an already computed quote. The caller
 // must check that the quote is still valid.
 func (s *TradeService) ExecuteQuotedTrade(ctx context.Context, req interfaces.TradeExecutionRequest, quote *TradeQuote, ipAddress, adminID string) (*models.GoldTransactionLedger, error) {
-	if req.Action == "" {
-		req.Action = "BUY"
-	}
-
-	log.Printf("[TradeService] ExecuteTrade (%s): tenantID=%d, userID=%d, rate=%f, weight=%f, amount=%f, ip=%s",
-		req.Action, req.TenantID, req.UserID, quote.FinalRatePerGram, quote.WeightGrams, quote.TotalAmountINR, ipAddress)
-
-	finalWeight := quote.WeightGrams
-	if isDebitAction(req.Action) {
-		finalWeight = -finalWeight
-	}
+	log.Printf("[TradeService] Buy: tenantID=%d, userID=%d, rate=%f, weight=%f, amount=%f, ip=%s",
+		req.TenantID, req.UserID, quote.FinalRatePerGram, quote.WeightGrams, quote.TotalAmountINR, ipAddress)
 
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
@@ -231,9 +199,9 @@ func (s *TradeService) ExecuteQuotedTrade(ctx context.Context, req interfaces.Tr
 	entry := &models.GoldTransactionLedger{
 		TenantID:            req.TenantID,
 		UserID:              req.UserID,
-		EventType:           ledgerEventType(req.Action),
+		EventType:           ledgerEventPurchase,
 		PaymentMode:         req.PaymentMode,
-		WeightGrams:         finalWeight,
+		WeightGrams:         quote.WeightGrams,
 		TotalAmountINR:      quote.TotalAmountINR,
 		MCXBaseRate:         quote.MCXBaseRate,
 		MasterMarginApplied: 0,
@@ -243,47 +211,39 @@ func (s *TradeService) ExecuteQuotedTrade(ctx context.Context, req interfaces.Tr
 		ReferenceID:         req.ReferenceID,
 	}
 
-	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry)
+	result, event, err := s.recordLedgerMovementWithTX(ctx, tx, entry, ipAddress, adminID)
 	if err != nil {
-		return nil, err
-	}
-
-	if req.Action == "REDEEM" {
-		addressJSON, _ := json.Marshal(req.ShippingAddress)
-		fulfillment := &models.RedemptionFulfillment{
-			TenantID:           req.TenantID,
-			UserID:             req.UserID,
-			LedgerID:           result.ID,
-			ItemSKU:            "CUSTOM_GRAMS", // Or parse from req
-			FulfillmentStatus:  "PENDING",
-			ShippingDetailJSON: addressJSON,
-		}
-		if err := s.RedemptionRepo.CreateRedemptionFulfillmentWithTX(ctx, tx, fulfillment); err != nil {
-			return nil, fmt.Errorf("failed to save redemption details: %w", err)
-		}
-	}
-
-	// Every signed ledger movement is published as one trade event; the hedging
-	// consumer applies its signed weight to the platform exposure.
-	tenantIdStr := fmt.Sprintf("%d", req.TenantID)
-	tradeEvent := events.GenerateGoldPurchaseEvent(tenantIdStr, adminID, ipAddress, result)
-	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &tradeEvent.BaseEvent); err != nil {
-		return nil, fmt.Errorf("failed to save trade event: %w", err)
-	}
-
-	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, req.TenantID, "GOLD", finalWeight); err != nil {
 		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
-	s.EventRepo.PublishAsync(&tradeEvent.BaseEvent)
+	s.EventRepo.PublishAsync(event)
 
-	log.Printf("[TradeService] Trade successful: tenantID=%d, userID=%d, weight=%f, amount=%f, ledgerUUID=%s",
-		req.TenantID, req.UserID, finalWeight, quote.TotalAmountINR, result.UUID)
-
+	log.Printf("[TradeService] Buy successful: tenantID=%d, userID=%d, ledgerUUID=%s", req.TenantID, req.UserID, result.UUID)
 	return result, nil
+}
+
+// recordLedgerMovementWithTX writes a signed ledger entry, its trade event and
+// the tenant's unlifted grams in tx. The caller commits and then publishes the event.
+func (s *TradeService) recordLedgerMovementWithTX(ctx context.Context, tx *sql.Tx, entry *models.GoldTransactionLedger, ipAddress, adminID string) (*models.GoldTransactionLedger, *events.BaseEvent, error) {
+	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Every signed ledger movement is published as one trade event; the hedging
+	// consumer applies its signed weight to the platform exposure.
+	tradeEvent := events.GenerateGoldPurchaseEvent(fmt.Sprintf("%d", entry.TenantID), adminID, ipAddress, result)
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &tradeEvent.BaseEvent); err != nil {
+		return nil, nil, fmt.Errorf("failed to save trade event: %w", err)
+	}
+
+	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, entry.TenantID, "GOLD", entry.WeightGrams); err != nil {
+		return nil, nil, err
+	}
+	return result, &tradeEvent.BaseEvent, nil
 }
 
 func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, ledgerUUID string, adminID string, ipAddress string) (*models.GoldTransactionLedger, error) {
@@ -312,8 +272,8 @@ func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, l
 		return nil, interfaces.ErrLedgerAlreadyReversed
 	}
 
-	// A redemption may be reversed only while its shipment is still pending; the
-	// shipment is cancelled in the same transaction so it can no longer be fulfilled.
+	// A redemption may be reversed only while the gold is still waiting at the
+	// counter; the request is cancelled in the same transaction.
 	if original.EventType == ledgerEventRedemption {
 		if err := s.RedemptionRepo.CancelPendingByLedgerWithTX(ctx, tx, tenantID, original.ID); err != nil {
 			return nil, err
@@ -336,26 +296,16 @@ func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, l
 	}
 
 	// RecordTransactionWithTX rejects the reversal if it would make the balance negative
-	// (e.g. reversing a purchase whose gold was already sold).
-	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, reversalEntry)
+	// (e.g. reversing a purchase whose gold was already collected).
+	result, event, err := s.recordLedgerMovementWithTX(ctx, tx, reversalEntry, ipAddress, adminID)
 	if err != nil {
-		return nil, err
-	}
-
-	tenantIdStr := fmt.Sprintf("%d", tenantID)
-	reversalEvent := events.GenerateGoldPurchaseEvent(tenantIdStr, adminID, ipAddress, result)
-	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &reversalEvent.BaseEvent); err != nil {
-		return nil, fmt.Errorf("failed to save reversal event: %w", err)
-	}
-
-	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, tenantID, "GOLD", -original.WeightGrams); err != nil {
 		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit reversal: %w", err)
 	}
-	s.EventRepo.PublishAsync(&reversalEvent.BaseEvent)
+	s.EventRepo.PublishAsync(event)
 
 	return result, nil
 }

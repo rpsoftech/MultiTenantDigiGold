@@ -43,7 +43,8 @@ func (ac *AdminStoreController) RegisterRoutes(api fiber.Router) {
 
 	redemptionGroup := storeGroup.Group("/redemptions")
 	redemptionGroup.Get("/pending", ac.PendingRedemptions)
-	redemptionGroup.Post("/fulfill", ac.FulfillRedemption)
+	redemptionGroup.Post("/collect", ac.CollectRedemption)
+	redemptionGroup.Post("/cancel", ac.CancelRedemption)
 }
 
 func (ac *AdminStoreController) Customers(c fiber.Ctx) error {
@@ -123,14 +124,6 @@ func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
 	}
 	req.TenantID = tenantID
 	req.UserID = user.ID
-
-	if req.Action != "BUY" && req.Action != "SELL" {
-		return &interfaces.RequestError{
-			StatusCode: fiber.StatusBadRequest,
-			Code:       interfaces.ERROR_INVALID_INPUT,
-			Message:    "action must be BUY or SELL",
-		}
-	}
 
 	// Counter trades are settled in store; online modes are reserved for the payment gateway.
 	switch req.PaymentMode {
@@ -271,6 +264,9 @@ func (ac *AdminStoreController) ReverseTrade(c fiber.Ctx) error {
 		"trade":   result,
 	})
 }
+
+// PendingRedemptions lists requests waiting at the counter. Pass ?phone= to
+// find one customer's requests. Pickup codes are never returned to staff.
 func (ac *AdminStoreController) PendingRedemptions(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
 
@@ -284,7 +280,7 @@ func (ac *AdminStoreController) PendingRedemptions(c fiber.Ctx) error {
 	}
 	offset := (page - 1) * limit
 
-	list, err := ac.TradeService.RedemptionRepo.GetPendingRedemptions(c.Context(), tenantID, limit, offset)
+	list, err := ac.TradeService.RedemptionRepo.ListPendingByTenant(c.Context(), tenantID, c.Query("phone"), limit, offset)
 	if err != nil {
 		return err
 	}
@@ -297,28 +293,59 @@ func (ac *AdminStoreController) PendingRedemptions(c fiber.Ctx) error {
 	})
 }
 
-func (ac *AdminStoreController) FulfillRedemption(c fiber.Ctx) error {
+// CollectRedemption hands the gold over at the counter after the customer's pickup code matches.
+func (ac *AdminStoreController) CollectRedemption(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
+	adminUUID := middleware.GetAdminUUID(c)
 
 	var payload struct {
-		UUID           string `json:"rf_uuid"`
-		CourierName    string `json:"courier_name"`
-		TrackingNumber string `json:"tracking_number"`
+		RedemptionUUID string `json:"redemption_uuid"`
+		PickupCode     string `json:"pickup_code"`
 	}
-	if err := c.Bind().JSON(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid json payload"})
-	}
-	if payload.UUID == "" || payload.CourierName == "" || payload.TrackingNumber == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing required fields"})
+	if err := c.Bind().JSON(&payload); err != nil || payload.RedemptionUUID == "" || payload.PickupCode == "" {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "redemption_uuid and pickup_code are required",
+		}
 	}
 
-	err := ac.TradeService.RedemptionRepo.FulfillRedemption(c.Context(), tenantID, payload.UUID, payload.CourierName, payload.TrackingNumber)
+	redemption, err := ac.TradeService.CollectRedemption(c.Context(), tenantID, payload.RedemptionUUID, payload.PickupCode, adminUUID, c.IP())
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success":    true,
+		"message":    "Gold handed over to the customer",
+		"redemption": redemption,
+	})
+}
+
+// CancelRedemption cancels a PENDING request and returns the grams to the customer's vault.
+func (ac *AdminStoreController) CancelRedemption(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+	adminUUID := middleware.GetAdminUUID(c)
+
+	var payload struct {
+		RedemptionUUID string `json:"redemption_uuid"`
+	}
+	if err := c.Bind().JSON(&payload); err != nil || payload.RedemptionUUID == "" {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "redemption_uuid is required",
+		}
+	}
+
+	result, err := ac.TradeService.CancelRedemption(c.Context(), tenantID, payload.RedemptionUUID, 0, adminUUID, c.IP())
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"message": "Redemption fulfilled and marked as SHIPPED",
+		"message": "Redemption cancelled; the gold is back in the customer's vault",
+		"trade":   result,
 	})
 }

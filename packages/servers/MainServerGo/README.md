@@ -1,7 +1,8 @@
 # DigiGold Backend (MainServerGo)
 
 Go backend for DigiGold, a multi-tenant digital gold platform. Jewelry shops (tenants)
-offer their customers gold buying, selling and physical redemption at live market rates.
+let their customers buy gold at live market rates. Customers never sell: gold leaves a
+vault only as physical gold collected at the store counter.
 The platform aggregates customer exposure across tenants and hedges it with a liquidity
 provider.
 
@@ -245,20 +246,21 @@ without blocking. Slow clients skip ticks.
 
 ### Trading
 
-`TradeService.ExecuteTrade`:
+Customers only **buy** gold. There is no sell. Gold leaves a vault only through a
+**redemption**: the customer collects physical gold at the store counter. No money moves
+out of the system.
+
+`TradeService.ExecuteTrade` (buy):
 
 1. Reads the live rate from Redis.
-2. Price: buy = ask + margin + GST; sell/redeem = bid − margin.
+2. Price: ask + margin + GST.
 3. Rejects the trade if the price differs from `requested_rate_per_gram` by more than ₹30
    (`409 SLIPPAGE_EXCEEDED`).
 4. In one transaction:
    - locks the user row (scoped to the tenant),
-   - rejects a negative resulting balance,
-   - writes a signed ledger entry (+ credit, − debit) with event type `GOLD_PURCHASE`,
-     `GOLD_SELL` or `PHYSICAL_REDEMPTION`,
-   - creates the redemption record (redeem only),
+   - writes a `GOLD_PURCHASE` ledger entry (+ grams),
    - writes the audit event,
-   - updates tenant unlifted grams.
+   - updates tenant unlifted grams (rejects the buy past the store's credit limit).
 5. Publishes the event to Redis after commit.
 
 Online buy:
@@ -282,13 +284,25 @@ the trade is rejected (store out of credit, user gone). A missing intent is refu
 for orders tagged `notes.source = "digigold"`. Transient failures (database, Redis,
 Razorpay refund call) return `500` so Razorpay retries.
 
-Customer sells and redemptions always record `payment_mode = NONE`. Counter trades
-(`POST /admin/store/trade/counter`) identify the customer by `user_uuid` and accept
-`COUNTER_CASH` or `COUNTER_UPI`.
+Counter buys (`POST /admin/store/trade/counter`) identify the customer by `user_uuid` and
+accept `COUNTER_CASH` or `COUNTER_UPI`.
+
+Redemption (counter pickup):
+
+```
+POST /trade/redeem {weight_grams}
+  → PHYSICAL_REDEMPTION ledger entry (− grams, payment_mode NONE, amount 0)
+  → redemption request PENDING + 6-digit pickup code (shown to the customer only)
+Customer shows the code at the counter
+  → GET  /admin/store/redemptions/pending?phone=...   (staff find the request)
+  → POST /admin/store/redemptions/collect {redemption_uuid, pickup_code}  → COLLECTED
+```
+
+A `PENDING` request can be cancelled by the customer (`POST /trade/redemptions/{uuid}/cancel`)
+or by staff (`POST /admin/store/redemptions/cancel`). Cancelling posts a `SYSTEM_REVERSAL`
+that returns the grams to the vault. A collected request cannot be cancelled or reversed.
 
 Reversals (`POST /admin/store/ledger/reverse`) post an opposite `SYSTEM_REVERSAL` entry.
-Reversing a redemption also cancels its shipment, and fails with `409` if the shipment
-has already left `PENDING`. A shipment can be fulfilled only while `PENDING`.
 The ledger is append-only; rows are never updated.
 
 ### Events and the outbox
@@ -304,7 +318,7 @@ The ledger is append-only; rows are never updated.
 - Audit-only events are marked processed with no side effect.
 
 Handled today: `OTPReqEvent` (send WhatsApp OTP) and `TRADE_GOLD_PURCHASE` (update hedging
-exposure; also emitted for sells, redemptions and reversals with signed grams).
+exposure; also emitted for redemptions and reversals with signed grams).
 
 ### Hedging
 
@@ -425,11 +439,8 @@ must restart them.
 ## Known gaps
 
 - Liquidity provider hedging is mocked.
-- There is no payout for sells and no automatic refund when a paid trade fails
-  (for example, slippage between order and payment).
-- There is one margin config for both buy and sell.
-- There is no `GOLD_SELL` ledger type; sells are recorded as `PHYSICAL_REDEMPTION`.
-- OTP codes are stored in `system_events` payloads, which the admin event log can read.
+- OTP codes are stored in `system_events` payloads. This is by design: only platform
+  staff can read the event log.
 - Some admin routes return `{"error": "..."}` instead of the standard error shape.
 - There is no seed script and there are no integration tests.
 - Sentry is not wired; 5xx errors are only logged.

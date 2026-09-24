@@ -37,8 +37,9 @@ func NewCustomerTradeController(rateHub *rates_api.RateHub) *CustomerTradeContro
 func (tc *CustomerTradeController) RegisterRoutes(api fiber.Router, guards ...any) {
 	trade := api.Group("/trade", guards...)
 	trade.Post("/buy/initiate", tc.InitiateBuy)
-	trade.Post("/sell", tc.Sell)
 	trade.Post("/redeem", tc.Redeem)
+	trade.Get("/redemptions", tc.Redemptions)
+	trade.Post("/redemptions/:uuid/cancel", tc.CancelRedemption)
 	trade.Get("/history", tc.History)
 
 	user := api.Group("/user", guards...)
@@ -84,7 +85,6 @@ func (tc *CustomerTradeController) InitiateBuy(c fiber.Ctx) error {
 
 	req.TenantID = tenantID
 	req.UserID = user.ID
-	req.Action = "BUY"
 
 	tenant, err := tc.TenantRepo.GetFullTenantByID(c.Context(), tenantID)
 	if err != nil {
@@ -119,53 +119,6 @@ func (tc *CustomerTradeController) InitiateBuy(c fiber.Ctx) error {
 		"weight_grams":        quote.WeightGrams,
 		"final_rate_per_gram": quote.FinalRatePerGram,
 		"quote_expires_at":    quote.ExpiresAt,
-	})
-}
-
-func (tc *CustomerTradeController) Sell(c fiber.Ctx) error {
-	tenantID := middleware.GetTenantIntID(c)
-	userUUID, _ := c.Locals(middleware.LocalsKeyUserUUID).(string)
-
-	var req interfaces.TradeExecutionRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return &interfaces.RequestError{
-			StatusCode: fiber.StatusBadRequest,
-			Code:       interfaces.ERROR_INVALID_INPUT,
-			Message:    "Invalid JSON payload",
-		}
-	}
-
-	user, err := tc.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
-	if err != nil {
-		return interfaces.ParseDBError(err)
-	}
-
-	// Validate balance
-	if req.WeightGrams > 0 && user.VaultBalance < req.WeightGrams {
-		return &interfaces.RequestError{
-			StatusCode: fiber.StatusBadRequest,
-			Code:       interfaces.ERROR_INVALID_INPUT,
-			Message:    "Insufficient balance",
-		}
-	}
-
-	req.TenantID = tenantID
-	req.UserID = user.ID
-	req.Action = "SELL"
-	// No money reaches the store in a customer sell or redemption; the client
-	// never chooses the payment mode.
-	req.PaymentMode = "NONE"
-
-	ipAddress := c.IP()
-
-	result, err := tc.TradeService.ExecuteTrade(c.Context(), req, ipAddress, "CUSTOMER")
-	if err != nil {
-		return err
-	}
-
-	return c.JSON(fiber.Map{
-		"success": true,
-		"trade":   result,
 	})
 }
 
@@ -228,11 +181,14 @@ func (tc *CustomerTradeController) Portfolio(c fiber.Ctx) error {
 		"live_rate":             rate,
 	})
 }
+
+// Redeem debits grams from the vault and returns a pickup code. The customer
+// shows the code at the store counter to collect the physical gold.
 func (tc *CustomerTradeController) Redeem(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
 	userUUID, _ := c.Locals(middleware.LocalsKeyUserUUID).(string)
 
-	var req interfaces.TradeExecutionRequest
+	var req interfaces.RedemptionRequestInput
 	if err := c.Bind().JSON(&req); err != nil {
 		return &interfaces.RequestError{
 			StatusCode: fiber.StatusBadRequest,
@@ -241,47 +197,82 @@ func (tc *CustomerTradeController) Redeem(c fiber.Ctx) error {
 		}
 	}
 
-	if req.ShippingAddress == nil {
-		return &interfaces.RequestError{
-			StatusCode: fiber.StatusBadRequest,
-			Code:       interfaces.ERROR_INVALID_INPUT,
-			Message:    "Shipping address is required for redemption",
-		}
+	user, err := tc.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
+	if err != nil {
+		return interfaces.ParseDBError(err)
 	}
+
+	redemption, err := tc.TradeService.RequestRedemption(c.Context(), tenantID, user.ID, req.WeightGrams, c.IP())
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success":    true,
+		"redemption": redemption,
+		"message":    "Show the pickup code at the store counter to collect your gold",
+	})
+}
+
+// Redemptions lists the customer's redemption requests with their pickup codes.
+func (tc *CustomerTradeController) Redemptions(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+	userUUID, _ := c.Locals(middleware.LocalsKeyUserUUID).(string)
 
 	user, err := tc.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
 	if err != nil {
 		return interfaces.ParseDBError(err)
 	}
 
-	if req.WeightGrams > 0 && user.VaultBalance < req.WeightGrams {
-		return &interfaces.RequestError{
-			StatusCode: fiber.StatusBadRequest,
-			Code:       interfaces.ERROR_INVALID_INPUT,
-			Message:    "Insufficient balance for redemption",
-		}
-	}
-
-	req.TenantID = tenantID
-	req.UserID = user.ID
-	req.Action = "REDEEM"
-	// No money reaches the store in a customer sell or redemption; the client
-	// never chooses the payment mode.
-	req.PaymentMode = "NONE"
-
-	ipAddress := c.IP()
-
-	result, err := tc.TradeService.ExecuteTrade(c.Context(), req, ipAddress, "CUSTOMER")
+	page, limit, offset := pageParams(c)
+	list, err := tc.TradeService.RedemptionRepo.ListByUser(c.Context(), tenantID, user.ID, limit, offset)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"trade":   result,
-		"message": "Physical redemption initiated successfully",
+		"data":    list,
+		"page":    page,
+		"limit":   limit,
 	})
 }
+
+// CancelRedemption cancels the customer's own PENDING request and returns the grams to the vault.
+func (tc *CustomerTradeController) CancelRedemption(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+	userUUID, _ := c.Locals(middleware.LocalsKeyUserUUID).(string)
+
+	user, err := tc.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
+	if err != nil {
+		return interfaces.ParseDBError(err)
+	}
+
+	result, err := tc.TradeService.CancelRedemption(c.Context(), tenantID, c.Params("uuid"), user.ID, "CUSTOMER", c.IP())
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Redemption cancelled; the gold is back in your vault",
+		"trade":   result,
+	})
+}
+
+// pageParams reads page and limit (1-100, default 20) from the query string.
+func pageParams(c fiber.Ctx) (page, limit, offset int) {
+	page, _ = strconv.Atoi(c.Query("page", "1"))
+	limit, _ = strconv.Atoi(c.Query("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	return page, limit, (page - 1) * limit
+}
+
 func (tc *CustomerTradeController) UploadKYC(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
 	userUUID, _ := c.Locals(middleware.LocalsKeyUserUUID).(string)

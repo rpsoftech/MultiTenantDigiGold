@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -29,78 +30,135 @@ func InitRedemptionRepo() *RedemptionRepository {
 	return redemptionRepoInstance
 }
 
-func (r *RedemptionRepository) CreateRedemptionFulfillmentWithTX(ctx context.Context, tx *sql.Tx, f *models.RedemptionFulfillment) error {
+// CreateWithTX inserts a PENDING redemption request for an existing ledger debit.
+func (r *RedemptionRepository) CreateWithTX(ctx context.Context, tx *sql.Tx, rr *models.RedemptionRequest) error {
 	query := `
-		INSERT INTO redemption_fulfillments (
-			rf_tenant_id, rf_user_id, rf_ledger_id, rf_item_sku, rf_fulfillment_status, rf_shipping_detail_json
-		) VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING rf_id, rf_uuid, rf_created_at
+		INSERT INTO redemption_requests (
+			rr_tenant_id, rr_user_id, rr_ledger_id, rr_weight_grams, rr_status, rr_pickup_code
+		) VALUES ($1, $2, $3, $4, 'PENDING', $5)
+		RETURNING rr_id, rr_uuid, rr_status, rr_created_at
 	`
-	err := tx.QueryRowContext(ctx, query, f.TenantID, f.UserID, f.LedgerID, f.ItemSKU, f.FulfillmentStatus, f.ShippingDetailJSON).
-		Scan(&f.ID, &f.UUID, &f.CreatedAt)
+	err := tx.QueryRowContext(ctx, query, rr.TenantID, rr.UserID, rr.LedgerID, rr.WeightGrams, rr.PickupCode).
+		Scan(&rr.ID, &rr.UUID, &rr.Status, &rr.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to create redemption fulfillment: %w", err)
+		return fmt.Errorf("failed to create redemption request: %w", err)
 	}
 	return nil
 }
 
-func (r *RedemptionRepository) GetPendingRedemptions(ctx context.Context, tenantID int64, limit, offset int) ([]*models.RedemptionFulfillment, error) {
+// ListByUser returns a customer's redemption requests, newest first, including pickup codes.
+func (r *RedemptionRepository) ListByUser(ctx context.Context, tenantID, userID int64, limit, offset int) ([]*models.RedemptionRequest, error) {
 	query := `
-		SELECT rf_id, rf_uuid, rf_tenant_id, rf_user_id, rf_ledger_id, rf_item_sku, rf_fulfillment_status, rf_courier_name, rf_tracking_number, rf_shipping_detail_json, rf_created_at
-		FROM redemption_fulfillments
-		WHERE rf_tenant_id = $1 AND rf_fulfillment_status = 'PENDING'
-		LIMIT $2 OFFSET $3
+		SELECT rr.rr_uuid, gl.gl_uuid, rr.rr_weight_grams, rr.rr_status, rr.rr_pickup_code,
+		       rr.rr_collected_at, rr.rr_cancelled_at, rr.rr_created_at
+		FROM redemption_requests rr
+		JOIN gold_transaction_ledger gl ON gl.gl_id = rr.rr_ledger_id
+		WHERE rr.rr_tenant_id = $1 AND rr.rr_user_id = $2
+		ORDER BY rr.rr_created_at DESC
+		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset)
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, userID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pending redemptions: %w", err)
+		return nil, fmt.Errorf("failed to list redemptions: %w", err)
 	}
 	defer rows.Close()
 
-	var list []*models.RedemptionFulfillment
+	list := []*models.RedemptionRequest{}
 	for rows.Next() {
-		var f models.RedemptionFulfillment
-		if err := rows.Scan(
-			&f.ID, &f.UUID, &f.TenantID, &f.UserID, &f.LedgerID, &f.ItemSKU, &f.FulfillmentStatus, &f.CourierName, &f.TrackingNumber, &f.ShippingDetailJSON, &f.CreatedAt,
-		); err != nil {
-			return nil, err
+		var rr models.RedemptionRequest
+		if err := rows.Scan(&rr.UUID, &rr.LedgerUUID, &rr.WeightGrams, &rr.Status, &rr.PickupCode,
+			&rr.CollectedAt, &rr.CancelledAt, &rr.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan redemption: %w", err)
 		}
-		list = append(list, &f)
+		list = append(list, &rr)
 	}
-	return list, nil
+	return list, rows.Err()
 }
 
-func (r *RedemptionRepository) FulfillRedemption(ctx context.Context, tenantID int64, uuid string, courier, tracking string) error {
+// ListPendingByTenant returns the tenant's PENDING requests with customer details
+// for the counter. Pickup codes are never returned to staff. If phone is not
+// empty, only that customer's requests are returned.
+func (r *RedemptionRepository) ListPendingByTenant(ctx context.Context, tenantID int64, phone string, limit, offset int) ([]*models.RedemptionRequest, error) {
 	query := `
-		UPDATE redemption_fulfillments 
-		SET rf_fulfillment_status = 'SHIPPED', rf_courier_name = $1, rf_tracking_number = $2, rf_modified_at = NOW()
-		WHERE rf_tenant_id = $3 AND rf_uuid = $4 AND rf_fulfillment_status = 'PENDING'
+		SELECT rr.rr_uuid, gl.gl_uuid, rr.rr_weight_grams, rr.rr_status, rr.rr_created_at,
+		       COALESCE(u.user_full_name, ''), u.user_phone_number
+		FROM redemption_requests rr
+		JOIN gold_transaction_ledger gl ON gl.gl_id = rr.rr_ledger_id
+		JOIN users u ON u.user_id = rr.rr_user_id
+		WHERE rr.rr_tenant_id = $1 AND rr.rr_status = 'PENDING'
+		  AND ($2 = '' OR u.user_phone_number = $2)
+		ORDER BY rr.rr_created_at
+		LIMIT $3 OFFSET $4
 	`
-	res, err := r.DB.Db.ExecContext(ctx, query, courier, tracking, tenantID, uuid)
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, phone, limit, offset)
 	if err != nil {
-		return fmt.Errorf("failed to fulfill redemption: %w", err)
+		return nil, fmt.Errorf("failed to list pending redemptions: %w", err)
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		return interfaces.ErrRedemptionNotPending
+	defer rows.Close()
+
+	list := []*models.RedemptionRequest{}
+	for rows.Next() {
+		var rr models.RedemptionRequest
+		if err := rows.Scan(&rr.UUID, &rr.LedgerUUID, &rr.WeightGrams, &rr.Status, &rr.CreatedAt,
+			&rr.CustomerName, &rr.CustomerPhone); err != nil {
+			return nil, fmt.Errorf("failed to scan redemption: %w", err)
+		}
+		list = append(list, &rr)
 	}
-	return nil
+	return list, rows.Err()
 }
 
-// CancelPendingByLedgerWithTX cancels the shipment linked to a redemption ledger
-// entry. It fails if the shipment has already left PENDING (e.g. SHIPPED).
+// GetForUpdateWithTX locks one of the tenant's redemption requests inside tx.
+func (r *RedemptionRepository) GetForUpdateWithTX(ctx context.Context, tx *sql.Tx, tenantID int64, rrUUID string) (*models.RedemptionRequest, error) {
+	query := `
+		SELECT rr.rr_id, rr.rr_user_id, rr.rr_ledger_id, gl.gl_uuid, rr.rr_weight_grams, rr.rr_status, rr.rr_pickup_code
+		FROM redemption_requests rr
+		JOIN gold_transaction_ledger gl ON gl.gl_id = rr.rr_ledger_id
+		WHERE rr.rr_tenant_id = $1 AND rr.rr_uuid = $2
+		FOR UPDATE OF rr
+	`
+	rr := models.RedemptionRequest{UUID: rrUUID, TenantID: tenantID}
+	err := tx.QueryRowContext(ctx, query, tenantID, rrUUID).Scan(
+		&rr.ID, &rr.UserID, &rr.LedgerID, &rr.LedgerUUID, &rr.WeightGrams, &rr.Status, &rr.PickupCode,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, interfaces.ErrRedemptionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to lock redemption: %w", err)
+	}
+	return &rr, nil
+}
+
+// MarkCollectedWithTX records that staff handed the gold over at the counter.
+func (r *RedemptionRepository) MarkCollectedWithTX(ctx context.Context, tx *sql.Tx, rrID int64, adminUUID string) error {
+	query := `
+		UPDATE redemption_requests
+		SET rr_status = 'COLLECTED', rr_collected_at = NOW(), rr_modified_at = NOW(),
+		    rr_collected_by = (SELECT tu_id FROM tenant_user_logins WHERE tu_uuid = $2::uuid)
+		WHERE rr_id = $1 AND rr_status = 'PENDING'
+	`
+	return expectOneRow(tx.ExecContext(ctx, query, rrID, adminUUID))
+}
+
+// CancelPendingByLedgerWithTX cancels the PENDING request linked to a redemption
+// ledger entry. It fails with ErrRedemptionNotPending if the gold was already collected.
 func (r *RedemptionRepository) CancelPendingByLedgerWithTX(ctx context.Context, tx *sql.Tx, tenantID, ledgerID int64) error {
 	query := `
-		UPDATE redemption_fulfillments
-		SET rf_fulfillment_status = 'CANCELLED', rf_modified_at = NOW()
-		WHERE rf_tenant_id = $1 AND rf_ledger_id = $2 AND rf_fulfillment_status = 'PENDING'
+		UPDATE redemption_requests
+		SET rr_status = 'CANCELLED', rr_cancelled_at = NOW(), rr_modified_at = NOW()
+		WHERE rr_tenant_id = $1 AND rr_ledger_id = $2 AND rr_status = 'PENDING'
 	`
-	res, err := tx.ExecContext(ctx, query, tenantID, ledgerID)
+	return expectOneRow(tx.ExecContext(ctx, query, tenantID, ledgerID))
+}
+
+func expectOneRow(res sql.Result, err error) error {
 	if err != nil {
-		return fmt.Errorf("failed to cancel redemption fulfillment: %w", err)
+		return fmt.Errorf("failed to update redemption: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("failed to cancel redemption fulfillment: %w", err)
+		return fmt.Errorf("failed to update redemption: %w", err)
 	}
 	if n == 0 {
 		return interfaces.ErrRedemptionNotPending

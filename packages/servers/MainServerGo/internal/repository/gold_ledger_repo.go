@@ -252,7 +252,7 @@ func (r *GoldLedgerRepository) GetTenantAnalytics(ctx context.Context, tenantID 
 			COALESCE(SUM(gl_tenant_margin_applied), 0) as total_margin_earned,
 			COUNT(gl_id) as total_transactions
 		FROM gold_transaction_ledger
-		WHERE gl_tenant_id = $1 AND gl_event_type IN ('GOLD_PURCHASE', 'GOLD_SELL', 'PHYSICAL_REDEMPTION')
+		WHERE gl_tenant_id = $1 AND gl_event_type IN ('GOLD_PURCHASE', 'PHYSICAL_REDEMPTION')
 	`
 	var analytics TenantAnalytics
 	err := r.DB.Db.QueryRowContext(ctx, query, tenantID).Scan(

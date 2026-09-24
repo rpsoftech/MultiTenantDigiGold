@@ -194,7 +194,6 @@ CREATE TYPE payment_mode_enum AS ENUM (
 
 CREATE TYPE ledger_event_type_enum AS ENUM (
     'GOLD_PURCHASE',       
-    'GOLD_SELL',           -- Customer sold gold back to the store
     'PHYSICAL_REDEMPTION', 
     'SYSTEM_REVERSAL',     
     'ADMIN_ADJUSTMENT'     
@@ -273,22 +272,30 @@ CREATE TABLE master_hedging_orders (
 
 CREATE INDEX IF NOT EXISTS idx_hedging_orders_status ON master_hedging_orders(mho_status, mho_created_at DESC);
 
--- 12. redemption_fulfillments
-CREATE TABLE redemption_fulfillments (
-    rf_id BIGSERIAL PRIMARY KEY,
-    rf_uuid UUID UNIQUE NOT NULL DEFAULT uuidv7(),
-    rf_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id),
-    rf_user_id BIGINT NOT NULL REFERENCES users(user_id),
-    rf_ledger_id BIGINT NOT NULL REFERENCES gold_transaction_ledger(gl_id),
-    
-    rf_item_sku VARCHAR(100) NOT NULL,
-    rf_fulfillment_status VARCHAR(20) DEFAULT 'PENDING',
-    rf_courier_name VARCHAR(100),
-    rf_tracking_number VARCHAR(100),
-    rf_shipping_detail_json JSONB NOT NULL,
-    rf_is_exported BOOLEAN DEFAULT FALSE,
-    rf_exported_at TIMESTAMPTZ,
-    
-    rf_created_at TIMESTAMPTZ DEFAULT NOW(),
-    rf_modified_at TIMESTAMPTZ DEFAULT NOW()
+-- 12. redemption_requests
+-- A customer withdraws gold only as physical gold collected at the store counter.
+-- The request debits the vault at once (PHYSICAL_REDEMPTION ledger entry) and
+-- issues a pickup code. Store staff enter the code to hand the gold over.
+-- Cancelling a PENDING request reverses the ledger entry.
+CREATE TABLE redemption_requests (
+    rr_id BIGSERIAL PRIMARY KEY,
+    rr_uuid UUID UNIQUE NOT NULL DEFAULT uuidv7(),
+    rr_tenant_id BIGINT NOT NULL REFERENCES tenants(tenant_id),
+    rr_user_id BIGINT NOT NULL REFERENCES users(user_id),
+    rr_ledger_id BIGINT NOT NULL UNIQUE REFERENCES gold_transaction_ledger(gl_id),
+
+    rr_weight_grams NUMERIC(12, 4) NOT NULL CHECK (rr_weight_grams > 0),
+    rr_status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (rr_status IN ('PENDING', 'COLLECTED', 'CANCELLED')),
+    rr_pickup_code VARCHAR(6) NOT NULL,
+
+    rr_collected_by BIGINT REFERENCES tenant_user_logins(tu_id),
+    rr_collected_at TIMESTAMPTZ,
+    rr_cancelled_at TIMESTAMPTZ,
+
+    rr_created_at TIMESTAMPTZ DEFAULT NOW(),
+    rr_modified_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_rr_tenant_status ON redemption_requests(rr_tenant_id, rr_status, rr_created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rr_user ON redemption_requests(rr_user_id, rr_created_at DESC);
