@@ -38,10 +38,10 @@ func OtelInterceptor(c fiber.Ctx) error {
 	status := c.Response().StatusCode()
 	if err != nil {
 		status = fiber.StatusInternalServerError
-		if reqErr, ok := errors.AsType[*interfaces.RequestError](interfaces.ParseDBError(err)); ok {
-			status = reqErr.StatusCode
-		} else if fiberErr, ok := errors.AsType[*fiber.Error](err); ok {
+		if fiberErr, ok := errors.AsType[*fiber.Error](err); ok {
 			status = fiberErr.Code
+		} else if reqErr, ok := errors.AsType[*interfaces.RequestError](interfaces.ParseDBError(err)); ok {
+			status = reqErr.StatusCode
 		}
 		span.SetAttributes(attribute.String("error", err.Error()))
 	}

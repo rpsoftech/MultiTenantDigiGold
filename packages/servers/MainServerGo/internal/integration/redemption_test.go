@@ -136,3 +136,16 @@ func TestRedemption_RejectsZeroOrNegativeWeight(t *testing.T) {
 		})
 	}
 }
+
+// Regression: cached users lost their internal ID, so every request after the
+// first one ran as user 0 and failed with "user not found".
+func TestCustomer_RepeatedRequestsUseTheRightUser(t *testing.T) {
+	counterBuy(t, database.SeedVerifiedCustomerUUID, 0.5)
+	for i := 0; i < 3; i++ {
+		expectStatus(t, call(t, "GET", "/user/portfolio", verifiedCustomer(t), database.SeedDemoTenantUUID, nil), http.StatusOK)
+	}
+	rr := requestRedemption(t, verifiedCustomer(t), 0.1)
+	cancel := call(t, "POST", "/trade/redemptions/"+str(rr["redemption_uuid"])+"/cancel",
+		verifiedCustomer(t), database.SeedDemoTenantUUID, nil)
+	expectStatus(t, cancel, http.StatusOK)
+}

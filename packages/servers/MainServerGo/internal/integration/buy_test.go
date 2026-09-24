@@ -130,18 +130,18 @@ func TestOnlineBuy_SlippageIsRejected(t *testing.T) {
 
 func TestOnlineBuy_NoOrderWhenStoreIsOutOfCredit(t *testing.T) {
 	// Leave the store no room: credit limit = what is already unlifted.
-	const demoMargin = `FROM tenants t WHERE t.tenant_id = mc.mc_tenant_id AND t.tenant_uuid = $1`
+	const demoMargin = `WHERE mc_tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_uuid = $1)`
 	var limit float64
-	if err := db.QueryRow(`SELECT mc_tenant_credit_limit_grams FROM margin_configurations mc `+demoMargin,
+	if err := db.QueryRow(`SELECT mc_tenant_credit_limit_grams FROM margin_configurations `+demoMargin,
 		database.SeedDemoTenantUUID).Scan(&limit); err != nil {
 		t.Fatalf("read credit limit: %v", err)
 	}
-	if _, err := db.Exec(`UPDATE margin_configurations mc SET mc_tenant_credit_limit_grams = mc_tenant_unlifted_grams `+demoMargin,
+	if _, err := db.Exec(`UPDATE margin_configurations SET mc_tenant_credit_limit_grams = mc_tenant_unlifted_grams `+demoMargin,
 		database.SeedDemoTenantUUID); err != nil {
 		t.Fatalf("lower credit limit: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = db.Exec(`UPDATE margin_configurations mc SET mc_tenant_credit_limit_grams = $2 `+demoMargin,
+		_, _ = db.Exec(`UPDATE margin_configurations SET mc_tenant_credit_limit_grams = $2 `+demoMargin,
 			database.SeedDemoTenantUUID, limit)
 	})
 

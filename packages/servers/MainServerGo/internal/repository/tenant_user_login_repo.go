@@ -3,11 +3,9 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -35,8 +33,9 @@ var (
 	adminRepoOnce     sync.Once
 )
 
-// adminCacheTTL is shorter than users/tenants because RBAC permissions need to reflect quickly
-const adminCacheTTL = time.Minute * 15
+// Admin reads are not cached: they carry the password hash and TOTP secret,
+// which must not sit in Redis, and they are rare (login and admin management).
+// invalidateAdminCaches still clears entries written by older versions.
 
 // GetTenantUserLoginRepository implements Thread-Safe Lazy Initialization
 func GetTenantUserLoginRepository() *TenantUserLoginRepository {
@@ -174,15 +173,6 @@ func (r *TenantUserLoginRepository) invalidateAdminCaches(ctx context.Context, a
 	r.Redis.RemoveKey(ctx, keys...)
 }
 
-func (r *TenantUserLoginRepository) createAdminCaches(ctx context.Context, a *models.TenantUserLogin) {
-	keys := r.generateCacheKey(a)
-	if jsonData, err := json.Marshal(a); err == nil {
-		for _, cacheKey := range keys {
-			r.Redis.SetStringDataWithExpiry(ctx, cacheKey, string(jsonData), adminCacheTTL)
-		}
-	}
-}
-
 func (r *TenantUserLoginRepository) scanFullRetrieval(row *sql.Row) (*models.TenantUserLogin, error) {
 	var a models.TenantUserLogin
 	err := row.Scan(
@@ -216,7 +206,6 @@ func (r *TenantUserLoginRepository) CreateFullAdminWithTx(ctx context.Context, t
 	}
 
 	// Safely update the cache in the background only if the database write succeeds
-	go r.createAdminCaches(context.Background(), a)
 	return nil
 }
 
@@ -261,66 +250,31 @@ func (r *TenantUserLoginRepository) UpdateFullAdmin(ctx context.Context, a *mode
 
 // GetFullAdminByUUID is used primarily for middleware authorization and profile fetching
 func (r *TenantUserLoginRepository) GetFullAdminByUUID(ctx context.Context, tenantID int64, uuid string) (*models.TenantUserLogin, error) {
-	cacheKey := fmt.Sprintf("tenant/%d/admin/full/uuid/%s", tenantID, uuid)
-
-	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var a models.TenantUserLogin
-		if err := json.Unmarshal([]byte(cachedStr), &a); err == nil {
-			return &a, nil
-		}
-	}
-
 	a, err := r.scanFullRetrieval(r.stmtGetFullUUID.QueryRowContext(ctx, tenantID, uuid))
 	if err != nil {
 		return nil, err
 	}
 
-	go r.createAdminCaches(context.Background(), a)
 	return a, nil
 }
 
 // GetActiveAdminByPhone is used for the Login flow. It strictly enforces the tu_is_active flag.
 func (r *TenantUserLoginRepository) GetActiveAdminByPhone(ctx context.Context, tenantID int64, phone string) (*models.TenantUserLogin, error) {
-	cacheKey := fmt.Sprintf("tenant/%d/admin/full/phone/%s", tenantID, phone)
-
-	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var a models.TenantUserLogin
-		if err := json.Unmarshal([]byte(cachedStr), &a); err == nil {
-			// Double check active status just in case cache wasn't invalidated properly on a ban
-			if a.IsActive {
-				return &a, nil
-			}
-		}
-	}
-
 	a, err := r.scanFullRetrieval(r.stmtGetFullPhone.QueryRowContext(ctx, tenantID, phone))
 	if err != nil {
 		return nil, err // Fails if they don't exist OR if IsActive = false due to the SQL WHERE clause
 	}
 
-	go r.createAdminCaches(context.Background(), a)
 	return a, nil
 }
 
 // GetActiveAdminByUsername is used for the Login flow. It strictly enforces the tu_is_active flag.
 func (r *TenantUserLoginRepository) GetActiveAdminByUsername(ctx context.Context, tenantID int64, username string) (*models.TenantUserLogin, error) {
-	cacheKey := fmt.Sprintf("tenant:%d:admin:full:username:%s", tenantID, username)
-
-	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var a models.TenantUserLogin
-		if err := json.Unmarshal([]byte(cachedStr), &a); err == nil {
-			if a.IsActive {
-				return &a, nil
-			}
-		}
-	}
-
 	a, err := r.scanFullRetrieval(r.stmtGetFullUsername.QueryRowContext(ctx, tenantID, username))
 	if err != nil {
 		return nil, err
 	}
 
-	go r.createAdminCaches(context.Background(), a)
 	return a, nil
 }
 

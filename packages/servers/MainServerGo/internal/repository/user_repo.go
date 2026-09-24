@@ -123,9 +123,30 @@ func (r *UserRepository) invalidateUserCaches(ctx context.Context, u *models.Use
 	r.Redis.RemoveKey(ctx, keys...)
 }
 
+// userCacheEntry is the Redis form of a user. models.User hides ID and
+// TenantID from API JSON (json:"-"), so the cache stores them separately;
+// without them every cached read returned user ID 0.
+type userCacheEntry struct {
+	*models.User
+	CachedID       int64 `json:"_cached_id"`
+	CachedTenantID int64 `json:"_cached_tenant_id"`
+}
+
+// decodeUserCache returns the cached user, or false for a miss or an entry
+// written before the internal IDs were cached.
+func decodeUserCache(cached string) (*models.User, bool) {
+	entry := userCacheEntry{User: &models.User{}}
+	if err := json.Unmarshal([]byte(cached), &entry); err != nil || entry.CachedID == 0 {
+		return nil, false
+	}
+	entry.User.ID = entry.CachedID
+	entry.User.TenantID = entry.CachedTenantID
+	return entry.User, true
+}
+
 func (r *UserRepository) createUserCaches(ctx context.Context, u *models.User) {
 	keys := r.generateCacheKey(u)
-	if jsonData, err := json.Marshal(u); err == nil {
+	if jsonData, err := json.Marshal(userCacheEntry{User: u, CachedID: u.ID, CachedTenantID: u.TenantID}); err == nil {
 		for _, cacheKey := range keys {
 			r.Redis.SetStringDataWithExpiry(ctx, cacheKey, string(jsonData), userCacheTTL)
 		}
@@ -212,9 +233,8 @@ func (r *UserRepository) GetFullUserByPhone(ctx context.Context, tenantID int64,
 	cacheKey := fmt.Sprintf("tenant/%d/user/full/phone/%s", tenantID, phone)
 
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var u models.User
-		if err := json.Unmarshal([]byte(cachedStr), &u); err == nil {
-			return &u, nil
+		if u, ok := decodeUserCache(cachedStr); ok {
+			return u, nil
 		}
 	}
 
@@ -233,9 +253,8 @@ func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, 
 
 	// 2. Check Redis Cache First
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var u models.User
-		if err := json.Unmarshal([]byte(cachedStr), &u); err == nil {
-			return &u, nil // CACHE HIT
+		if u, ok := decodeUserCache(cachedStr); ok {
+			return u, nil // CACHE HIT
 		}
 	}
 
