@@ -1,0 +1,35 @@
+{
+  "title": "Dashboard Essentials",
+  "items": [
+    {
+      "id": "passbook",
+      "title": "My Digital Passbook",
+      "description": "View ledger & redeem physical coins.",
+      "url": "/vault/passbook",
+      "icon": "wallet",
+      "module": "vault",
+      "enabled": true,
+      "order": 1
+    },
+    {
+      "id": "sip",
+      "title": "Start a Gold SIP",
+      "description": "Automate your wealth creation.",
+      "url": "/invest/sip",
+      "icon": "coins",
+      "module": "trading",
+      "enabled": true,
+      "order": 2
+    },
+    {
+      "id": "jewelry",
+      "title": "Explore Jewelry",
+      "description": "Browse our latest physical collections.",
+      "url": "/marketplace/jewelry",
+      "icon": "gem",
+      "module": "ecommerce",
+      "enabled": true,
+      "order": 3
+    }
+  ]
+}

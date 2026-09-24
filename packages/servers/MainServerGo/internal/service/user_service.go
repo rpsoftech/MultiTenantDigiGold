@@ -31,7 +31,7 @@ func GetUserService() *UserService {
 	return userServiceInstance
 }
 
-func (s *UserService) RegisterUser(ctx context.Context, tenantID int64, phone string, fullName string, emailID *string) (*models.User, error) {
+func (s *UserService) RegisterUser(ctx context.Context, tenantID int64, phone string, fullName string, emailID string) (*models.User, error) {
 	// 1. Start SQL Transaction in the Service Layer
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
@@ -45,7 +45,7 @@ func (s *UserService) RegisterUser(ctx context.Context, tenantID int64, phone st
 		TenantID:     tenantID,
 		FullName:     &fullName,
 		PhoneNumber:  phone,
-		EmailID:      emailID,
+		EmailID:      &emailID,
 		KYCStatus:    "pending",
 		DocumentJSON: json.RawMessage("{}"),
 		VaultBalance: 0.0,

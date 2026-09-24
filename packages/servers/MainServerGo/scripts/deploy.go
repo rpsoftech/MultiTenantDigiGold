@@ -35,16 +35,16 @@ var (
 	kvToken         = os.Getenv("KV_TOKEN")
 
 	targets = []BuildTarget{
-		{"linux", "amd64"},   // Standard Linux Servers
-		{"linux", "arm64"},   // AWS Graviton
-		{"darwin", "amd64"},  // Older Intel Macs
-		{"darwin", "arm64"},  // Apple Silicon (M1/M2/M3) Macs
-		{"windows", "amd64"}, // Standard Windows 64-bit
+		{"linux", "amd64"}, // Standard Linux Servers
+		// {"linux", "arm64"},   // AWS Graviton
+		// {"darwin", "amd64"},  // Older Intel Macs
+		// {"darwin", "arm64"},  // Apple Silicon (M1/M2/M3) Macs
+		// {"windows", "amd64"}, // Standard Windows 64-bit
 	}
 
 	components = map[string]string{
-		"api":    "./cmd/api/main.go",
-		"worker": "./cmd/worker/main.go",
+		"api":    "./packages/servers/MainServerGo/cmd/api",
+		"worker": "./packages/servers/MainServerGo/cmd/worker",
 	}
 )
 
@@ -204,7 +204,7 @@ func UploadFile(path, filename, uploadPath, fileServerURL, fileServerToken strin
 
 	err = writer.Close()
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
 
@@ -235,11 +235,11 @@ func UploadFile(path, filename, uploadPath, fileServerURL, fileServerToken strin
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
-	fmt.Println(string(body))
-	fmt.Println("Uploaded:", filename)
+	log.Println(string(body))
+	log.Println("Uploaded:", filename)
 
 	return nil
 }

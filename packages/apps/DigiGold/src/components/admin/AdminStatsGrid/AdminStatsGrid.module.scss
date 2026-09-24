@@ -1,0 +1,49 @@
+@use '@/styles/mixins' as *;
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+
+  @include sm {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @include lg {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.tile {
+  padding: var(--space-4);
+}
+
+.label {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.value {
+  font-family: var(--font-headline);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.brandValue {
+  color: var(--brand-primary);
+}
+
+.dangerValue {
+  color: var(--color-danger);
+}
+
+.hint {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: var(--space-1) 0 0;
+}

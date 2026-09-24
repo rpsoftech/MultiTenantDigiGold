@@ -3,6 +3,7 @@ package mysqldb
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -30,7 +31,7 @@ func (c *MysqlDBStruct) DeferFunction() {
 	if err := c.Db.Close(); err != nil {
 		panic(err)
 	}
-	fmt.Println("Mysqldb Defering...")
+	log.Println("Mysqldb Defering...")
 }
 func GetMysqlDB() *MysqlDBStruct {
 	if MysqlDbCon == nil {
@@ -40,7 +41,7 @@ func GetMysqlDB() *MysqlDBStruct {
 	return MysqlDbCon
 }
 func initaliseMysqlDb() {
-	fmt.Println("MysqlDb Initalizing...")
+	log.Println("MysqlDb Initalizing...")
 	PORT, err := strconv.Atoi(env.Env.GetEnv(env.MYSQL_PORT_KEY))
 	if err != nil {
 		panic("Please Pass Valid Port")

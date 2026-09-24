@@ -6,8 +6,14 @@ tmp
 out-tsc
 install-state.gz
 build
+__debug_*
+# Go binaries (anchored so internal/api source is not ignored)
+/packages/servers/MainServerGo/api
+/packages/servers/MainServerGo/api_test
+
 # dependencies
 node_modules
+docs/
 
 # IDEs and editors
 /.idea
@@ -49,3 +55,8 @@ Thumbs.db
 .next
 out
 test-output
+
+# Local env files
+.env.local
+
+.angular

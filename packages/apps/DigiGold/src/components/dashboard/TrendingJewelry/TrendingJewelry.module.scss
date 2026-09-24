@@ -1,0 +1,125 @@
+@use '@/styles/mixins' as *;
+
+.section {
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6) var(--space-2);
+  max-width: 1280px;
+  margin: 0 var(--space-4);
+
+  @include lg {
+    padding: var(--space-8) var(--space-4);
+    margin-inline: auto;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.heading {
+  font-family: var(--font-headline);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.subtitle {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+.viewAllLink {
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  white-space: nowrap;
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+
+  @include sm {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.loaderWrap {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-8) 0;
+}
+
+.emptyState {
+  font-family: var(--font-label);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-8) 0;
+}
+
+.productCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.imageWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: var(--color-surface-secondary);
+}
+
+.image {
+  object-fit: cover;
+}
+
+.newBadge {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.productTitle {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+.productPrice {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  padding: var(--space-1) var(--space-4) 0;
+}
+
+.viewDetailsLink {
+  display: block;
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  padding: var(--space-2) var(--space-4) var(--space-4);
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}

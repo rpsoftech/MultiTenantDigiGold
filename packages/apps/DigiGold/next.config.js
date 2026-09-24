@@ -2,8 +2,11 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Next.js options go here
-  // See: https://nextjs.org/docs/app/api-reference/config/next-config-js
+  output: 'export',
+  trailingSlash: true,
+  images: {
+    unoptimized: true,
+  },
 };
 
 module.exports = nextConfig;

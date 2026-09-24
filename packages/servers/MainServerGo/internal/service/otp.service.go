@@ -63,12 +63,12 @@ func (s *OTPService) generateSecureOTP() string {
 	return fmt.Sprintf("%06d", n.Int64()+100000)
 }
 
-func (s *OTPService) getOTPKey(tenantID string, phone string) string {
-	return fmt.Sprintf("tenant:%s:otp_session:%s", tenantID, phone)
+func (s *OTPService) getOTPKey(tenantUUID string, phone string) string {
+	return fmt.Sprintf("tenant:%s:otp_session:%s", tenantUUID, phone)
 }
 
-func (s *OTPService) getCoolDownKey(tenantID string, phone string) string {
-	return fmt.Sprintf("tenant:%s:otp_coolDown:%s", tenantID, phone)
+func (s *OTPService) getCoolDownKey(tenantUUID string, phone string) string {
+	return fmt.Sprintf("tenant:%s:otp_coolDown:%s", tenantUUID, phone)
 }
 
 func (s *OTPService) SendOTP(ctx context.Context, tenantID int64, tenantUUID string, phone string) (bool, error) {
@@ -99,9 +99,9 @@ func (s *OTPService) SendOTP(ctx context.Context, tenantID int64, tenantUUID str
 // CORE OPERATIONS
 // ==========================================
 
-func (s *OTPService) GenerateAndDispatch(ctx context.Context, tenantID string, phone string, name string) error {
-	coolDownKey := s.getCoolDownKey(tenantID, phone)
-	sessionKey := s.getOTPKey(tenantID, phone)
+func (s *OTPService) GenerateAndDispatch(ctx context.Context, tenantUUID string, phone string, name string) error {
+	coolDownKey := s.getCoolDownKey(tenantUUID, phone)
+	sessionKey := s.getOTPKey(tenantUUID, phone)
 
 	// 1. SPAM PREVENTION: Check 30-second coolDownKey
 	if exists, _ := s.Redis.GetStringData(ctx, coolDownKey); exists != "" {
@@ -120,7 +120,7 @@ func (s *OTPService) GenerateAndDispatch(ctx context.Context, tenantID string, p
 	}
 	otpCode := s.generateSecureOTP()
 	otpReqEntity := &interfaces.OTPRequest{
-		TenantId: tenantID,
+		TenantId: tenantUUID,
 		Phone:    phone,
 		Name:     name,
 		OtpCode:  otpCode,
@@ -146,8 +146,8 @@ func (s *OTPService) GenerateAndDispatch(ctx context.Context, tenantID string, p
 	return nil
 }
 
-func (s *OTPService) VerifyOTP(ctx context.Context, tenantID string, phone string, inputOTP string) error {
-	sessionKey := s.getOTPKey(tenantID, phone)
+func (s *OTPService) VerifyOTP(ctx context.Context, tenantUUID string, phone string, inputOTP string) error {
+	sessionKey := s.getOTPKey(tenantUUID, phone)
 	// 1. Fetch Session from Redis
 	existingData, err := s.Redis.GetStringData(ctx, sessionKey)
 	if err != nil || existingData == "" {

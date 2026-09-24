@@ -1,0 +1,31 @@
+@mixin sm {
+  @media (min-width: 640px) {
+    @content;
+  }
+}
+@mixin md {
+  @media (min-width: 768px) {
+    @content;
+  }
+}
+@mixin lg {
+  @media (min-width: 1024px) {
+    @content;
+  }
+}
+@mixin xl {
+  @media (min-width: 1280px) {
+    @content;
+  }
+}
+
+@mixin focus-ring {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+@mixin reduced-motion {
+  @media (prefers-reduced-motion: reduce) {
+    @content;
+  }
+}

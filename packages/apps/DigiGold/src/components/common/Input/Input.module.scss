@@ -1,0 +1,103 @@
+@use '@/styles/mixins' as *;
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.labelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.label {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+// Mobile: underline only, icon leads the field. Desktop (md+): boxed, icon trails —
+// per the mobile reference vs. the desktop reference.
+.inputWrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
+  padding-block: var(--space-2);
+
+  &:has(.input:focus-visible) {
+    border-color: var(--brand-primary);
+  }
+
+  @include md {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    padding-inline: var(--space-3);
+    padding-block: 0;
+
+    &:has(.input:focus-visible) {
+      @include focus-ring;
+    }
+  }
+}
+
+.inputWrapperError {
+  border-color: var(--color-danger);
+}
+
+.addon {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  order: -1;
+
+  @include md {
+    order: 1;
+  }
+}
+
+.input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding-block: 0;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text-primary);
+
+  @include md {
+    padding-block: var(--space-3);
+  }
+
+  &::placeholder {
+    color: var(--color-text-muted);
+  }
+}
+
+.errorText {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  color: var(--color-danger);
+}

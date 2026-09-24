@@ -83,7 +83,7 @@ func InitRedisClient() *RedisClientStruct {
 			Client: client,
 			Config: config,
 		}
-		println("Redis Client Initialized Successfully")
+		log.Println("Redis Client Initialized Successfully")
 		log.Printf("🔗 Redis Target: %s", client.Options().Addr)
 	})
 
@@ -115,9 +115,13 @@ func (r *RedisClientStruct) PublishCustomEvent(ctx context.Context, event string
 	return r.Client.Publish(ctx, r.GetRedisEventKey(event), payload).Err()
 }
 
-// func (r *RedisClientStruct) GetHashValue(ctx context.Context, key string) (map[string]string, error) {
-// 	return r.Client.HGetAll(ctx, key).Result()
-// }
+func (r *RedisClientStruct) GetHashKeyWithOriginalKey(ctx context.Context, key, field string) (string, error) {
+	return r.Client.HGet(ctx, key, field).Result()
+}
+
+func (r *RedisClientStruct) GetHashValue(ctx context.Context, key string) (map[string]string, error) {
+	return r.Client.HGetAll(ctx, key).Result()
+}
 
 func (r *RedisClientStruct) GetStringData(ctx context.Context, key string) (string, error) {
 	return r.Client.Get(ctx, r.GetRedisKey(key)).Result()

@@ -1,0 +1,21 @@
+{
+  "autoplayIntervalMs": 3000,
+  "slides": [
+    {
+      "id": "festive-offer",
+      "imageUrl": "/marketplace/banner-11.jpg",
+      "imageAlt": "Festive gold savings offer",
+      "linkUrl": "/marketplace/jewelry",
+      "enabled": true,
+      "order": 1
+    },
+    {
+      "id": "sip-promo",
+      "imageUrl": "/marketplace/banner-12.jpg",
+      "imageAlt": "Start a Gold SIP today",
+      "linkUrl": "/invest/sip",
+      "enabled": true,
+      "order": 2
+    }
+  ]
+}

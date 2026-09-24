@@ -3,6 +3,7 @@ package env
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -98,6 +99,6 @@ func LoadEnv(filename string) {
 
 		// 4. Validate all strictly typed constraints
 		ValidateEnv(Env)
-		fmt.Println("✅ Environment Variables successfully loaded and validated.")
+		log.Println("✅ Environment Variables successfully loaded and validated.")
 	})
 }

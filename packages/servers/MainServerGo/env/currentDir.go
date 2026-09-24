@@ -1,7 +1,7 @@
 package env
 
 import (
-	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -12,7 +12,7 @@ func FindAndReturnCurrentDir() string {
 	if currentDirectory != "" {
 		return currentDirectory
 	}
-	fmt.Println(len(os.Args), os.Args)
+	log.Println(len(os.Args), os.Args)
 	if IsDev {
 		current, err := os.Getwd()
 		Check(err)

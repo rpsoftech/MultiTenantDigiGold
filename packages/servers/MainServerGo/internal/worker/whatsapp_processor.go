@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 )
 
 type UnofficialWhatsappSendTextBody struct {
@@ -178,10 +178,10 @@ func (c *EventConsumer) executeHTTPRequest(endpoint string, tokenKey string, tok
 	return nil
 }
 
-// handleCriticalError is a stub for future integration (e.g., Sentry, Slack Alerts, Datadog)
+// handleCriticalError reports a failed WhatsApp send to monitoring.
 func (c *EventConsumer) handleCriticalError(tenantID string, eventName string, err error) {
-	log.Printf("🚨 CRITICAL ALERT [Tenant: %s] [Event: %s]: %v\n", tenantID, eventName, err)
-	// TODO: Push this error to a monitoring queue or Slack webhook in the future
+	monitoring.Critical(context.Background(), monitoring.KindWhatsAppSend,
+		fmt.Errorf("tenant %s, event %s: %w", tenantID, eventName, err))
 }
 
 // compileMessageTemplate replaces {{variable_name}} with actual map values

@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "composite": true,
+    "declaration": false,
     "declarationMap": true,
     "emitDeclarationOnly": true,
     "importHelpers": true,
@@ -20,6 +21,11 @@
     "noUncheckedSideEffectImports": false,
     "types": ["*"],
     "esModuleInterop": false,
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@dg/services": ["./packages/libs/shared-services/src/index.ts"],
+      "@dg/angular-core": ["./packages/libs/angular-core/src/index.ts"],
+      "@dg/ui": ["./packages/libs/shared-ui/src/index.ts"]
+    }
   }
 }

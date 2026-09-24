@@ -1,0 +1,1703 @@
+openapi: 3.0.3
+info:
+  title: DigiGold Platform API
+  version: '1.1.0'
+  description: |
+    Multi-tenant digital gold platform. Jewelry shops (tenants) let their customers
+    buy gold at live rates. Customers never sell: gold leaves a vault only as
+    physical gold collected at the store counter (redemption with a pickup code).
+
+    ## Conventions
+    - **Base path:** `/api/v1`.
+    - **Tenant:** every tenant-scoped route needs the `X-Tenant-ID` header (tenant UUID).
+    - **Auth:** send the raw JWT in the `X-Api-Token` header. Do **not** add a `Bearer ` prefix.
+    - **Token kinds:** customer access, customer refresh, registration, admin access and
+      admin refresh tokens are not interchangeable. Each kind is rejected everywhere else.
+    - **Access tokens** live 15 minutes, **refresh tokens** 7 days, **registration tokens** 10 minutes.
+    - **IDs:** only UUIDs are exposed. Internal numeric IDs never appear in requests or responses.
+    - **Rate limits:** `/auth/*` and `/admin/auth/*` allow 10 requests per minute per IP and route.
+      Exceeding it returns `429`.
+    - **Errors:** most routes return the `Error` schema. Some admin routes still return the
+      older `SimpleError` shape (`{"error": "..."}`).
+    - **5xx responses** never include internal details.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+
+tags:
+  - name: Rates
+    description: Live gold rate (public).
+  - name: Tenant
+    description: Public tenant info for white-label frontends.
+  - name: Customer Auth
+    description: OTP login and registration for customers.
+  - name: Customer
+    description: Customer trading, portfolio and KYC. Needs a customer access token.
+  - name: Admin Auth
+    description: Admin login with password + TOTP 2FA.
+  - name: Admin Store
+    description: Shop operations. Roles `super_admin` or `manager`; token tenant must match `X-Tenant-ID`.
+  - name: Admin Tenants
+    description: Tenant onboarding and management. Role `super_admin`.
+  - name: Admin Users
+    description: Admin account management. Role `super_admin`.
+  - name: Admin Events
+    description: Audit event log. Roles `super_admin` or `auditor`.
+  - name: Webhooks
+    description: Inbound payment gateway callbacks.
+
+components:
+  securitySchemes:
+    CustomerToken:
+      type: apiKey
+      in: header
+      name: X-Api-Token
+      description: Customer access token from `/auth/otp/verify` or `/auth/register`. Raw JWT, no `Bearer` prefix.
+    AdminToken:
+      type: apiKey
+      in: header
+      name: X-Api-Token
+      description: Admin access token from `/admin/auth/totp/verify` or `/admin/auth/refresh`. Raw JWT, no `Bearer` prefix.
+
+  parameters:
+    TenantId:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      description: UUID of the tenant the request acts on.
+      schema:
+        type: string
+        format: uuid
+        example: 7e57d004-2b97-0e7a-b45f-5387367791cd
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    TenantUuidPath:
+      name: uuid
+      in: path
+      required: true
+      description: Target tenant UUID.
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Invalid input.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, invalid or expired token, or invalid tenant.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Role not allowed, or token tenant does not match `X-Tenant-ID`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Entity not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Rate limit, OTP cooldown or attempt limit reached.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message:
+          {
+            type: string,
+            example: Insufficient gold balance for this transaction.,
+          }
+        code:
+          type: integer
+          description: App error code (see `interfaces/error-code.enum.go`).
+          example: 244
+        name: { type: string, example: ERROR_INSUFFICIENT_BALANCE }
+        extra:
+          description: Optional detail. Always empty on 5xx.
+    SimpleError:
+      type: object
+      properties:
+        error: { type: string }
+    Status:
+      type: object
+      properties:
+        status: { type: string, example: success }
+
+    Rate:
+      type: object
+      description: Snapshot published by the rate feed on Redis channel `rate/GOLD`.
+      properties:
+        bid: { type: number, example: 7085.5 }
+        ask: { type: number, example: 7102.25 }
+        last-high: { type: number }
+        last-low: { type: number }
+
+    PublicTenant:
+      type: object
+      properties:
+        tenant_uuid: { type: string, format: uuid }
+        full_name: { type: string }
+        short_name: { type: string, nullable: true }
+        domain: { type: string, nullable: true }
+        subdomain: { type: string, nullable: true }
+        kyc_mode: { type: string, enum: [upfront, just_in_time] }
+        ui_json_config: { description: Server-driven UI layout (JSON). }
+
+    Tenant:
+      type: object
+      properties:
+        tenant_uuid: { type: string, format: uuid }
+        full_name: { type: string }
+        short_name: { type: string, nullable: true }
+        domain: { type: string, nullable: true }
+        subdomain: { type: string, nullable: true }
+        domain_expiry: { type: string, format: date-time, nullable: true }
+        plan_expiry: { type: string, format: date-time, nullable: true }
+        renewal_cost: { type: number }
+        kyc_mode: { type: string, enum: [upfront, just_in_time] }
+        markup_percentage: { type: number }
+        ui_json_config: {}
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+
+    User:
+      type: object
+      properties:
+        user_uuid: { type: string, format: uuid }
+        full_name: { type: string, nullable: true }
+        phone_number: { type: string }
+        email_id: { type: string, nullable: true }
+        kyc_status: { type: string, enum: [pending, verified, rejected] }
+        document_json: { description: KYC document payload (JSON). }
+        erp_unique_id: { type: string, nullable: true }
+        total_vault_balance:
+          { type: number, description: Gold balance in grams. }
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+
+    Admin:
+      type: object
+      properties:
+        admin_uuid: { type: string, format: uuid }
+        username: { type: string }
+        phone_number: { type: string }
+        is_totp_enabled: { type: boolean }
+        role: { type: string, enum: [super_admin, manager, custom] }
+        is_active: { type: boolean }
+        permissions_json: {}
+        created_at: { type: string, format: date-time }
+        modified_at: { type: string, format: date-time }
+
+    LedgerEntry:
+      type: object
+      properties:
+        gl_uuid: { type: string, format: uuid }
+        event_type:
+          {
+            type: string,
+            enum:
+              [
+                GOLD_PURCHASE,
+                PHYSICAL_REDEMPTION,
+                SYSTEM_REVERSAL,
+                ADMIN_ADJUSTMENT,
+              ],
+          }
+        payment_mode:
+          { type: string, enum: [ONLINE_PG, COUNTER_CASH, COUNTER_UPI, NONE] }
+        weight_grams:
+          { type: number, description: 'Signed: + credit, - debit.' }
+        total_amount_inr: { type: number }
+        running_gold_balance_grams: { type: number }
+        mcx_base_rate: { type: number }
+        master_margin_applied: { type: number }
+        tenant_margin_applied: { type: number }
+        gst_applied: { type: number }
+        final_rate_per_gram: { type: number }
+        reference_id: { type: string }
+        metadata_json: {}
+        created_at: { type: string, format: date-time }
+
+    MarginConfig:
+      type: object
+      properties:
+        uuid: { type: string }
+        commodity_type: { type: string, example: GOLD }
+        sell_margin_type: { type: string, enum: [PERCENTAGE, FIXED_INR, FLAT] }
+        sell_margin_value: { type: number }
+        is_gst_enabled: { type: boolean }
+        gst_percentage: { type: number }
+        tenant_credit_limit_grams: { type: number }
+        tenant_unlifted_grams: { type: number, readOnly: true }
+        is_active: { type: boolean }
+
+    TenantConfig:
+      type: object
+      properties:
+        whatsapp_config:
+          type: object
+          properties:
+            provider_type:
+              { type: string, enum: [DEFAULT, OFFICIAL, UNOFFICIAL] }
+            official_config:
+              type: object
+              properties:
+                api_endpoint: { type: string }
+                auth_token: { type: string }
+                phone_number_id: { type: string }
+            unofficial_config:
+              type: object
+              properties:
+                api_endpoint: { type: string }
+                auth_token: { type: string }
+            template_mappings:
+              type: object
+              description: Keyed by template type, e.g. `OTP_REQUEST`.
+              additionalProperties:
+                type: object
+                properties:
+                  name: { type: string }
+                  body: { type: string }
+                  language: { type: string }
+        payment_config:
+          type: object
+          properties:
+            provider_type: { type: string, enum: [DEFAULT, CUSTOM] }
+            key_id: { type: string }
+            key_secret: { type: string, writeOnly: true }
+            webhook_secret:
+              type: string
+              writeOnly: true
+              description: Secret set on the Razorpay webhook. Falls back to `key_secret` when empty.
+        other_config:
+          type: object
+          properties:
+            webhooks:
+              type: object
+              properties:
+                is_enabled: { type: boolean }
+                webhook_url: { type: string }
+                webhook_secret: { type: string, writeOnly: true }
+
+    TenantKYCDocument:
+      type: object
+      properties:
+        tkd_uuid: { type: string }
+        tkd_document_type:
+          {
+            type: string,
+            enum: [PAN, GST_CERTIFICATE, BUSINESS_REGISTRATION, DIRECTOR_ID],
+          }
+        tkd_document_url: { type: string }
+        tkd_status: { type: string }
+        tkd_verified_by: { type: string }
+        tkd_created_at: { type: string, format: date-time }
+
+    Redemption:
+      type: object
+      properties:
+        redemption_uuid: { type: string, format: uuid }
+        ledger_uuid: { type: string, format: uuid }
+        weight_grams: { type: number, example: 2 }
+        status: { type: string, enum: [PENDING, COLLECTED, CANCELLED] }
+        pickup_code:
+          type: string
+          example: '483920'
+          description: Returned to the customer only. Staff never see it.
+        collected_at: { type: string, format: date-time }
+        cancelled_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        customer_name: { type: string, description: Staff listings only. }
+        customer_phone: { type: string, description: Staff listings only. }
+
+    SystemEvent:
+      type: object
+      properties:
+        id: { type: string }
+        keyId: { type: string }
+        tenantId: { type: string }
+        eventName: { type: string }
+        payload: {}
+        occurredAt: { type: string, format: date-time }
+
+    TradeRequest:
+      type: object
+      properties:
+        requested_rate_per_gram:
+          type: number
+          description: Rate shown to the user. Rejected if the live rate differs by more than ₹30.
+        weight_grams:
+          {
+            type: number,
+            description: Grams to buy. Takes priority over `total_amount_inr`.,
+          }
+        total_amount_inr: { type: number }
+        payment_mode:
+          { type: string, enum: [ONLINE_PG, COUNTER_CASH, COUNTER_UPI] }
+        reference_id: { type: string }
+
+    Paginated:
+      type: object
+      properties:
+        success: { type: boolean }
+        page: { type: integer }
+        limit: { type: integer }
+
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+
+paths:
+  # ------------------------------------------------------------------ Rates
+  /rates/stream:
+    get:
+      operationId: getRatesStream
+      tags: [Rates]
+      security: []
+      summary: Live rate stream (Server-Sent Events)
+      description: |
+        Sends the latest rate immediately, then one `data:` event each time the ask price
+        changes. Each event body is a `Rate` JSON object. Slow clients may miss ticks.
+      responses:
+        '200':
+          description: SSE stream.
+          content:
+            text/event-stream:
+              schema:
+                {
+                  type: string,
+                  example: "data: {\"bid\":7085.5,\"ask\":7102.25}\n\n",
+                }
+  /rates/last-rate:
+    get:
+      operationId: getRatesLastRate
+      tags: [Rates]
+      security: []
+      summary: Latest rate snapshot
+      responses:
+        '200':
+          description: Raw JSON string of the latest `Rate`, or empty string if none yet.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  latest_rate:
+                    { type: string, example: '{"bid":7085.5,"ask":7102.25}' }
+
+  # ------------------------------------------------------------------ Tenant
+  /tenant/info:
+    get:
+      operationId: getTenantInfo
+      tags: [Tenant]
+      security: []
+      summary: Public tenant profile and UI layout
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      responses:
+        '200':
+          description: Public-safe tenant fields.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicTenant' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Tenant not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  # ------------------------------------------------------------------ Customer auth
+  /auth/otp/request:
+    post:
+      operationId: postAuthOtpRequest
+      tags: [Customer Auth]
+      security: []
+      summary: Send a login OTP over WhatsApp
+      description: 30-second cooldown between requests and a resend limit per 10-minute window.
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  {
+                    type: string,
+                    example: '9876543210',
+                    description: 10 digits.,
+                  }
+      responses:
+        '200':
+          description: OTP dispatched.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  is_registered: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/otp/verify:
+    post:
+      operationId: postAuthOtpVerify
+      tags: [Customer Auth]
+      security: []
+      summary: Verify OTP
+      description: |
+        Registered user: returns `access_token` and `refresh_token`.
+        New user: returns `registration_token` for `/auth/register`.
+        Too many wrong guesses invalidate the OTP.
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, otp]
+              properties:
+                phone: { type: string, example: '9876543210' }
+                otp: { type: string, example: '123456' }
+      responses:
+        '200':
+          description: OTP accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  is_registered: { type: boolean }
+                  access_token: { type: string }
+                  refresh_token: { type: string }
+                  registration_token: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/register:
+    post:
+      operationId: postAuthRegister
+      tags: [Customer Auth]
+      security: []
+      summary: Create customer account after OTP verification
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [registration_token, full_name, location]
+              properties:
+                registration_token: { type: string }
+                full_name: { type: string }
+                location: { type: string }
+                email_id: { type: string, format: email }
+      responses:
+        '200':
+          description: Registered and logged in.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/TokenPair'
+                  - type: object
+                    properties:
+                      success: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ------------------------------------------------------------------ Customer
+  /trade/buy/initiate:
+    post:
+      operationId: postTradeBuyInitiate
+      tags: [Customer]
+      summary: Start an online buy (creates a Razorpay order)
+      description: |
+        Priced by amount only: `weight_grams` is ignored. The server checks the
+        rate (±₹30 of `requested_rate_per_gram`) and the store's gold credit, then
+        locks the quote for 15 minutes. The trade executes at that quote when
+        Razorpay sends `payment.captured` to `/webhook/razorpay`. A payment
+        captured after the quote expires is refunded in full. Amounts above
+        ₹50,000 need verified KYC.
+      security: [{ CustomerToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [total_amount_inr, requested_rate_per_gram]
+              properties:
+                total_amount_inr: { type: number, example: 5000 }
+                requested_rate_per_gram: { type: number, example: 7102.25 }
+      responses:
+        '200':
+          description: Order created. Open Razorpay checkout with `order_id`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  order_id: { type: string, example: order_Nx1234 }
+                  amount:
+                    { type: number, description: Amount to charge in INR. }
+                  weight_grams:
+                    { type: number, description: Grams credited on capture. }
+                  final_rate_per_gram: { type: number }
+                  quote_expires_at:
+                    { type: integer, description: Unix seconds. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Rate moved (`SLIPPAGE_EXCEEDED`) or the store is out of gold credit (`CREDIT_LIMIT_EXCEEDED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /trade/redeem:
+    post:
+      operationId: postTradeRedeem
+      tags: [Customer]
+      summary: Request physical gold for pickup at the store counter
+      description: |
+        Debits `weight_grams` from the vault at once (`PHYSICAL_REDEMPTION` ledger
+        entry) and returns a 6-digit pickup code. The customer shows the code at the
+        counter; staff enter it on `/admin/store/redemptions/collect`. No money moves.
+      security: [{ CustomerToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weight_grams]
+              properties:
+                weight_grams: { type: number, example: 2 }
+      responses:
+        '200':
+          description: Redemption request created with status PENDING.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  redemption: { $ref: '#/components/schemas/Redemption' }
+        '400':
+          description: Invalid weight or insufficient gold balance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /trade/redemptions:
+    get:
+      operationId: getTradeRedemptions
+      tags: [Customer]
+      summary: The customer's redemption requests, with pickup codes
+      security: [{ CustomerToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Redemption requests, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Redemption' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /trade/redemptions/{uuid}/cancel:
+    post:
+      operationId: postTradeRedemptionCancel
+      tags: [Customer]
+      summary: Cancel your own pending redemption
+      description: Returns the grams to the vault with a `SYSTEM_REVERSAL` ledger entry.
+      security: [{ CustomerToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - {
+            name: uuid,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  trade: { $ref: '#/components/schemas/LedgerEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /trade/history:
+    get:
+      operationId: getTradeHistory
+      tags: [Customer]
+      summary: Customer passbook
+      security: [{ CustomerToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Ledger entries, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LedgerEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /user/portfolio:
+    get:
+      operationId: getUserPortfolio
+      tags: [Customer]
+      summary: Gold balance and current valuation
+      security: [{ CustomerToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      responses:
+        '200':
+          description: Portfolio. Valuation uses the raw bid rate without margin.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  balance_grams: { type: number }
+                  current_valuation_inr: { type: number }
+                  live_rate: { $ref: '#/components/schemas/Rate' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /user/kyc:
+    post:
+      operationId: postUserKyc
+      tags: [Customer]
+      summary: Submit KYC documents
+      description: Stores the JSON body as the user's KYC document for admin review.
+      security: [{ CustomerToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              example:
+                {
+                  pan_number: ABCDE1234F,
+                  aadhaar_last4: '1234',
+                  document_url: 'https://...',
+                }
+      responses:
+        '200':
+          description: Submitted, pending verification.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ------------------------------------------------------------------ Admin auth
+  /admin/auth/login:
+    post:
+      operationId: postAdminAuthLogin
+      tags: [Admin Auth]
+      security: []
+      summary: 'Step 1: password check'
+      description: Returns a 5-minute `temp_token` for the TOTP step.
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Password accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  temp_token: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/auth/totp/setup:
+    post:
+      operationId: postAdminAuthTotpSetup
+      tags: [Admin Auth]
+      security: []
+      summary: 'Step 2a (first login only): enroll TOTP'
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [temp_token]
+              properties:
+                temp_token: { type: string }
+      responses:
+        '200':
+          description: Show `otpauth_uri` as a QR code for an authenticator app.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  otpauth_uri: { type: string }
+        '400':
+          description: Invalid temp token or TOTP already enabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /admin/auth/totp/verify:
+    post:
+      operationId: postAdminAuthTotpVerify
+      tags: [Admin Auth]
+      security: []
+      summary: 'Step 2b: verify TOTP code and get tokens'
+      description: 5 wrong codes invalidate the temp token; log in again.
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [temp_token, code]
+              properties:
+                temp_token: { type: string }
+                code: { type: string, example: '123456' }
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401':
+          description: Invalid code or temp token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/auth/refresh:
+    post:
+      operationId: postAdminAuthRefresh
+      tags: [Admin Auth]
+      security: []
+      summary: Exchange an admin refresh token for new tokens
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401':
+          description: Invalid token or deactivated admin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  # ------------------------------------------------------------------ Admin store
+  /admin/store/customers:
+    get:
+      operationId: getAdminStoreCustomers
+      tags: [Admin Store]
+      summary: List tenant customers
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Customers.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/store/ledger:
+    get:
+      operationId: getAdminStoreLedger
+      tags: [Admin Store]
+      summary: Tenant ledger
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Ledger entries, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LedgerEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/store/ledger/reverse:
+    post:
+      operationId: postAdminStoreLedgerReverse
+      tags: [Admin Store]
+      summary: Reverse a ledger entry
+      description: Posts an opposite `SYSTEM_REVERSAL` entry. Each entry can be reversed once; reversals cannot be reversed. Fails if the customer no longer holds the gold. Reversing a redemption also cancels the request and fails once the gold was collected.
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ledger_uuid]
+              properties:
+                ledger_uuid: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Reversed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  trade: { $ref: '#/components/schemas/LedgerEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already reversed, not reversible, or redemption no longer pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/store/analytics:
+    get:
+      operationId: getAdminStoreAnalytics
+      tags: [Admin Store]
+      summary: Tenant trading totals
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      responses:
+        '200':
+          description: Totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      total_volume_grams: { type: number }
+                      total_revenue_inr: { type: number }
+                      total_margin_earned: { type: number }
+                      total_transactions: { type: integer }
+
+  /admin/store/trade/counter:
+    post:
+      operationId: postAdminStoreTradeCounter
+      tags: [Admin Store]
+      summary: Record an in-store (counter) trade
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TradeRequest'
+                - type: object
+                  required: [user_uuid]
+                  properties:
+                    user_uuid:
+                      {
+                        type: string,
+                        format: uuid,
+                        description: Customer of this tenant.,
+                      }
+                    payment_mode:
+                      {
+                        type: string,
+                        enum: [COUNTER_CASH, COUNTER_UPI],
+                        default: COUNTER_CASH,
+                      }
+      responses:
+        '200':
+          description: Trade executed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  trade: { $ref: '#/components/schemas/LedgerEntry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Slippage exceeded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/store/kyc/pending:
+    get:
+      operationId: getAdminStoreKycPending
+      tags: [Admin Store]
+      summary: Customers waiting for KYC review
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Customers with `kyc_status = pending`.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/User' }
+
+  /admin/store/kyc/approve:
+    post:
+      operationId: postAdminStoreKycApprove
+      tags: [Admin Store]
+      summary: Approve customer KYC
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_uuid]
+              properties:
+                user_uuid: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Approved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+        '403':
+          description: User not in this tenant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /admin/store/kyc/reject:
+    post:
+      operationId: postAdminStoreKycReject
+      tags: [Admin Store]
+      summary: Reject customer KYC
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_uuid]
+              properties:
+                user_uuid: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Rejected.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+        '403':
+          description: User not in this tenant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /admin/store/redemptions/pending:
+    get:
+      operationId: getAdminStoreRedemptionsPending
+      tags: [Admin Store]
+      summary: Redemptions waiting at the counter
+      description: Pass `phone` to find one customer's requests. Pickup codes are not returned.
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: phone, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Pending redemptions, oldest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Redemption' }
+
+  /admin/store/redemptions/collect:
+    post:
+      operationId: postAdminStoreRedemptionsCollect
+      tags: [Admin Store]
+      summary: Hand physical gold to the customer
+      description: The customer's pickup code must match. Only a `PENDING` request can be collected.
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [redemption_uuid, pickup_code]
+              properties:
+                redemption_uuid: { type: string, format: uuid }
+                pickup_code: { type: string, example: '483920' }
+      responses:
+        '200':
+          description: Collected.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  redemption: { $ref: '#/components/schemas/Redemption' }
+        '400':
+          description: Missing fields or wrong pickup code (`INVALID_PICKUP_CODE`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/store/redemptions/cancel:
+    post:
+      operationId: postAdminStoreRedemptionsCancel
+      tags: [Admin Store]
+      summary: Cancel a pending redemption
+      description: Returns the grams to the customer's vault with a `SYSTEM_REVERSAL` ledger entry.
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [redemption_uuid]
+              properties:
+                redemption_uuid: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  trade: { $ref: '#/components/schemas/LedgerEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ------------------------------------------------------------------ Admin tenants
+  /admin/tenants:
+    get:
+      operationId: getAdminTenants
+      tags: [Admin Tenants]
+      summary: List tenants
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Tenants.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Tenant' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+
+  /admin/tenants/stub:
+    post:
+      operationId: postAdminTenantsStub
+      tags: [Admin Tenants]
+      summary: 'Onboarding stage 1: create tenant and its first admin'
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenant: { $ref: '#/components/schemas/Tenant' }
+                admin_user:
+                  allOf:
+                    - $ref: '#/components/schemas/Admin'
+                    - type: object
+                      properties:
+                        password: { type: string, format: password }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  tenant_uuid: { type: string, format: uuid }
+
+  /admin/tenants/{uuid}:
+    get:
+      operationId: getAdminTenantsByUuid
+      tags: [Admin Tenants]
+      summary: Tenant detail
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      responses:
+        '200':
+          description: Tenant.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Tenant' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/tenants/{uuid}/profile:
+    patch:
+      operationId: patchAdminTenantsByUuidProfile
+      tags: [Admin Tenants]
+      summary: 'Stage 2: update profile'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Tenant' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+
+  /admin/tenants/{uuid}/config:
+    patch:
+      operationId: patchAdminTenantsByUuidConfig
+      tags: [Admin Tenants]
+      summary: 'Stage 3: WhatsApp, payment gateway and webhook config'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TenantConfig' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+
+  /admin/tenants/{uuid}/margins:
+    get:
+      operationId: getAdminTenantsByUuidMargins
+      tags: [Admin Tenants]
+      summary: Tenant margin configs
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      responses:
+        '200':
+          description: Margins per commodity.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MarginConfig' }
+    patch:
+      operationId: patchAdminTenantsByUuidMargins
+      tags: [Admin Tenants]
+      summary: 'Stage 4: update margins'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarginConfig' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+
+  /admin/tenants/{uuid}/kyc:
+    get:
+      operationId: getAdminTenantsByUuidKyc
+      tags: [Admin Tenants]
+      summary: Tenant business KYC documents
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      responses:
+        '200':
+          description: Documents.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TenantKYCDocument' }
+    post:
+      operationId: postAdminTenantsByUuidKyc
+      tags: [Admin Tenants]
+      summary: 'Stage 5: add KYC document'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TenantKYCDocument' }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  tkd_uuid: { type: string }
+
+  /admin/tenants/{uuid}/kyc/verify:
+    patch:
+      operationId: patchAdminTenantsByUuidKycVerify
+      tags: [Admin Tenants]
+      summary: 'Stage 6: verify KYC document'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TenantKYCDocument' }
+      responses:
+        '200':
+          description: Verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+
+  /admin/tenants/{uuid}/status:
+    patch:
+      operationId: patchAdminTenantsByUuidStatus
+      tags: [Admin Tenants]
+      summary: 'Stage 7: launch or change tenant status'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Tenant' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+
+  /admin/tenants/{uuid}/ui-layout:
+    patch:
+      operationId: patchAdminTenantsByUuidUiLayout
+      tags: [Admin Tenants]
+      summary: 'Stage 8: publish server-driven UI layout'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/TenantUuidPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ui_json_config:
+                  type: array
+                  items: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+
+  # ------------------------------------------------------------------ Admin users
+  /admin/admins:
+    get:
+      operationId: getAdminAdmins
+      tags: [Admin Users]
+      summary: List admins
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: tenant_uuid
+          in: query
+          description: Filter by tenant.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Admins.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Admin' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+    post:
+      operationId: postAdminAdmins
+      tags: [Admin Users]
+      summary: Create admin
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_uuid, username, password, role]
+              properties:
+                tenant_uuid: { type: string, format: uuid }
+                username: { type: string }
+                phone_number: { type: string }
+                password: { type: string, format: password }
+                role: { type: string, enum: [super_admin, manager, custom] }
+      responses:
+        '201':
+          description: Created. The admin enrolls TOTP on first login.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Admin' }
+
+  /admin/admins/{uuid}:
+    get:
+      operationId: getAdminAdminsByUuid
+      tags: [Admin Users]
+      summary: Admin detail
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: tenant_uuid
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Admin.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Admin' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+    patch:
+      operationId: patchAdminAdminsByUuid
+      tags: [Admin Users]
+      summary: Update admin (activate, change role, reset TOTP)
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_uuid]
+              properties:
+                tenant_uuid: { type: string, format: uuid }
+                is_active: { type: boolean }
+                role: { type: string, enum: [super_admin, manager, custom] }
+                reset_totp: { type: boolean }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Admin' }
+
+  # ------------------------------------------------------------------ Admin events
+  /admin/events:
+    get:
+      operationId: getAdminEvents
+      tags: [Admin Events]
+      summary: Audit event log
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: tenant_uuid, in: query, schema: { type: string } }
+        - {
+            name: type,
+            in: query,
+            description: Event name filter.,
+            schema: { type: string },
+          }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Events, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SystemEvent' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+
+  # ------------------------------------------------------------------ Webhooks
+  /webhook/razorpay:
+    post:
+      operationId: postWebhookRazorpay
+      tags: [Webhooks]
+      security: []
+      summary: Razorpay payment webhook
+      description: |
+        Configure in the Razorpay dashboard with event `payment.captured`.
+        Verified with `X-Razorpay-Signature` and the tenant's `webhook_secret`.
+        Only `payment.captured` credits gold; every other event returns `ignored`.
+        The paid amount must equal the order amount. Safe to retry: each payment is processed once.
+      parameters:
+        - name: X-Razorpay-Signature
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Standard Razorpay webhook payload.
+      responses:
+        '200':
+          description: Processed or ignored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, ignored] }
+        '400':
+          description: Bad signature or payload.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '500':
+          description: Trade failed. Razorpay retries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }

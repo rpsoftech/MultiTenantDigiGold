@@ -32,6 +32,8 @@
     "src/**/*.tsx",
     "src/**/*.js",
     "src/**/*.jsx",
+    "src/**/*.json",
+    "**/*.d.ts",
     "../../../packages/apps/DigiGold/.next/types/**/*.ts",
     "../../../dist/packages/apps/DigiGold/.next/types/**/*.ts",
     "next-env.d.ts"

@@ -1,0 +1,399 @@
+{
+  "info": {
+    "name": "DigiGold Trade Endpoints",
+    "description": "Customers only buy gold. Gold leaves a vault only as physical gold collected at the store counter with a pickup code.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "tenant_uuid",
+      "value": ""
+    },
+    {
+      "key": "jwt_token",
+      "value": ""
+    },
+    {
+      "key": "admin_jwt_token",
+      "value": ""
+    },
+    {
+      "key": "redemption_uuid",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Customer",
+      "item": [
+        {
+          "name": "Buy (create Razorpay order)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trade/buy/initiate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "trade", "buy", "initiate"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requested_rate_per_gram\": 7210.0,\n  \"total_amount_inr\": 1000.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Request Redemption (counter pickup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trade/redeem",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "trade", "redeem"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_grams\": 1.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "My Redemptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trade/redemptions?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "trade", "redemptions"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel My Redemption",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trade/redemptions/{{redemption_uuid}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "v1",
+                "trade",
+                "redemptions",
+                "{{redemption_uuid}}",
+                "cancel"
+              ]
+            }
+          }
+        },
+        {
+          "name": "History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trade/history?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "trade", "history"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Portfolio",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/user/portfolio",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user", "portfolio"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Store",
+      "item": [
+        {
+          "name": "Ledger",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{admin_jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/store/ledger?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "store", "ledger"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Customers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{admin_jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/store/customers?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "store", "customers"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Counter Buy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{admin_jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/store/trade/counter",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "store", "trade", "counter"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_uuid\": \"<customer uuid>\",\n  \"requested_rate_per_gram\": 7210.0,\n  \"total_amount_inr\": 1000.0,\n  \"payment_mode\": \"COUNTER_CASH\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Pending Redemptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{admin_jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/store/redemptions/pending?page=1&limit=20&phone=",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "store", "redemptions", "pending"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "phone",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Collect Redemption",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{admin_jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/store/redemptions/collect",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "store", "redemptions", "collect"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"redemption_uuid\": \"{{redemption_uuid}}\",\n  \"pickup_code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cancel Redemption",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Token",
+                "value": "{{admin_jwt_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenant_uuid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/store/redemptions/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "store", "redemptions", "cancel"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"redemption_uuid\": \"{{redemption_uuid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
