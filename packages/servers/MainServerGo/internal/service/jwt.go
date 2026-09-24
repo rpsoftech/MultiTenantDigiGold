@@ -34,6 +34,21 @@ type RegistrationClaims struct {
 	*jwt.RegisteredClaims
 }
 
+// Token audiences. Every token kind carries its own "aud" claim and every
+// validator requires it, so one kind of token can never be replayed as another
+// (e.g. a customer access token presented to the admin middleware).
+const (
+	audUserAccess    = "digigold:user:access"
+	audUserRefresh   = "digigold:user:refresh"
+	audRegistration  = "digigold:user:registration"
+	audAdminAccess   = "digigold:admin:access"
+	audAdminRefresh  = "digigold:admin:refresh"
+	accessTokenTTL   = 15 * time.Minute
+	refreshTokenTTL  = 7 * 24 * time.Hour
+	registrationTTL  = 10 * time.Minute
+	jwtSigningMethod = "HS256"
+)
+
 // ==========================================
 // SERVICE DEFINITION & INITIALIZATION
 // ==========================================
@@ -57,8 +72,8 @@ func GetJWTService() *JWTService {
 		aKey := []byte(env.Env.GetEnv("ACCESS_TOKEN_KEY"))
 		rKey := []byte(env.Env.GetEnv("REFRESH_TOKEN_KEY"))
 
-		if len(aKey) == 0 || len(rKey) == 0 {
-			panic("FATAL: JWT access/refresh keys are missing from environment")
+		if len(aKey) < 32 || len(rKey) < 32 {
+			panic("FATAL: JWT access/refresh keys must be set and at least 32 bytes long")
 		}
 
 		jwtServiceInstance = &JWTService{
@@ -69,41 +84,61 @@ func GetJWTService() *JWTService {
 	return jwtServiceInstance
 }
 
+func newRegisteredClaims(audience string, ttl time.Duration) *jwt.RegisteredClaims {
+	now := time.Now()
+	return &jwt.RegisteredClaims{
+		Audience:  jwt.ClaimStrings{audience},
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+		IssuedAt:  jwt.NewNumericDate(now),
+	}
+}
+
+func sign(claims jwt.Claims, key []byte) (string, error) {
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
+}
+
+// parse validates signature, algorithm, expiry and audience, then fills claims.
+func parse(tokenStr string, claims jwt.Claims, key []byte, audience string) error {
+	token, err := jwt.ParseWithClaims(tokenStr, claims,
+		func(*jwt.Token) (any, error) { return key, nil },
+		jwt.WithValidMethods([]string{jwtSigningMethod}),
+		jwt.WithAudience(audience),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return interfaces.ErrTokenExpired
+		}
+		return interfaces.ErrInvalidToken
+	}
+	if !token.Valid {
+		return interfaces.ErrInvalidToken
+	}
+	return nil
+}
+
 // ==========================================
 // GENERATION METHODS
 // ==========================================
 
 // GenerateTokens generates both Access (15m) and Refresh (7d) tokens for a user
 func (s *JWTService) GenerateTokens(userUUID string, tenantUUID string, phone string) (string, string, error) {
-	now := time.Now()
-	// 1. Access Token (15 minutes)
-	accessClaims := &UserClaims{
-		UserUUID:   userUUID,
-		TenantUUID: tenantUUID,
-		Phone:      phone,
-		RegisteredClaims: &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessToken, err := accessTokenObj.SignedString(s.accessKey)
+	accessToken, err := sign(&UserClaims{
+		UserUUID:         userUUID,
+		TenantUUID:       tenantUUID,
+		Phone:            phone,
+		RegisteredClaims: newRegisteredClaims(audUserAccess, accessTokenTTL),
+	}, s.accessKey)
 	if err != nil {
 		return "", "", err
 	}
 
-	// 2. Refresh Token (7 days)
-	refreshClaims := &UserClaims{
-		UserUUID:   userUUID,
-		TenantUUID: tenantUUID,
-		Phone:      phone,
-		RegisteredClaims: &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, err := refreshTokenObj.SignedString(s.refreshKey)
+	refreshToken, err := sign(&UserClaims{
+		UserUUID:         userUUID,
+		TenantUUID:       tenantUUID,
+		Phone:            phone,
+		RegisteredClaims: newRegisteredClaims(audUserRefresh, refreshTokenTTL),
+	}, s.refreshKey)
 	if err != nil {
 		return "", "", err
 	}
@@ -113,50 +148,31 @@ func (s *JWTService) GenerateTokens(userUUID string, tenantUUID string, phone st
 
 // GenerateRegistrationToken generates a short-lived token (10m) for registration after OTP verification
 func (s *JWTService) GenerateRegistrationToken(phone string, tenantUUID string) (string, error) {
-	claims := &RegistrationClaims{
-		Phone:      phone,
-		TenantUUID: tenantUUID,
-		RegisteredClaims: &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	}
-
-	tokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return tokenObj.SignedString(s.accessKey)
+	return sign(&RegistrationClaims{
+		Phone:            phone,
+		TenantUUID:       tenantUUID,
+		RegisteredClaims: newRegisteredClaims(audRegistration, registrationTTL),
+	}, s.accessKey)
 }
 
 // GenerateAdminTokens generates both Access (15m) and Refresh (7d) tokens for an admin
 func (s *JWTService) GenerateAdminTokens(adminUUID string, role string, tenantID int64) (string, string, error) {
-	now := time.Now()
-	// 1. Access Token (15 minutes)
-	accessClaims := &AdminClaims{
-		AdminUUID: adminUUID,
-		Role:      role,
-		TenantID:  tenantID,
-		RegisteredClaims: &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessToken, err := accessTokenObj.SignedString(s.accessKey)
+	accessToken, err := sign(&AdminClaims{
+		AdminUUID:        adminUUID,
+		Role:             role,
+		TenantID:         tenantID,
+		RegisteredClaims: newRegisteredClaims(audAdminAccess, accessTokenTTL),
+	}, s.accessKey)
 	if err != nil {
 		return "", "", err
 	}
 
-	// 2. Refresh Token (7 days)
-	refreshClaims := &AdminClaims{
-		AdminUUID: adminUUID,
-		Role:      role,
-		TenantID:  tenantID,
-		RegisteredClaims: &jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, err := refreshTokenObj.SignedString(s.refreshKey)
+	refreshToken, err := sign(&AdminClaims{
+		AdminUUID:        adminUUID,
+		Role:             role,
+		TenantID:         tenantID,
+		RegisteredClaims: newRegisteredClaims(audAdminRefresh, refreshTokenTTL),
+	}, s.refreshKey)
 	if err != nil {
 		return "", "", err
 	}
@@ -170,20 +186,11 @@ func (s *JWTService) GenerateAdminTokens(adminUUID string, role string, tenantID
 
 // ValidateAccessToken validates the access token and returns the claims
 func (s *JWTService) ValidateAccessToken(tokenStr string) (*UserClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &UserClaims{}, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, interfaces.ErrInvalidToken
-		}
-		return s.accessKey, nil
-	})
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, interfaces.ErrTokenExpired
-		}
-		return nil, interfaces.ErrInvalidToken
+	claims := &UserClaims{}
+	if err := parse(tokenStr, claims, s.accessKey, audUserAccess); err != nil {
+		return nil, err
 	}
-	claims, ok := token.Claims.(*UserClaims)
-	if !ok || !token.Valid {
+	if claims.UserUUID == "" || claims.TenantUUID == "" {
 		return nil, interfaces.ErrInvalidToken
 	}
 	return claims, nil
@@ -191,66 +198,35 @@ func (s *JWTService) ValidateAccessToken(tokenStr string) (*UserClaims, error) {
 
 // ValidateRefreshToken validates the refresh token and returns the claims
 func (s *JWTService) ValidateRefreshToken(tokenStr string) (*UserClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, interfaces.ErrInvalidToken
-		}
-		return s.refreshKey, nil
-	})
-
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, interfaces.ErrTokenExpired
-		}
+	claims := &UserClaims{}
+	if err := parse(tokenStr, claims, s.refreshKey, audUserRefresh); err != nil {
+		return nil, err
+	}
+	if claims.UserUUID == "" || claims.TenantUUID == "" {
 		return nil, interfaces.ErrInvalidToken
 	}
-
-	claims, ok := token.Claims.(*UserClaims)
-	if !ok || !token.Valid {
-		return nil, interfaces.ErrInvalidToken
-	}
-
 	return claims, nil
 }
 
 // ValidateRegistrationToken validates the registration token and returns phone and tenantUUID
 func (s *JWTService) ValidateRegistrationToken(tokenStr string) (string, string, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &RegistrationClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, interfaces.ErrInvalidToken
-		}
-		return s.accessKey, nil
-	})
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return "", "", interfaces.ErrTokenExpired
-		}
+	claims := &RegistrationClaims{}
+	if err := parse(tokenStr, claims, s.accessKey, audRegistration); err != nil {
+		return "", "", err
+	}
+	if claims.Phone == "" || claims.TenantUUID == "" {
 		return "", "", interfaces.ErrInvalidToken
 	}
-	claims, ok := token.Claims.(*RegistrationClaims)
-	if !ok || !token.Valid {
-		return "", "", interfaces.ErrInvalidToken
-	}
-
 	return claims.Phone, claims.TenantUUID, nil
 }
 
 // ValidateAdminToken validates a JWT issued by GenerateAdminTokens and returns AdminClaims.
 func (s *JWTService) ValidateAdminToken(tokenStr string) (*AdminClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, interfaces.ErrInvalidToken
-		}
-		return s.accessKey, nil
-	})
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, interfaces.ErrTokenExpired
-		}
-		return nil, interfaces.ErrInvalidToken
+	claims := &AdminClaims{}
+	if err := parse(tokenStr, claims, s.accessKey, audAdminAccess); err != nil {
+		return nil, err
 	}
-	claims, ok := token.Claims.(*AdminClaims)
-	if !ok || !token.Valid {
+	if claims.AdminUUID == "" || claims.Role == "" || claims.TenantID == 0 {
 		return nil, interfaces.ErrInvalidToken
 	}
 	return claims, nil
@@ -258,20 +234,11 @@ func (s *JWTService) ValidateAdminToken(tokenStr string) (*AdminClaims, error) {
 
 // ValidateAdminRefreshToken validates a refresh token issued by GenerateAdminTokens and returns AdminClaims.
 func (s *JWTService) ValidateAdminRefreshToken(tokenStr string) (*AdminClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, interfaces.ErrInvalidToken
-		}
-		return s.refreshKey, nil
-	})
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, interfaces.ErrTokenExpired
-		}
-		return nil, interfaces.ErrInvalidToken
+	claims := &AdminClaims{}
+	if err := parse(tokenStr, claims, s.refreshKey, audAdminRefresh); err != nil {
+		return nil, err
 	}
-	claims, ok := token.Claims.(*AdminClaims)
-	if !ok || !token.Valid {
+	if claims.AdminUUID == "" || claims.TenantID == 0 {
 		return nil, interfaces.ErrInvalidToken
 	}
 	return claims, nil

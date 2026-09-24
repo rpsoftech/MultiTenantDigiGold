@@ -47,4 +47,6 @@ const (
 	ERROR_CONNECTION_LOGGED_OUT                 = 241
 	ERROR_CONNECTION_NOT_FOUND                  = 242
 	INVALID_NUMBER_FROM_TOKEN                   = 243
+	ERROR_INSUFFICIENT_BALANCE                  = 244
+	ERROR_LEDGER_REVERSAL                       = 245
 )

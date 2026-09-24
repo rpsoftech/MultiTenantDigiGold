@@ -44,6 +44,10 @@ func GlobalErrorHandler(c fiber.Ctx, err error) error {
 	if code >= 500 {
 		log.Printf("🚨 CRITICAL SENTRY ALERT: %v\n", err) // We log the ORIGINAL 'err' to keep the stack trace
 		// sentry.CaptureException(err)
+
+		// Never send internal details (DB errors, stack info) to clients.
+		message = "Internal Server Error"
+		extra = nil
 	}
 
 	// 5. Compress the output into a uniform JSON response for the React frontend

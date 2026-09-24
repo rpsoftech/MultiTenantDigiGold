@@ -42,6 +42,12 @@ func InitAdminAuthService() *AdminAuthService {
 	return adminAuthServiceInstance
 }
 
+// maxTOTPAttempts is the number of wrong TOTP codes allowed per login temp token.
+const maxTOTPAttempts = 5
+
+// dummyPasswordHash is compared against when the admin does not exist (timing equalization).
+var dummyPasswordHash, _ = bcrypt.GenerateFromPassword([]byte("digigold-timing-dummy"), bcrypt.DefaultCost)
+
 type TempTokenPayload struct {
 	TenantID int64  `json:"tenant_id"`
 	AdminID  string `json:"admin_uuid"`
@@ -51,24 +57,23 @@ type TempTokenPayload struct {
 // 1. Login (Validates Password, returns Temp Token)
 func (s *AdminAuthService) AdminLogin(ctx context.Context, tenantID int64, username, password string) (string, error) {
 
-	admin, err := s.AdminRepo.GetActiveAdminByUsername(ctx, tenantID, username)
-	if err != nil {
-		return "", &interfaces.RequestError{
-			Code:    http.StatusUnauthorized,
-			Name:    "AdminNotFound",
-			Message: "Admin not found or inactive",
-			// Extra:   ,
-		}
+	// Same response for unknown user and wrong password, so usernames cannot be enumerated.
+	invalidCredentials := &interfaces.RequestError{
+		StatusCode: http.StatusUnauthorized,
+		Code:       interfaces.ERROR_INVALID_PASSWORD,
+		Name:       "InvalidCredentials",
+		Message:    "Invalid credentials",
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(password))
+	admin, err := s.AdminRepo.GetActiveAdminByUsername(ctx, tenantID, username)
 	if err != nil {
-		return "", &interfaces.RequestError{
-			Code:    http.StatusUnauthorized,
-			Name:    "InvalidCredentials",
-			Message: "Invalid credentials",
-			Extra:   err.Error(),
-		}
+		// Burn comparable time to a real check so response timing does not reveal the user.
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(password))
+		return "", invalidCredentials
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(password)); err != nil {
+		return "", invalidCredentials
 	}
 
 	// Generate Temp Token
@@ -82,10 +87,11 @@ func (s *AdminAuthService) AdminLogin(ctx context.Context, tenantID int64, usern
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return "", &interfaces.RequestError{
-			Code:    http.StatusInternalServerError,
-			Name:    "TempTokenGenerationFailed",
-			Message: "Failed to generate temporary token",
-			Extra:   err.Error(),
+			StatusCode: http.StatusInternalServerError,
+			Code:       interfaces.ERROR_INTERNAL_SERVER,
+			Name:       "TempTokenGenerationFailed",
+			Message:    "Failed to generate temporary token",
+			Extra:      err.Error(),
 		}
 	}
 
@@ -94,10 +100,11 @@ func (s *AdminAuthService) AdminLogin(ctx context.Context, tenantID int64, usern
 	err = s.Redis.SetStringDataWithExpiry(ctx, cacheKey, string(jsonData), 5*time.Minute)
 	if err != nil {
 		return "", &interfaces.RequestError{
-			Code:    http.StatusInternalServerError,
-			Name:    "TempTokenStorageFailed",
-			Message: "Failed to store temporary token",
-			Extra:   err.Error(),
+			StatusCode: http.StatusInternalServerError,
+			Code:       interfaces.ERROR_INTERNAL_SERVER,
+			Name:       "TempTokenStorageFailed",
+			Message:    "Failed to store temporary token",
+			Extra:      err.Error(),
 		}
 	}
 
@@ -163,6 +170,14 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 	// Validate TOTP Code
 	valid := totp.Validate(code, admin.TOTPSecret)
 	if !valid {
+		// Cap guesses per temp token; after maxTOTPAttempts the password step must be repeated.
+		attemptsKey := fmt.Sprintf("auth:temp_token_attempts:%s", tempToken)
+		attempts, _ := s.Redis.Client.Incr(ctx, attemptsKey).Result()
+		s.Redis.Client.Expire(ctx, attemptsKey, 5*time.Minute)
+		if attempts >= maxTOTPAttempts {
+			_ = s.Redis.RemoveKey(ctx, fmt.Sprintf("auth:temp_token:%s", tempToken))
+			s.Redis.Client.Del(ctx, attemptsKey)
+		}
 		return "", "", fmt.Errorf("invalid TOTP code")
 	}
 

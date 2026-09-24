@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 )
@@ -73,8 +74,36 @@ func (r *RedemptionRepository) FulfillRedemption(ctx context.Context, tenantID i
 	query := `
 		UPDATE redemption_fulfillments 
 		SET rf_fulfillment_status = 'SHIPPED', rf_courier_name = $1, rf_tracking_number = $2, rf_modified_at = NOW()
-		WHERE rf_tenant_id = $3 AND rf_uuid = $4
+		WHERE rf_tenant_id = $3 AND rf_uuid = $4 AND rf_fulfillment_status = 'PENDING'
 	`
-	_, err := r.DB.Db.ExecContext(ctx, query, courier, tracking, tenantID, uuid)
-	return err
+	res, err := r.DB.Db.ExecContext(ctx, query, courier, tracking, tenantID, uuid)
+	if err != nil {
+		return fmt.Errorf("failed to fulfill redemption: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return interfaces.ErrRedemptionNotPending
+	}
+	return nil
+}
+
+// CancelPendingByLedgerWithTX cancels the shipment linked to a redemption ledger
+// entry. It fails if the shipment has already left PENDING (e.g. SHIPPED).
+func (r *RedemptionRepository) CancelPendingByLedgerWithTX(ctx context.Context, tx *sql.Tx, tenantID, ledgerID int64) error {
+	query := `
+		UPDATE redemption_fulfillments
+		SET rf_fulfillment_status = 'CANCELLED', rf_modified_at = NOW()
+		WHERE rf_tenant_id = $1 AND rf_ledger_id = $2 AND rf_fulfillment_status = 'PENDING'
+	`
+	res, err := tx.ExecContext(ctx, query, tenantID, ledgerID)
+	if err != nil {
+		return fmt.Errorf("failed to cancel redemption fulfillment: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to cancel redemption fulfillment: %w", err)
+	}
+	if n == 0 {
+		return interfaces.ErrRedemptionNotPending
+	}
+	return nil
 }

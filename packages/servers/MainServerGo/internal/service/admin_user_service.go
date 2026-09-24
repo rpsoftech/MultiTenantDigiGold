@@ -84,7 +84,7 @@ func (s *AdminUserService) CreateAdmin(ctx context.Context, admin *models.Tenant
 		Payload:   admin,
 	}
 	event.CreateBaseEvent()
-	
+
 	if err := s.EventRepo.SaveEventWithTx(ctx, tx, event); err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (s *AdminUserService) UpdateAdmin(ctx context.Context, admin *models.Tenant
 		Payload:   admin,
 	}
 	event.CreateBaseEvent()
-	
+
 	if err := s.EventRepo.SaveEventWithTx(ctx, tx, event); err != nil {
 		return err
 	}

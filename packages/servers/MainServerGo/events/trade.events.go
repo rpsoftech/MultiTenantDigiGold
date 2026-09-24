@@ -25,3 +25,30 @@ func GenerateGoldPurchaseEvent(tenantId string, adminId string, ipAddress string
 	event.CreateBaseEvent()
 	return event
 }
+
+const TradeEventPaymentRefunded = "TRADE_PAYMENT_REFUNDED"
+
+// PaymentRefund is the payload of a TRADE_PAYMENT_REFUNDED audit event.
+type PaymentRefund struct {
+	OrderID     string `json:"order_id"`
+	PaymentID   string `json:"payment_id"`
+	RefundID    string `json:"refund_id"`
+	AmountPaise int64  `json:"amount_paise"`
+	Reason      string `json:"reason"`
+}
+
+// GeneratePaymentRefundedEvent records a captured payment that was refunded
+// because no gold could be credited for it.
+func GeneratePaymentRefundedEvent(tenantId string, refund *PaymentRefund) *TradeEvent {
+	event := &TradeEvent{
+		BaseEvent: BaseEvent{
+			TenantId:               tenantId,
+			EventName:              TradeEventPaymentRefunded,
+			Payload:                refund,
+			IpAddressAOccurredFrom: "WEBHOOK",
+			AdminId:                "SYSTEM",
+		},
+	}
+	event.CreateBaseEvent()
+	return event
+}

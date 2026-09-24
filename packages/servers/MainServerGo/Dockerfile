@@ -1,5 +1,6 @@
 # Build Stage
-FROM golang:1.22-alpine AS builder
+# Go version must match the go directive in go.mod
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 

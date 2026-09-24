@@ -38,6 +38,16 @@ func (c *EventConsumer) processTradeGoldPurchase(ctx context.Context, baseEvent 
 	}
 	defer tx.Rollback()
 
+	// 0. Claim the event in this transaction: if it was already applied (or its
+	// trade has not committed yet) skip it, so exposure is never double counted.
+	claimed, err := c.EventRepo.ClaimEventWithTx(ctx, tx, baseEvent.Id)
+	if err != nil {
+		return fmt.Errorf("failed to claim event: %w", err)
+	}
+	if !claimed {
+		return nil
+	}
+
 	// 1. Lock the Master Hedging State
 	state, err := c.HedgingRepo.GetStateForUpdateWithTX(ctx, tx)
 	if err != nil {

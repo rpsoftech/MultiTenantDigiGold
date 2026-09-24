@@ -16,6 +16,7 @@ import (
 	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/api/tenant"
 	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
@@ -129,7 +130,7 @@ func main() {
 	authController := auth_controllers.NewAuthController()
 
 	// 5b. Setup Swagger API Docs in Non-Production
-	if string(env.Env.APP_ENV) == "DEVELOPMENT" || string(env.Env.APP_ENV) == "LOCAL" || string(env.Env.APP_ENV) == "STAGING" {
+	if env.Env.APP_ENV == env.APP_ENV_DEVELOP || env.Env.APP_ENV == env.APP_ENV_LOCAL || env.Env.APP_ENV == env.APP_ENV_STAGING {
 		setupSwagger(app)
 		log.Println("📚 Swagger UI is available at /docs")
 	}
@@ -137,7 +138,7 @@ func main() {
 	// 6. Setup Route Groups & Apply Tenancy Middleware
 	api := app.Group("/api/v1")
 	// The middleware is attached to the /auth group, protecting everything inside it
-	auth := api.Group("/auth", middleware.TenantInterceptor)
+	auth := api.Group("/auth", middleware.AuthRateLimiter(), middleware.TenantInterceptor)
 	authController.RegisterRoutes(auth)
 
 	// Rates Route (Public Stream)
@@ -165,9 +166,14 @@ func main() {
 	adminStoreController.RegisterRoutes(adminGroup)
 
 	// Customer Routes
-	customerTradeGroup := api.Group("/", middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
+	// Middleware is attached to the /trade and /user groups only. Attaching it to
+	// a "/" group would also run it on every route registered later under /api/v1
+	// (webhook, tenant info) and reject them with 401.
 	customerTradeController := trade_api.NewCustomerTradeController(rateHub)
-	customerTradeController.RegisterRoutes(customerTradeGroup)
+	customerTradeController.RegisterRoutes(api, middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
+
+	tenantController := tenant.NewTenantController()
+	tenantController.RegisterRoutes(api)
 
 	// Webhooks (Public)
 	webhookController := trade_api.NewWebhookController()
@@ -190,7 +196,7 @@ func main() {
 	// ==========================================
 	// 🛠️ LOCAL DEV ROUTE PRINTER
 	// ==========================================
-	if string(env.Env.APP_ENV) == "DEVELOPMENT" || string(env.Env.APP_ENV) == "LOCAL" {
+	if env.Env.APP_ENV == env.APP_ENV_DEVELOP || env.Env.APP_ENV == env.APP_ENV_LOCAL {
 		time.Sleep(100 * time.Millisecond) // Give the server a split-second to boot
 		log.Println("\n==================================================")
 		log.Println("🚀 REGISTERED API ROUTES:")

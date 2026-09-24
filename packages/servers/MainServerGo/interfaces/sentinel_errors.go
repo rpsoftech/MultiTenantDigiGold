@@ -21,3 +21,15 @@ var (
 	ErrMaxResendAttempts = errors.New("maximum OTP resend attempts reached, try again later")
 	ErrMaxVerifyAttempts = errors.New("too many incorrect guesses, OTP invalidated")
 )
+
+// Ledger / Trade Errors
+var (
+	ErrInsufficientBalance   = errors.New("insufficient gold balance")
+	ErrLedgerEntryNotFound   = errors.New("ledger entry not found")
+	ErrLedgerAlreadyReversed = errors.New("ledger entry is already reversed")
+	ErrLedgerNotReversible   = errors.New("ledger entry cannot be reversed")
+	ErrSlippageExceeded      = errors.New("live rate moved beyond allowable tolerance")
+	ErrInvalidTradePayload   = errors.New("must specify a positive weight_grams or total_amount_inr")
+	ErrCreditLimitExceeded   = errors.New("trade exceeds the store's available gold credit")
+	ErrRedemptionNotPending  = errors.New("redemption is not pending")
+)

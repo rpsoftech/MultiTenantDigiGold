@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
 	"sync"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/constants"
@@ -25,8 +24,8 @@ type RateHub struct {
 	AllRates         *RateStruct
 	mu               sync.RWMutex
 	latestRate       float64
-	latestRateString string
-	sseLatestRate    string // 🚨 NEW: Store the pre-formatted SSE string here
+	latestRateString string // holds the raw JSON payload
+	sseLatestRate    string // holds the pre-formatted SSE string
 	rateMu           sync.RWMutex
 }
 
@@ -34,12 +33,11 @@ func NewRateHub() *RateHub {
 	return &RateHub{
 		Redis:    redis_client.InitRedisClient(),
 		clients:  make(map[chan string]bool),
-		AllRates: &RateStruct{}, // Avoids nil pointer panic when unmarshaling JSON
+		AllRates: &RateStruct{},
 	}
 }
 
 func (h *RateHub) Start(ctx context.Context) {
-	// 1. Attempt to fetch initial rates from Redis Hash
 	allRateString, err := h.Redis.GetHashKeyWithOriginalKey(ctx, constants.RedisKeyLatestRawRate, "GOLD")
 
 	if err == nil && allRateString != "" {
@@ -49,14 +47,12 @@ func (h *RateHub) Start(ctx context.Context) {
 		log.Println("⚠️ No initial rate snapshot found in Redis key. Awaiting live ticks...")
 	}
 
-	// 2. Connect to the PubSub Stream
 	pubsub := h.Redis.Client.Subscribe(ctx, constants.RedisPubSubChannelRawRates)
 	defer pubsub.Close()
 
 	log.Printf("📡 Global Rate Hub subscribed to channel [%s]...", constants.RedisPubSubChannelRawRates)
 	ch := pubsub.Channel()
 
-	// 3. Central Broadcast Loop
 	for {
 		select {
 		case <-ctx.Done():
@@ -68,7 +64,6 @@ func (h *RateHub) Start(ctx context.Context) {
 				return
 			}
 
-			// ONLY broadcast if the Delta Check proves the price actually changed
 			if h.setLatestRate(msg.Payload) {
 				h.broadcast(h.sseLatestRate)
 			}
@@ -78,7 +73,7 @@ func (h *RateHub) Start(ctx context.Context) {
 
 func (h *RateHub) GetInitialRate(ctx context.Context, withDataString bool) string {
 	h.rateMu.RLock()
-	cached := h.latestRateString // 🚨 Return the pre-formatted string
+	cached := h.latestRateString
 	if withDataString {
 		cached = h.sseLatestRate
 	}
@@ -88,7 +83,6 @@ func (h *RateHub) GetInitialRate(ctx context.Context, withDataString bool) strin
 		return cached
 	}
 
-	// Fallback to Redis Hash if RAM is empty
 	val, err := h.Redis.GetHashKeyWithOriginalKey(ctx, constants.RedisKeyLatestRawRate, "GOLD")
 	if err == nil && val != "" {
 		h.setLatestRate(val)
@@ -104,7 +98,7 @@ func (h *RateHub) GetInitialRate(ctx context.Context, withDataString bool) strin
 func (h *RateHub) setLatestRate(rate string) bool {
 	h.rateMu.Lock()
 	defer h.rateMu.Unlock()
-	// Graceful error handling in case Redis sends bad JSON
+
 	if err := json.Unmarshal([]byte(rate), h.AllRates); err != nil {
 		log.Printf("⚠️ Failed to parse rate from Redis: %v", err)
 		return false
@@ -112,7 +106,7 @@ func (h *RateHub) setLatestRate(rate string) bool {
 
 	if h.AllRates.Ask != h.latestRate {
 		h.latestRate = h.AllRates.Ask
-		h.latestRateString = strconv.FormatFloat(h.latestRate, 'f', -1, 64)
+		h.latestRateString = rate // Broadcast the full JSON object
 		h.sseLatestRate = fmt.Sprintf("data: %s\n\n", h.latestRateString)
 		return true
 	}
@@ -127,7 +121,6 @@ func (h *RateHub) broadcast(payload string) {
 		select {
 		case clientChan <- payload:
 		default:
-			// Non-blocking drop: skip users with frozen connections
 		}
 	}
 }

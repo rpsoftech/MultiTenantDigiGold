@@ -7,7 +7,9 @@ out-tsc
 install-state.gz
 build
 __debug_*
-api
+# Go binaries (anchored so internal/api source is not ignored)
+/packages/servers/MainServerGo/api
+/packages/servers/MainServerGo/api_test
 
 # dependencies
 node_modules
@@ -56,3 +58,5 @@ test-output
 
 # Local env files
 .env.local
+
+.angular
