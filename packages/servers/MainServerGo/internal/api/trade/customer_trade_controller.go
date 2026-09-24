@@ -32,14 +32,16 @@ func NewCustomerTradeController(rateHub *rates_api.RateHub) *CustomerTradeContro
 	}
 }
 
-func (tc *CustomerTradeController) RegisterRoutes(api fiber.Router) {
-	trade := api.Group("/trade")
+// RegisterRoutes mounts /trade and /user on api, guarded by the given
+// middleware (tenant resolution + customer JWT).
+func (tc *CustomerTradeController) RegisterRoutes(api fiber.Router, guards ...any) {
+	trade := api.Group("/trade", guards...)
 	trade.Post("/buy/initiate", tc.InitiateBuy)
 	trade.Post("/sell", tc.Sell)
 	trade.Post("/redeem", tc.Redeem)
 	trade.Get("/history", tc.History)
 
-	user := api.Group("/user")
+	user := api.Group("/user", guards...)
 	user.Get("/portfolio", tc.Portfolio)
 	user.Post("/kyc", tc.UploadKYC)
 }

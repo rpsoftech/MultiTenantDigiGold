@@ -1,13 +1,22 @@
 package main
 
 import (
+	_ "embed"
+
 	"github.com/gofiber/fiber/v3"
 )
+
+// openAPISpec is compiled into the binary, so /openapi.yaml works regardless
+// of the working directory the server is started from.
+//
+//go:embed openapi.yaml
+var openAPISpec []byte
 
 func setupSwagger(app *fiber.App) {
 	// Serve the raw OpenAPI YAML file
 	app.Get("/openapi.yaml", func(c fiber.Ctx) error {
-		return c.SendFile("./openapi.yaml")
+		c.Set(fiber.HeaderContentType, "application/yaml")
+		return c.Send(openAPISpec)
 	})
 
 	// Serve the Swagger UI HTML page

@@ -130,7 +130,7 @@ func main() {
 	authController := auth_controllers.NewAuthController()
 
 	// 5b. Setup Swagger API Docs in Non-Production
-	if string(env.Env.APP_ENV) == "DEVELOPMENT" || string(env.Env.APP_ENV) == "LOCAL" || string(env.Env.APP_ENV) == "STAGING" {
+	if env.Env.APP_ENV == env.APP_ENV_DEVELOP || env.Env.APP_ENV == env.APP_ENV_LOCAL || env.Env.APP_ENV == env.APP_ENV_STAGING {
 		setupSwagger(app)
 		log.Println("📚 Swagger UI is available at /docs")
 	}
@@ -166,9 +166,11 @@ func main() {
 	adminStoreController.RegisterRoutes(adminGroup)
 
 	// Customer Routes
-	customerTradeGroup := api.Group("/", middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
+	// Middleware is attached to the /trade and /user groups only. Attaching it to
+	// a "/" group would also run it on every route registered later under /api/v1
+	// (webhook, tenant info) and reject them with 401.
 	customerTradeController := trade_api.NewCustomerTradeController(rateHub)
-	customerTradeController.RegisterRoutes(customerTradeGroup)
+	customerTradeController.RegisterRoutes(api, middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
 
 	tenantController := tenant.NewTenantController()
 	tenantController.RegisterRoutes(api)
@@ -194,7 +196,7 @@ func main() {
 	// ==========================================
 	// 🛠️ LOCAL DEV ROUTE PRINTER
 	// ==========================================
-	if string(env.Env.APP_ENV) == "DEVELOPMENT" || string(env.Env.APP_ENV) == "LOCAL" {
+	if env.Env.APP_ENV == env.APP_ENV_DEVELOP || env.Env.APP_ENV == env.APP_ENV_LOCAL {
 		time.Sleep(100 * time.Millisecond) // Give the server a split-second to boot
 		log.Println("\n==================================================")
 		log.Println("🚀 REGISTERED API ROUTES:")
