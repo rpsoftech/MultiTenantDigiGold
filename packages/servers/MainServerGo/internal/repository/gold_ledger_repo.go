@@ -3,11 +3,14 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/schema"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
@@ -33,9 +36,10 @@ func InitGoldLedgerRepo() *GoldLedgerRepository {
 		rdb := redis_client.InitRedisClient()
 
 		// 1. Prepared Statement: Lock User Balance
-		queryLock := fmt.Sprintf(`SELECT %s, %s, %s, %s FROM %s WHERE %s = $1 FOR UPDATE`,
+		// Scoped by tenant so a trade can never touch another tenant's customer.
+		queryLock := fmt.Sprintf(`SELECT %s, %s, %s, %s FROM %s WHERE %s = $1 AND %s = $2 FOR UPDATE`,
 			schema.ColUserUUID, schema.ColUserPhoneNumber, schema.ColUserTenantID, schema.ColUserVaultBalance,
-			schema.TableUsers, schema.ColUserID,
+			schema.TableUsers, schema.ColUserID, schema.ColUserTenantID,
 		)
 		stmtLock, err := db.Db.Prepare(queryLock)
 		if err != nil {
@@ -90,13 +94,19 @@ func (r *GoldLedgerRepository) RecordTransactionWithTX(ctx context.Context, tx *
 	var currentBalance float64
 
 	// 1. Lock User Row
-	err := tx.StmtContext(ctx, r.stmtLockUser).QueryRowContext(ctx, entry.UserID).Scan(&userUUID, &userPhone, &tenantID, &currentBalance)
+	err := tx.StmtContext(ctx, r.stmtLockUser).QueryRowContext(ctx, entry.UserID, entry.TenantID).Scan(&userUUID, &userPhone, &tenantID, &currentBalance)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, interfaces.ErrUserNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to lock user vault balance: %w", err)
 	}
 
-	// 2. Math Calculation
-	newBalance := currentBalance + entry.WeightGrams
+	// 2. Math Calculation (checked under the row lock, so concurrent debits cannot overdraw)
+	newBalance := math.Round((currentBalance+entry.WeightGrams)*10000) / 10000
+	if newBalance < 0 {
+		return nil, interfaces.ErrInsufficientBalance
+	}
 	entry.RunningGoldBalanceGrams = newBalance
 
 	// 3. Update User Balance
@@ -255,4 +265,46 @@ func (r *GoldLedgerRepository) GetTenantAnalytics(ctx context.Context, tenantID 
 		return nil, fmt.Errorf("failed to get tenant analytics: %w", err)
 	}
 	return &analytics, nil
+}
+
+// GetEntryForUpdateWithTX locks a ledger row of the given tenant inside tx.
+func (r *GoldLedgerRepository) GetEntryForUpdateWithTX(ctx context.Context, tx *sql.Tx, tenantID int64, ledgerUUID string) (*models.GoldTransactionLedger, error) {
+	query := fmt.Sprintf(`
+		SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s
+		WHERE %s = $1 AND %s = $2
+		FOR UPDATE`,
+		schema.ColGLID, schema.ColGLUserID, schema.ColGLEventType, schema.ColGLWeightGrams,
+		schema.ColGLTotalAmountINR, schema.ColGLMCXBaseRate, schema.ColGLTenantMarginApplied,
+		schema.ColGLGSTApplied, schema.ColGLFinalRatePerGram, schema.ColGLReferenceID,
+		schema.TableGoldTransactionLedger, schema.ColGLUUID, schema.ColGLTenantID,
+	)
+
+	entry := models.GoldTransactionLedger{UUID: ledgerUUID, TenantID: tenantID}
+	var refID sql.NullString
+	err := tx.QueryRowContext(ctx, query, ledgerUUID, tenantID).Scan(
+		&entry.ID, &entry.UserID, &entry.EventType, &entry.WeightGrams,
+		&entry.TotalAmountINR, &entry.MCXBaseRate, &entry.TenantMarginApplied,
+		&entry.GSTApplied, &entry.FinalRatePerGram, &refID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, interfaces.ErrLedgerEntryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to lock ledger entry: %w", err)
+	}
+	entry.ReferenceID = refID.String
+	return &entry, nil
+}
+
+// ReferenceExistsWithTX reports whether the tenant already has a ledger row with this reference ID.
+func (r *GoldLedgerRepository) ReferenceExistsWithTX(ctx context.Context, tx *sql.Tx, tenantID int64, referenceID string) (bool, error) {
+	query := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE %s = $1 AND %s = $2)`,
+		schema.TableGoldTransactionLedger, schema.ColGLTenantID, schema.ColGLReferenceID,
+	)
+	var exists bool
+	if err := tx.QueryRowContext(ctx, query, tenantID, referenceID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check ledger reference: %w", err)
+	}
+	return exists, nil
 }

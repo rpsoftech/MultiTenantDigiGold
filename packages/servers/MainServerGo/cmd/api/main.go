@@ -16,6 +16,7 @@ import (
 	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/api/tenant"
 	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/worker"
@@ -137,7 +138,7 @@ func main() {
 	// 6. Setup Route Groups & Apply Tenancy Middleware
 	api := app.Group("/api/v1")
 	// The middleware is attached to the /auth group, protecting everything inside it
-	auth := api.Group("/auth", middleware.TenantInterceptor)
+	auth := api.Group("/auth", middleware.AuthRateLimiter(), middleware.TenantInterceptor)
 	authController.RegisterRoutes(auth)
 
 	// Rates Route (Public Stream)
@@ -168,6 +169,9 @@ func main() {
 	customerTradeGroup := api.Group("/", middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
 	customerTradeController := trade_api.NewCustomerTradeController(rateHub)
 	customerTradeController.RegisterRoutes(customerTradeGroup)
+
+	tenantController := tenant.NewTenantController()
+	tenantController.RegisterRoutes(api)
 
 	// Webhooks (Public)
 	webhookController := trade_api.NewWebhookController()

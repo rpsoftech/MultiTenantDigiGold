@@ -19,7 +19,7 @@ func NewAdminAuthController() *AdminAuthController {
 func (c *AdminAuthController) RegisterRoutes(router fiber.Router) {
 	// TenantInterceptor resolves X-Tenant-ID UUID → int64 for all auth routes.
 	// No JWT required here — this IS the login flow.
-	authGroup := router.Group("/auth", middleware.TenantInterceptor)
+	authGroup := router.Group("/auth", middleware.AuthRateLimiter(), middleware.TenantInterceptor)
 	authGroup.Post("/login", c.Login)
 	authGroup.Post("/totp/setup", c.TOTPSetup)
 	authGroup.Post("/totp/verify", c.TOTPVerify)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"sync"
 	"time"
 
@@ -44,7 +45,10 @@ func (s *PaymentGatewayService) CreateOrder(ctx context.Context, req interfaces.
 	client := razorpay.NewClient(tenantConfig.KeyID, tenantConfig.KeySecret)
 
 	// Razorpay accepts amount in paise (INR * 100)
-	amountPaise := int(req.TotalAmountINR * 100)
+	amountPaise := toPaise(req.TotalAmountINR)
+	if amountPaise <= 0 {
+		return "", interfaces.ErrInvalidTradePayload
+	}
 
 	data := map[string]interface{}{
 		"amount":   amountPaise,
@@ -87,8 +91,13 @@ func (s *PaymentGatewayService) VerifyWebhookSignature(webhookBody, signature, s
 	return nil
 }
 
-// ProcessPaymentSuccess reads intent from Redis, executes trade, and cleans up.
-func (s *PaymentGatewayService) ProcessPaymentSuccess(ctx context.Context, orderID, paymentID string) error {
+func toPaise(inr float64) int64 {
+	return int64(math.Round(inr * 100))
+}
+
+// ProcessPaymentSuccess reads intent from Redis, checks that the captured payment
+// matches it, executes the trade, and cleans up.
+func (s *PaymentGatewayService) ProcessPaymentSuccess(ctx context.Context, tenantID int64, orderID, paymentID string, paidPaise int64) error {
 	lockKey := fmt.Sprintf("digiGold:lock:payment:%s", paymentID)
 	acquired, err := s.Redis.Client.SetNX(ctx, lockKey, "locked", 24*time.Hour).Result()
 	if err != nil || !acquired {
@@ -109,6 +118,17 @@ func (s *PaymentGatewayService) ProcessPaymentSuccess(ctx context.Context, order
 		return fmt.Errorf("failed to parse trade intent: %w", err)
 	}
 
+	// The intent must belong to the tenant whose secret signed the webhook, and
+	// the captured amount must equal the amount the order was created for.
+	if req.TenantID != tenantID {
+		s.Redis.Client.Del(ctx, lockKey)
+		return fmt.Errorf("trade intent tenant mismatch for order %s", orderID)
+	}
+	if paidPaise != toPaise(req.TotalAmountINR) {
+		s.Redis.Client.Del(ctx, lockKey)
+		return fmt.Errorf("paid amount %d paise does not match intent for order %s", paidPaise, orderID)
+	}
+
 	// Update ReferenceID to the actual payment ID
 	req.ReferenceID = paymentID
 	req.PaymentMode = "ONLINE_PG"
@@ -117,7 +137,9 @@ func (s *PaymentGatewayService) ProcessPaymentSuccess(ctx context.Context, order
 	log.Printf("[PGService] Processing success for Order %s -> Payment %s", orderID, paymentID)
 	_, err = s.TradeService.ExecuteTrade(ctx, req, "WEBHOOK", "SYSTEM")
 	if err != nil {
-		// Do not delete intent if execution fails, might need manual resolution or retry
+		// Keep the intent and release the lock so a Razorpay retry can re-run the
+		// trade. The trade runs in one DB transaction, so a failed run left no state.
+		s.Redis.Client.Del(ctx, lockKey)
 		return fmt.Errorf("trade execution failed: %w", err)
 	}
 

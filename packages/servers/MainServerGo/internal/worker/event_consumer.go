@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -69,11 +70,22 @@ func StartEventConsumer(ctx context.Context) {
 				log.Println("⚠️ Redis PubSub channel closed unexpectedly. Exiting consumer loop...")
 				return
 			}
-			go consumer.routeEvent(context.Background(), msg.Payload)
+			go func(payload string) {
+				evtCtx, cancel := context.WithTimeout(context.Background(), eventProcessTimeout)
+				defer cancel()
+				consumer.routeEvent(evtCtx, payload)
+			}(msg.Payload)
 		}
 	}
 }
 
+// eventProcessTimeout bounds each event handler so a hung dependency cannot leak goroutines.
+const eventProcessTimeout = 30 * time.Second
+
+// routeEvent dispatches one event. Every event is claimed atomically in
+// system_events first, so the API process, the worker process and cron
+// republishes never handle the same event twice. An event that is not yet
+// committed cannot be claimed; the outbox cron republishes it later.
 func (c *EventConsumer) routeEvent(ctx context.Context, payloadStr string) {
 	var baseEvent events.BaseEvent
 	if err := json.Unmarshal([]byte(payloadStr), &baseEvent); err != nil {
@@ -81,25 +93,40 @@ func (c *EventConsumer) routeEvent(ctx context.Context, payloadStr string) {
 		return
 	}
 
+	// Trade events claim inside the same DB transaction as their side effects (exactly-once).
+	if baseEvent.EventName == events.TradeEventGoldPurchase {
+		if err := c.processTradeGoldPurchase(ctx, baseEvent); err != nil {
+			log.Printf("ERROR: Processor failed for event %s (%s): %v\n", baseEvent.Id, baseEvent.EventName, err)
+		}
+		return
+	}
+
+	claimed, err := c.EventRepo.ClaimEvent(ctx, baseEvent.Id)
+	if err != nil {
+		log.Printf("ERROR: Failed to claim event %s: %v\n", baseEvent.Id, err)
+		return
+	}
+	if !claimed {
+		return // Already handled elsewhere, or its transaction has not committed yet.
+	}
+
 	var processErr error
 	switch baseEvent.EventName {
 	case events.OTPReqEvent: // Ensure events.OTPReqEvent strictly equals "OTPReqEvent"
 		processErr = c.processWhatsAppOTP(ctx, baseEvent)
-	case events.TradeEventGoldPurchase:
-		processErr = c.processTradeGoldPurchase(ctx, baseEvent)
 	default:
-		log.Printf("⚠️ Unhandled event type dropped: %s\n", baseEvent.EventName)
+		// Audit-only events need no side effect; the claim marks them processed so
+		// the outbox cron does not republish them forever.
 		return
 	}
 
 	if processErr != nil {
 		log.Printf("ERROR: Processor failed for event %s (%s): %v\n", baseEvent.Id, baseEvent.EventName, processErr)
-		return // Leave is_processed = false so the Cron Job picks it up
+		// Return the event to the outbox so the cron job retries it.
+		if err := c.EventRepo.ReleaseEvent(context.Background(), baseEvent.Id); err != nil {
+			log.Printf("CRITICAL: Failed to release event %s for retry: %v\n", baseEvent.Id, err)
+		}
+		return
 	}
-
-	if err := c.EventRepo.MarkEventAsProcessed(ctx, baseEvent.Id); err != nil {
-		log.Printf("CRITICAL: Failed to mark event %s as processed in DB: %v\n", baseEvent.Id, err)
-	} else {
-		log.Printf("✅ Successfully processed event: %s\n", baseEvent.EventName)
-	}
+	log.Printf("✅ Successfully processed event: %s\n", baseEvent.EventName)
 }

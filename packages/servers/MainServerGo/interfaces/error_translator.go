@@ -85,6 +85,46 @@ func ParseDBError(err error) *RequestError {
 			LogTheDetails: false,
 		}
 
+	case errors.Is(err, ErrInsufficientBalance):
+		return &RequestError{
+			StatusCode: 400,
+			Code:       ERROR_INSUFFICIENT_BALANCE,
+			Message:    "Insufficient gold balance for this transaction.",
+			Name:       "ERROR_INSUFFICIENT_BALANCE",
+		}
+
+	case errors.Is(err, ErrSlippageExceeded):
+		return &RequestError{
+			StatusCode: 409,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "Live rate moved beyond allowable tolerance. Please refresh the rate and retry.",
+			Name:       "SLIPPAGE_EXCEEDED",
+		}
+
+	case errors.Is(err, ErrInvalidTradePayload):
+		return &RequestError{
+			StatusCode: 400,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    ErrInvalidTradePayload.Error(),
+			Name:       "INVALID_PAYLOAD",
+		}
+
+	case errors.Is(err, ErrLedgerEntryNotFound):
+		return &RequestError{
+			StatusCode: 404,
+			Code:       ERROR_ENTITY_NOT_FOUND,
+			Message:    "Transaction not found.",
+			Name:       "ERROR_LEDGER_NOT_FOUND",
+		}
+
+	case errors.Is(err, ErrLedgerAlreadyReversed), errors.Is(err, ErrLedgerNotReversible):
+		return &RequestError{
+			StatusCode: 409,
+			Code:       ERROR_LEDGER_REVERSAL,
+			Message:    err.Error(),
+			Name:       "ERROR_LEDGER_REVERSAL",
+		}
+
 	case errors.Is(err, ErrMaxVerifyAttempts):
 		return &RequestError{
 			StatusCode:    429,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -25,6 +26,8 @@ type EventRepository struct {
 	// Prepared Statements
 	stmtInsertEvent      *sql.Stmt
 	stmtMarkProcessed    *sql.Stmt
+	stmtClaim            *sql.Stmt
+	stmtRelease          *sql.Stmt
 	stmtFetchUnprocessed *sql.Stmt
 	stmtGetEvents        *sql.Stmt
 	stmtCountEvents      *sql.Stmt
@@ -65,6 +68,21 @@ func GetEventRepository() *EventRepository {
 		stmtMark, err := db.Db.Prepare(queryMark)
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare MarkEventProcessed: %v", err))
+		}
+
+		// 2b. CLAIM / RELEASE: atomic compare-and-set so that only one consumer
+		// (API process, worker process, or cron republish) handles an event.
+		stmtClaim, err := db.Db.Prepare(fmt.Sprintf(`UPDATE %s SET %s = true WHERE %s = $1 AND %s = false`,
+			schema.TableSystemEvents, schema.ColIsProcessed, schema.ColEventId, schema.ColIsProcessed,
+		))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare ClaimEvent: %v", err))
+		}
+		stmtRelease, err := db.Db.Prepare(fmt.Sprintf(`UPDATE %s SET %s = false WHERE %s = $1`,
+			schema.TableSystemEvents, schema.ColIsProcessed, schema.ColEventId,
+		))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare ReleaseEvent: %v", err))
 		}
 
 		// 3. FETCH UNPROCESSED (Using Schema Constants)
@@ -129,6 +147,8 @@ func GetEventRepository() *EventRepository {
 			Redis:                rdb,
 			stmtInsertEvent:      stmtInsert,
 			stmtMarkProcessed:    stmtMark,
+			stmtClaim:            stmtClaim,
+			stmtRelease:          stmtRelease,
 			stmtFetchUnprocessed: stmtFetch,
 			stmtGetEvents:        stmtGetEvents,
 			stmtCountEvents:      stmtCountEvents,
@@ -229,20 +249,52 @@ func (r *EventRepository) SaveEventWithTx(ctx context.Context, tx *sql.Tx, event
 		ipAddress, adminID, event.OccurredAt,
 	)
 
-	if err != nil {
-		return err // The Service layer will catch this and Rollback() everything
+	// The event is NOT published here: the transaction may still roll back.
+	// Callers publish with PublishAsync after Commit; anything not published
+	// is picked up by the outbox recovery cron.
+	return err // The Service layer will catch this and Rollback() everything
+}
+
+// PublishAsync dispatches already-committed events to Redis without blocking the caller.
+func (r *EventRepository) PublishAsync(evts ...*events.BaseEvent) {
+	for _, evt := range evts {
+		go func(evt *events.BaseEvent) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if pubErr := r.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
+				log.Printf("CRITICAL: Failed to publish Event %s to Redis: %v\n", evt.Id, pubErr)
+			}
+		}(evt)
 	}
+}
 
-	// 2. FIRE AND FORGET REDIS DISPATCH
-	go func(evt *events.BaseEvent) {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if pubErr := r.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
-			fmt.Printf("CRITICAL: Failed to publish Event %s to Redis: %v\n", evt.Id, pubErr)
-		}
-	}(event)
+// ClaimEvent atomically marks an unprocessed event as processed. It returns false
+// when the event does not exist (yet) or another consumer already claimed it.
+func (r *EventRepository) ClaimEvent(ctx context.Context, eventID string) (bool, error) {
+	return claim(r.stmtClaim.ExecContext(ctx, eventID))
+}
 
-	return nil
+// ClaimEventWithTx claims an event inside tx, so the claim commits or rolls back
+// together with the side effects of processing it (exactly-once).
+func (r *EventRepository) ClaimEventWithTx(ctx context.Context, tx *sql.Tx, eventID string) (bool, error) {
+	return claim(tx.StmtContext(ctx, r.stmtClaim).ExecContext(ctx, eventID))
+}
+
+// ReleaseEvent returns a claimed event to the outbox so the recovery cron retries it.
+func (r *EventRepository) ReleaseEvent(ctx context.Context, eventID string) error {
+	_, err := r.stmtRelease.ExecContext(ctx, eventID)
+	return err
+}
+
+func claim(res sql.Result, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
 }
 
 // MarkEventAsProcessed is called by the background worker instantly after success

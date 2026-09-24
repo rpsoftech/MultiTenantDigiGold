@@ -14,6 +14,10 @@ const (
 	LocalsKeyAdminUUID     = "admin_uuid"
 	LocalsKeyAdminRole     = "admin_role"
 	LocalsKeyAdminTenantID = "admin_tenant_id"
+
+	// Roles (must match the tu_role CHECK constraint in the schema)
+	RoleSuperAdmin = "super_admin"
+	RoleManager    = "manager"
 )
 
 type AdminAuthMiddleware struct {
@@ -53,6 +57,27 @@ func (m *AdminAuthMiddleware) Intercept(c fiber.Ctx) error {
 			StatusCode: fiber.StatusUnauthorized,
 			Code:       interfaces.ERROR_INVALID_TOKEN,
 			Message:    "Invalid or expired admin token",
+		}
+	}
+
+	// Enforce tenant isolation: a store admin may only act on the tenant that
+	// issued their token. Only the platform-level super_admin may act on the
+	// tenant named in X-Tenant-ID. TenantInterceptor must run before this.
+	requestTenantID := GetTenantIntID(c)
+	if requestTenantID == 0 {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "Missing tenant context. Ensure TenantInterceptor is applied.",
+			Name:       "MISSING_TENANT",
+		}
+	}
+	if claims.Role != RoleSuperAdmin && claims.TenantID != requestTenantID {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusForbidden,
+			Code:       interfaces.ERROR_ROLE_NOT_AUTHORIZED,
+			Message:    "Tenant mismatch. Access denied.",
+			Name:       "TENANT_MISMATCH",
 		}
 	}
 

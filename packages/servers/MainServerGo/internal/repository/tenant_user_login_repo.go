@@ -17,11 +17,11 @@ import (
 )
 
 type TenantUserLoginRepository struct {
-	DB                  *postgres.PostgresDBStruct
-	Redis               *redis_client.RedisClientStruct
-	stmtGetFullUUID     *sql.Stmt
-	stmtGetFullPhone    *sql.Stmt
-	stmtGetFullUsername *sql.Stmt
+	DB                         *postgres.PostgresDBStruct
+	Redis                      *redis_client.RedisClientStruct
+	stmtGetFullUUID            *sql.Stmt
+	stmtGetFullPhone           *sql.Stmt
+	stmtGetFullUsername        *sql.Stmt
 	stmtCreateAdmin            *sql.Stmt
 	stmtUpdateAdmin            *sql.Stmt
 	stmtGetAllAdmins           *sql.Stmt
@@ -80,7 +80,7 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetAllAdmins: %v", err))
 		}
-		
+
 		stmtCountAllAdmins, err := db.Db.Prepare(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, schema.TableTenantUserLogins))
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountAllAdmins: %v", err))
@@ -90,7 +90,7 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetAllAdminsByTenant: %v", err))
 		}
-		
+
 		stmtCountAllAdminsByTenant, err := db.Db.Prepare(fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s = $1`, schema.TableTenantUserLogins, schema.ColTUTenantID))
 		if err != nil {
 			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountAllAdminsByTenant: %v", err))
@@ -136,11 +136,11 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		}
 
 		adminRepoInstance = &TenantUserLoginRepository{
-			DB:                  db,
-			Redis:               rdb,
-			stmtGetFullUUID:     stmtUUID,
-			stmtGetFullPhone:    stmtPhone,
-			stmtGetFullUsername: stmtUsername,
+			DB:                         db,
+			Redis:                      rdb,
+			stmtGetFullUUID:            stmtUUID,
+			stmtGetFullPhone:           stmtPhone,
+			stmtGetFullUsername:        stmtUsername,
 			stmtCreateAdmin:            stmtCreate,
 			stmtUpdateAdmin:            stmtUpdate,
 			stmtGetAllAdmins:           stmtGetAllAdmins,

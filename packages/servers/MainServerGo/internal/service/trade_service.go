@@ -45,6 +45,11 @@ func InitTradeService() *TradeService {
 	return tradeServiceInstance
 }
 
+const (
+	ledgerEventReversal     = "SYSTEM_REVERSAL"
+	reversalReferencePrefix = "REVERSAL_"
+)
+
 type rateSnapshot struct {
 	Ask float64 `json:"ask"`
 	Bid float64 `json:"bid"`
@@ -92,7 +97,7 @@ func (s *TradeService) validateSlippage(ctx context.Context, tenantID int64, req
 	}
 
 	if math.Abs(finalRate-requestedRate) > 30.0 {
-		return 0, 0, 0, 0, fmt.Errorf("SLIPPAGE_EXCEEDED: Live rate moved beyond allowable tolerance. Expected: %f, Live: %f", requestedRate, finalRate)
+		return 0, 0, 0, 0, fmt.Errorf("%w: expected %f, live %f", interfaces.ErrSlippageExceeded, requestedRate, finalRate)
 	}
 
 	return finalRate, mcxRate, marginApplied, gstApplied, nil
@@ -121,7 +126,7 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 		finalTotalINR = math.Round(req.TotalAmountINR*100) / 100
 		finalWeight = math.Round((finalTotalINR/finalRate)*10000) / 10000
 	} else {
-		return nil, fmt.Errorf("INVALID_PAYLOAD: must specify either WeightGrams or TotalAmountINR")
+		return nil, interfaces.ErrInvalidTradePayload
 	}
 
 	eventType := "GOLD_PURCHASE"
@@ -184,6 +189,7 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	s.EventRepo.PublishAsync(&tradeEvent.BaseEvent)
 
 	log.Printf("[TradeService] Trade successful: tenantID=%d, userID=%d, weight=%f, amount=%f, ledgerUUID=%s",
 		req.TenantID, req.UserID, finalWeight, finalTotalINR, result.UUID)
@@ -192,31 +198,36 @@ func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExe
 }
 
 func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, ledgerUUID string, adminID string, ipAddress string) (*models.GoldTransactionLedger, error) {
-	// 1. Fetch original ledger
-	query := `
-		SELECT gl_id, gl_user_id, gl_weight_grams, gl_total_amount_inr, gl_mcx_base_rate, gl_tenant_margin_applied, gl_gst_applied, gl_final_rate_per_gram, gl_reference_id
-		FROM gold_transaction_ledger
-		WHERE gl_uuid = $1 AND gl_tenant_id = $2
-	`
-	var original models.GoldTransactionLedger
-	err := s.DB.Db.QueryRowContext(ctx, query, ledgerUUID, tenantID).Scan(
-		&original.ID, &original.UserID, &original.WeightGrams, &original.TotalAmountINR, &original.MCXBaseRate, &original.TenantMarginApplied, &original.GSTApplied, &original.FinalRatePerGram, &original.ReferenceID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("transaction not found: %w", err)
-	}
-
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
+	// 1. Lock the original row so two concurrent reversals serialize here.
+	original, err := s.LedgerRepo.GetEntryForUpdateWithTX(ctx, tx, tenantID, ledgerUUID)
+	if err != nil {
+		return nil, err
+	}
+	if original.EventType == ledgerEventReversal {
+		return nil, interfaces.ErrLedgerNotReversible
+	}
+
+	// 2. Each entry may be reversed only once.
+	reversalRef := reversalReferencePrefix + ledgerUUID
+	alreadyReversed, err := s.LedgerRepo.ReferenceExistsWithTX(ctx, tx, tenantID, reversalRef)
+	if err != nil {
+		return nil, err
+	}
+	if alreadyReversed {
+		return nil, interfaces.ErrLedgerAlreadyReversed
+	}
+
 	reversalEntry := &models.GoldTransactionLedger{
 		TenantID:            tenantID,
 		UserID:              original.UserID,
-		EventType:           "SYSTEM_REVERSAL",
-		PaymentMode:         "SYSTEM",
+		EventType:           ledgerEventReversal,
+		PaymentMode:         "NONE", // payment_mode_enum has no SYSTEM value
 		WeightGrams:         -original.WeightGrams,
 		TotalAmountINR:      -original.TotalAmountINR,
 		MCXBaseRate:         original.MCXBaseRate,
@@ -224,9 +235,11 @@ func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, l
 		TenantMarginApplied: -original.TenantMarginApplied,
 		GSTApplied:          -original.GSTApplied,
 		FinalRatePerGram:    original.FinalRatePerGram,
-		ReferenceID:         fmt.Sprintf("REVERSAL_%s", ledgerUUID),
+		ReferenceID:         reversalRef,
 	}
 
+	// RecordTransactionWithTX rejects the reversal if it would make the balance negative
+	// (e.g. reversing a purchase whose gold was already sold).
 	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, reversalEntry)
 	if err != nil {
 		return nil, err
@@ -245,6 +258,7 @@ func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, l
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit reversal: %w", err)
 	}
+	s.EventRepo.PublishAsync(&reversalEvent.BaseEvent)
 
 	return result, nil
 }
