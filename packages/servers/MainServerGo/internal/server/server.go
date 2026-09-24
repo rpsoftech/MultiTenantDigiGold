@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 
 	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
@@ -33,6 +35,14 @@ func NewApp(rateHub *rates_api.RateHub) *fiber.App {
 	})
 
 	// Add OpenTelemetry Tracing Middleware
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+	}))
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: []string{"*"}, // Replace with your frontend domains in prod
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-Id"},
+	}))
+
 	app.Use(middleware.OtelInterceptor)
 
 	app.Use(logger.New(logger.Config{

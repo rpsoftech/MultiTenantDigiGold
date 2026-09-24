@@ -87,6 +87,8 @@ func main() {
 	}
 	// 3. Pre-flight Infrastructure Checks
 	db := postgres.GetPostgresDB()
+	defer db.Db.Close()
+
 	if err := db.Db.Ping(); err != nil {
 		log.Fatalf("FATAL: PostgreSQL connection failed: %v", err)
 	}
@@ -95,6 +97,8 @@ func main() {
 		log.Fatalf("FATAL: %v", err)
 	}
 	rdb := redis_client.InitRedisClient()
+	defer rdb.Client.Close()
+
 	if err := rdb.Client.Ping(context.Background()).Err(); err != nil {
 		log.Fatalf("FATAL: Redis connection failed: %v", err)
 	}
