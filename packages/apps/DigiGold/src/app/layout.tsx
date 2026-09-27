@@ -1,4 +1,4 @@
-import { mockTenantConfig } from '@/features/tenant/tenant.mock';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
 import { computeTenantCssVars } from '@/features/tenant/tenantCssVars';
 import { Providers } from './providers';
 import './globals.scss';
@@ -13,7 +13,11 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const cssVars = computeTenantCssVars(mockTenantConfig)
+  // next.config.js sets `output: 'export'` (fully static export, no server runtime), so
+  // this can only ever render once at build time — it must stay a static, brand-neutral
+  // default. Providers resolves the real tenant config client-side on mount, which is the
+  // only place per-request/per-host resolution is possible in a static export.
+  const cssVars = computeTenantCssVars(DEFAULT_TENANT_CONFIG)
     .map(([name, value]) => `${name}:${value}`)
     .join(';');
 
@@ -30,7 +34,7 @@ export default function RootLayout({
         </style>
       </head>
       <body>
-        <Providers initialTenantConfig={mockTenantConfig}>{children}</Providers>
+        <Providers initialTenantConfig={DEFAULT_TENANT_CONFIG}>{children}</Providers>
       </body>
     </html>
   );
