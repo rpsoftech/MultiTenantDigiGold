@@ -1,5 +1,5 @@
 import { mockLiveRateStream } from './market.mock';
-import { parseRateFrameToPrice } from './market.utils';
+import { parseRateFrame } from './market.utils';
 import { MARKET_PURITY_LABEL } from './market.types';
 import type { MarketConnectionStatus, MarketRate } from './market.types';
 
@@ -48,12 +48,15 @@ function emitFrame(rawFrame: string) {
   const now = Date.now();
   if (now - lastTickAt < MIN_TICK_INTERVAL_MS) return;
 
-  const price = parseRateFrameToPrice(rawFrame);
-  if (price === null) return;
+  const frame = parseRateFrame(rawFrame);
+  if (frame === null) return;
 
   lastTickAt = now;
   const rate: MarketRate = {
-    pricePerGramInr: price,
+    pricePerGramInr: frame.finalRatePerGramInr,
+    mcxBaseRateInr: frame.mcxBaseRateInr,
+    marginAppliedInr: frame.marginAppliedInr,
+    gstAppliedInr: frame.gstAppliedInr,
     purityLabel: MARKET_PURITY_LABEL,
     updatedAt: new Date().toISOString(),
   };
