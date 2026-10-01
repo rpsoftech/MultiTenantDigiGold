@@ -29,5 +29,6 @@ export type VerifyOtpResult = {
 export type CompleteProfilePayload = {
   registrationToken: string;
   fullName: string;
+  location: string;
   emailId?: string;
 };
