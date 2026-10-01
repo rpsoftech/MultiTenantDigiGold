@@ -5,6 +5,10 @@ import {
   registrationStarted,
   sessionEstablished,
 } from '@/store/session/session.slice';
+import { setRegistrationToken } from '@/lib/auth/tokenStorage';
+import { decodeJwtPayload } from '@/lib/utils/jwt';
+
+type UserAccessTokenClaims = { user_uuid: string };
 
 export function useVerifyOtp() {
   const dispatch = useAppDispatch();
@@ -13,9 +17,10 @@ export function useVerifyOtp() {
     mutationFn: authService.verifyOtp,
     onSuccess: (result, variables) => {
       if (result.is_registered && result.access_token) {
+        const claims = decodeJwtPayload<UserAccessTokenClaims>(result.access_token);
         dispatch(
           sessionEstablished({
-            userId: '',
+            userId: claims?.user_uuid ?? '',
             role: 'customer',
             mobileNumber: variables.mobileNumber,
             isNewUser: false,
@@ -23,10 +28,7 @@ export function useVerifyOtp() {
           }),
         );
       } else if (result.registration_token) {
-        window.sessionStorage.setItem(
-          'registration_token',
-          result.registration_token,
-        );
+        setRegistrationToken(result.registration_token);
         dispatch(
           registrationStarted({
             token: result.registration_token,
