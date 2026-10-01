@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { resolveTenantConfig } from '@/features/tenant/tenant.service';
-import { resolveTenantFromHost } from '@/lib/utils/resolveTenantFromHost';
 import { makeStore } from '@/store';
 import { tenantConfigReceived } from '@/store/tenant/tenant.slice';
 import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
@@ -34,12 +33,9 @@ export function Providers({ children, initialTenantConfig }: ProvidersProps) {
   const [tenantConfig, setTenantConfig] = useState(initialTenantConfig);
 
   useEffect(() => {
-    const defaultTenant =
-      process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'aurelian-digital';
-    const retailerCode = resolveTenantFromHost(window.location.host, defaultTenant);
     let cancelled = false;
 
-    void resolveTenantConfig(retailerCode)
+    void resolveTenantConfig()
       .then((config) => {
         if (cancelled) return;
         setTenantConfig(config);
