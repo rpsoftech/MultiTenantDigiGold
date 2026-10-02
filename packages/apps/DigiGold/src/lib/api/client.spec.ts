@@ -1,6 +1,26 @@
-import { describe, expect, it } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
+import {
+  AxiosError,
+  AxiosHeaders,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 
-import { normalizeApiBaseURL } from './client';
+import {
+  clearAdminTokens,
+  getAdminAccessToken,
+  getAdminRefreshToken,
+  getAdminSessionId,
+  storeAdminTokens,
+} from './admin-tokens';
+import { apiClient, normalizeApiBaseURL, refreshAdminTokens } from './client';
 
 describe('normalizeApiBaseURL', () => {
   it('leaves an undefined base URL unset', () => {
@@ -30,4 +50,400 @@ describe('normalizeApiBaseURL', () => {
       'http://localhost:8080/api/v1',
     );
   });
+});
+
+function response(
+  config: InternalAxiosRequestConfig,
+  data: unknown,
+  status = 200,
+): AxiosResponse {
+  return { config, data, status, statusText: '', headers: new AxiosHeaders() };
+}
+
+function httpError(
+  config: InternalAxiosRequestConfig,
+  status: number,
+  data: unknown = { error: 'Unauthorized' },
+): AxiosError {
+  return new AxiosError(
+    `Request failed with status code ${status}`,
+    'ERR_BAD_REQUEST',
+    config,
+    undefined,
+    response(config, data, status),
+  );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+describe('admin API authentication', () => {
+  const originalAdapter = apiClient.defaults.adapter;
+  const originalTenantUuid = process.env.NEXT_PUBLIC_TENANT_UUID;
+  const initialTokens = {
+    access_token: 'admin-access',
+    refresh_token: 'admin-refresh',
+  };
+  const rotatedTokens = {
+    access_token: 'rotated-access',
+    refresh_token: 'rotated-refresh',
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    clearAdminTokens();
+    window.localStorage.setItem('access_token', 'customer-access');
+    window.localStorage.setItem('refresh_token', 'customer-refresh');
+    storeAdminTokens(initialTokens);
+    process.env.NEXT_PUBLIC_TENANT_UUID = 'tenant-id';
+  });
+
+  afterEach(() => {
+    apiClient.defaults.adapter = originalAdapter;
+    clearAdminTokens();
+    window.localStorage.clear();
+    if (originalTenantUuid === undefined) {
+      delete process.env.NEXT_PUBLIC_TENANT_UUID;
+    } else {
+      process.env.NEXT_PUBLIC_TENANT_UUID = originalTenantUuid;
+    }
+    jest.restoreAllMocks();
+  });
+
+  it('separates customer/admin headers and omits access tokens on auth endpoints', async () => {
+    const headers: Record<string, unknown>[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      headers.push(config.headers.toJSON());
+      return response(config, {});
+    };
+
+    await apiClient.get('/admin/users');
+    await apiClient.get('/wallet');
+    await apiClient.post(
+      '/admin/auth/totp/verify',
+      {},
+      {
+        headers: { 'X-Api-Token': 'stale-token' },
+      },
+    );
+    await apiClient.post('/auth/login');
+
+    expect(headers.map((header) => header['X-Api-Token'])).toEqual([
+      'admin-access',
+      'customer-access',
+      undefined,
+      undefined,
+    ]);
+    expect(
+      headers.every((header) => header['X-Tenant-ID'] === 'tenant-id'),
+    ).toBe(true);
+  });
+
+  it('never falls back to customer credentials for an admin request', async () => {
+    clearAdminTokens();
+    apiClient.defaults.adapter = async (config) => {
+      expect(config.headers.get('X-Api-Token')).toBeUndefined();
+      return response(config, {});
+    };
+
+    await apiClient.get('/admin/users');
+  });
+
+  it('preserves server error messages and statuses without refreshing auth endpoints', async () => {
+    let requests = 0;
+    apiClient.defaults.adapter = async (config) => {
+      requests += 1;
+      throw httpError(config, 401, { error: 'Invalid username or password' });
+    };
+
+    await expect(apiClient.post('/admin/auth/login')).rejects.toEqual({
+      message: 'Invalid username or password',
+      code: 'ERR_BAD_REQUEST',
+      status: 401,
+    });
+    expect(requests).toBe(1);
+    expect(getAdminAccessToken()).toBe('admin-access');
+  });
+
+  it('still supports message-shaped server errors and leaves customer failures alone', async () => {
+    let requests = 0;
+    apiClient.defaults.adapter = async (config) => {
+      requests += 1;
+      throw httpError(config, 401, { message: 'Customer session expired' });
+    };
+
+    await expect(apiClient.get('/wallet')).rejects.toMatchObject({
+      message: 'Customer session expired',
+      status: 401,
+    });
+    expect(requests).toBe(1);
+    expect(getAdminRefreshToken()).toBe('admin-refresh');
+  });
+
+  it('deduplicates simultaneous refreshes, persists rotation, and retries requests', async () => {
+    const originalSessionId = getAdminSessionId();
+    const refreshStarted = deferred<void>();
+    const completeRefresh = deferred<void>();
+    let refreshes = 0;
+    let protectedRequests = 0;
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/admin/auth/refresh') {
+        refreshes += 1;
+        expect(JSON.parse(config.data)).toEqual({
+          refresh_token: 'admin-refresh',
+        });
+        expect(config.headers.get('X-Api-Token')).toBeUndefined();
+        refreshStarted.resolve();
+        await completeRefresh.promise;
+        return response(config, rotatedTokens);
+      }
+
+      protectedRequests += 1;
+      if (config.headers.get('X-Api-Token') === 'admin-access') {
+        throw httpError(config, 401);
+      }
+      expect(config.headers.get('X-Api-Token')).toBe('rotated-access');
+      return response(config, { ok: true });
+    };
+
+    const requests = [
+      apiClient.get('/admin/users'),
+      apiClient.get('/admin/profile'),
+    ];
+    await refreshStarted.promise;
+    const explicitRefresh = refreshAdminTokens();
+    completeRefresh.resolve();
+
+    await expect(Promise.all(requests)).resolves.toHaveLength(2);
+    await expect(explicitRefresh).resolves.toEqual(rotatedTokens);
+    expect(refreshes).toBe(1);
+    expect(protectedRequests).toBe(4);
+    expect(getAdminAccessToken()).toBe('rotated-access');
+    expect(getAdminRefreshToken()).toBe('rotated-refresh');
+    expect(getAdminSessionId()).toBe(originalSessionId);
+    expect(window.localStorage.getItem('access_token')).toBe('customer-access');
+  });
+
+  it('uses an already rotated token when an older request returns a late 401', async () => {
+    const lateRequestStarted = deferred<void>();
+    const releaseLateRequest = deferred<void>();
+    let refreshes = 0;
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/admin/auth/refresh') {
+        refreshes += 1;
+        return response(config, rotatedTokens);
+      }
+      if (config.headers.get('X-Api-Token') === 'admin-access') {
+        if (config.url === '/admin/slow') {
+          lateRequestStarted.resolve();
+          await releaseLateRequest.promise;
+        }
+        throw httpError(config, 401);
+      }
+      return response(config, {});
+    };
+
+    const slowRequest = apiClient.get('/admin/slow');
+    await lateRequestStarted.promise;
+    await apiClient.get('/admin/fast');
+    releaseLateRequest.resolve();
+    await slowRequest;
+    expect(refreshes).toBe(1);
+  });
+
+  it('expires only the admin session after refresh rejection without recursing', async () => {
+    const expired = jest.fn();
+    window.addEventListener('admin-session-expired', expired);
+    let requests = 0;
+    apiClient.defaults.adapter = async (config) => {
+      requests += 1;
+      throw httpError(config, 401, { error: 'Refresh token expired' });
+    };
+
+    try {
+      await expect(apiClient.get('/admin/users')).rejects.toMatchObject({
+        message: 'Refresh token expired',
+        status: 401,
+      });
+      expect(requests).toBe(2);
+      expect(expired).toHaveBeenCalledTimes(1);
+      expect(getAdminAccessToken()).toBeNull();
+      expect(getAdminRefreshToken()).toBeNull();
+      expect(window.localStorage.getItem('access_token')).toBe(
+        'customer-access',
+      );
+      expect(window.localStorage.getItem('refresh_token')).toBe(
+        'customer-refresh',
+      );
+    } finally {
+      window.removeEventListener('admin-session-expired', expired);
+    }
+  });
+
+  it('stops after one retry when the rotated access token is also rejected', async () => {
+    let refreshes = 0;
+    let protectedRequests = 0;
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/admin/auth/refresh') {
+        refreshes += 1;
+        return response(config, rotatedTokens);
+      }
+      protectedRequests += 1;
+      throw httpError(config, 401);
+    };
+
+    await expect(apiClient.get('/admin/users')).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(refreshes).toBe(1);
+    expect(protectedRequests).toBe(2);
+    expect(getAdminAccessToken()).toBeNull();
+  });
+
+  it('keeps credentials when refresh fails transiently', async () => {
+    apiClient.defaults.adapter = async (config) => {
+      throw httpError(config, config.url === '/admin/auth/refresh' ? 503 : 401);
+    };
+
+    await expect(apiClient.get('/admin/users')).rejects.toMatchObject({
+      status: 503,
+    });
+    expect(getAdminAccessToken()).toBe('admin-access');
+    expect(getAdminRefreshToken()).toBe('admin-refresh');
+  });
+
+  it('does not restore an admin session after logout during refresh', async () => {
+    const refreshStarted = deferred<void>();
+    const completeRefresh = deferred<void>();
+    apiClient.defaults.adapter = async (config) => {
+      refreshStarted.resolve();
+      await completeRefresh.promise;
+      return response(config, rotatedTokens);
+    };
+
+    const refreshing = refreshAdminTokens();
+    await refreshStarted.promise;
+    clearAdminTokens();
+    completeRefresh.resolve();
+
+    await expect(refreshing).rejects.toMatchObject({
+      code: 'ADMIN_SESSION_CHANGED',
+    });
+    expect(getAdminAccessToken()).toBeNull();
+    expect(getAdminRefreshToken()).toBeNull();
+  });
+
+  it('does not clear a newer session when an older refresh fails', async () => {
+    const refreshStarted = deferred<void>();
+    const completeRefresh = deferred<void>();
+    apiClient.defaults.adapter = async (config) => {
+      refreshStarted.resolve();
+      await completeRefresh.promise;
+      throw httpError(config, 401);
+    };
+
+    const refreshing = refreshAdminTokens();
+    await refreshStarted.promise;
+    clearAdminTokens();
+    storeAdminTokens(rotatedTokens);
+    completeRefresh.resolve();
+
+    await expect(refreshing).rejects.toMatchObject({ status: 401 });
+    expect(getAdminAccessToken()).toBe('rotated-access');
+    expect(getAdminRefreshToken()).toBe('rotated-refresh');
+  });
+
+  it.each(['this tab', 'another tab'])(
+    'never replays an old admin action after signing in as another admin in %s',
+    async (location) => {
+      const requestStarted = deferred<void>();
+      const finishOldRequest = deferred<void>();
+      const expired = jest.fn();
+      window.addEventListener('admin-session-expired', expired);
+      const requests: string[] = [];
+      apiClient.defaults.adapter = async (config) => {
+        requests.push(config.url ?? '');
+        requestStarted.resolve();
+        await finishOldRequest.promise;
+        throw httpError(config, 401);
+      };
+
+      try {
+        const oldAction = apiClient.post('/admin/users/user-123/kyc', {
+          status: 'approved',
+        });
+        await requestStarted.promise;
+        if (location === 'this tab') {
+          clearAdminTokens();
+          storeAdminTokens(rotatedTokens);
+        } else {
+          // A different tab changes shared storage without changing this
+          // module's in-memory revision.
+          window.localStorage.setItem(
+            'admin_session_id',
+            'other-admin-session',
+          );
+          window.localStorage.setItem(
+            'admin_access_token',
+            rotatedTokens.access_token,
+          );
+          window.localStorage.setItem(
+            'admin_refresh_token',
+            rotatedTokens.refresh_token,
+          );
+        }
+        finishOldRequest.resolve();
+
+        await expect(oldAction).rejects.toMatchObject({
+          code: 'ADMIN_SESSION_CHANGED',
+        });
+        expect(requests).toEqual(['/admin/users/user-123/kyc']);
+        expect(getAdminAccessToken()).toBe('rotated-access');
+        expect(getAdminRefreshToken()).toBe('rotated-refresh');
+        expect(expired).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener('admin-session-expired', expired);
+      }
+    },
+  );
+
+  it.each(['success', 'failure'])(
+    'does not replace or clear another tab session after an older refresh %s, even with identical token strings',
+    async (outcome) => {
+      const refreshStarted = deferred<void>();
+      const completeRefresh = deferred<void>();
+      const expired = jest.fn();
+      window.addEventListener('admin-session-expired', expired);
+      apiClient.defaults.adapter = async (config) => {
+        refreshStarted.resolve();
+        await completeRefresh.promise;
+        if (outcome === 'failure') throw httpError(config, 401);
+        return response(config, rotatedTokens);
+      };
+
+      try {
+        const refreshing = refreshAdminTokens();
+        await refreshStarted.promise;
+        // JWTs issued to the same account within one second can be identical.
+        window.localStorage.setItem(
+          'admin_session_id',
+          'new-login-in-another-tab',
+        );
+        completeRefresh.resolve();
+
+        await expect(refreshing).rejects.toMatchObject({ status: 401 });
+        expect(getAdminAccessToken()).toBe('admin-access');
+        expect(getAdminRefreshToken()).toBe('admin-refresh');
+        expect(getAdminSessionId()).toBe('new-login-in-another-tab');
+        expect(expired).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener('admin-session-expired', expired);
+      }
+    },
+  );
 });

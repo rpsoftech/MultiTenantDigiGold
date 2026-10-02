@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
@@ -17,6 +18,13 @@ import (
 	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 )
+
+func corsMiddleware() fiber.Handler {
+	return cors.New(cors.Config{
+		AllowOrigins: []string{"*"}, // Replace with your frontend domains in prod
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-Id", env.XApiToken},
+	})
+}
 
 // NewApp returns the Fiber app with all middleware and routes registered.
 // PostgreSQL, Redis and the env must already be initialised.
@@ -38,10 +46,7 @@ func NewApp(rateHub *rates_api.RateHub) *fiber.App {
 	app.Use(recover.New(recover.Config{
 		EnableStackTrace: true,
 	}))
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"*"}, // Replace with your frontend domains in prod
-		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-Id"},
-	}))
+	app.Use(corsMiddleware())
 
 	app.Use(middleware.OtelInterceptor)
 

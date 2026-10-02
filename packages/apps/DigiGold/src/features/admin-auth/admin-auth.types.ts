@@ -1,16 +1,27 @@
-import type { SessionUser } from '@/store/session/session.types';
-
-// NOTE: candidate for @digigold/core once MainServer exposes admin auth endpoints — these
-// mirror the expected request/response shapes for admin email/password login.
+import type { AdminTokens } from '@/lib/api/admin-tokens';
 
 export type AdminLoginPayload = {
-  email: string;
+  username: string;
   password: string;
 };
 
 export type AdminLoginResult = {
-  user: SessionUser;
+  temp_token: string;
 };
+
+export type AdminTotpSetupPayload = {
+  temp_token: string;
+};
+
+export type AdminTotpSetupResult = {
+  otpauth_uri: string;
+};
+
+export type AdminTotpVerifyPayload = AdminTotpSetupPayload & {
+  code: string;
+};
+
+export type AdminTokenPair = AdminTokens;
 
 export type AdminProfile = {
   userId: string;

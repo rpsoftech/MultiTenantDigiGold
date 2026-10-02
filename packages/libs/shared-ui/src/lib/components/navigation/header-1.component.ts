@@ -98,7 +98,7 @@ import { AuthService } from '@dg/services';
 export class Header1Component {
   public auth = inject(AuthService);
 
-  @Input() brandName: string = 'DIGIGOLD';
+  @Input() brandName = 'DIGIGOLD';
   @Input() logoUrl?: string;
-  @Input() primaryColor: string = '#d97706';
+  @Input() primaryColor = '#d97706';
 }

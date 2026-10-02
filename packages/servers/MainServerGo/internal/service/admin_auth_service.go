@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
@@ -124,31 +126,57 @@ func (s *AdminAuthService) SetupTOTP(ctx context.Context, tempToken string) (str
 	}
 
 	if admin.IsTOTPEnabled {
-		return "", "", fmt.Errorf("TOTP is already enabled for this admin")
+		return "", "", repository.ErrTOTPAlreadyEnabled
+	}
+	if !admin.IsActive {
+		return "", "", interfaces.ErrUserNotFound
 	}
 
-	// Generate TOTP Secret
-	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "DigiGold-Admin",
-		AccountName: admin.Username,
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("failed to generate TOTP secret: %w", err)
+	// Reuse an unfinished enrollment. Retrying setup must never invalidate a
+	// QR code the admin has already added to their authenticator.
+	candidateSecret := admin.TOTPSecret
+	if candidateSecret == "" {
+		key, err := totp.Generate(totp.GenerateOpts{
+			Issuer:      "DigiGold-Admin",
+			AccountName: admin.Username,
+			Period:      30,
+			Digits:      otp.DigitsSix,
+			Algorithm:   otp.AlgorithmSHA1,
+		})
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate TOTP secret: %w", err)
+		}
+		candidateSecret = key.Secret()
 	}
 
-	secret := key.Secret()
-	uri := key.URL()
-
-	// Temporarily store secret in Redis tied to the temp token, or just return it to frontend (and verify will accept it if valid)
-	// Actually, wait, verify will need the secret. We should update the DB with the secret but NOT enable it until verified.
-
-	admin.TOTPSecret = secret
-	err = s.AdminRepo.UpdateFullAdmin(ctx, admin)
+	// The repository returns the stored secret, including the winner of a
+	// concurrent setup from another login or browser tab.
+	secret, err := s.AdminRepo.InitializeTOTPSecret(ctx, payload.TenantID, payload.AdminID, candidateSecret)
 	if err != nil {
+		if err == repository.ErrTOTPAlreadyEnabled {
+			return "", "", err
+		}
 		return "", "", fmt.Errorf("failed to save TOTP secret: %w", err)
 	}
 
-	return secret, uri, nil
+	return secret, adminTOTPEnrollmentURI(admin.Username, secret), nil
+}
+
+func adminTOTPEnrollmentURI(username, secret string) string {
+	values := url.Values{
+		"secret":    {secret},
+		"issuer":    {"DigiGold-Admin"},
+		"algorithm": {otp.AlgorithmSHA1.String()},
+		"digits":    {otp.DigitsSix.String()},
+		"period":    {"30"},
+	}
+	uri := url.URL{
+		Scheme:   "otpauth",
+		Host:     "totp",
+		Path:     "/DigiGold-Admin:" + username,
+		RawQuery: values.Encode(),
+	}
+	return uri.String()
 }
 
 // 3. Verify TOTP (Validates code, issues final JWTs)
