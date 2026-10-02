@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api/client';
+import { persistTokens } from '@/lib/auth/tokenStorage';
 import type {
   RequestOtpPayload,
   RequestOtpResult,
@@ -34,12 +35,10 @@ export const authService = {
       phone: payload.mobileNumber,
       otp: payload.otp,
     });
-    if (response.data.access_token) {
-      window.localStorage.setItem('access_token', response.data.access_token);
-    }
-    if (response.data.refresh_token) {
-      window.localStorage.setItem('refresh_token', response.data.refresh_token);
-    }
+    persistTokens({
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+    });
     return response.data;
   },
 
@@ -52,12 +51,10 @@ export const authService = {
       full_name: payload.fullName,
       email_id: payload.emailId || undefined,
     });
-    if (response.data.access_token) {
-      window.localStorage.setItem('access_token', response.data.access_token);
-    }
-    if (response.data.refresh_token) {
-      window.localStorage.setItem('refresh_token', response.data.refresh_token);
-    }
+    persistTokens({
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+    });
     return response.data;
   },
 };

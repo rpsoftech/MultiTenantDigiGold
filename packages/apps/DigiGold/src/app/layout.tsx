@@ -1,4 +1,4 @@
-import { mockTenantConfig } from '@/features/tenant/tenant.mock';
+import { defaultTenantConfig } from '@/features/tenant/tenant.defaults';
 import { computeTenantCssVars } from '@/features/tenant/tenantCssVars';
 import { Providers } from './providers';
 import './globals.scss';
@@ -13,7 +13,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const cssVars = computeTenantCssVars(mockTenantConfig)
+  const cssVars = computeTenantCssVars(defaultTenantConfig)
     .map(([name, value]) => `${name}:${value}`)
     .join(';');
 
@@ -30,7 +30,7 @@ export default function RootLayout({
         </style>
       </head>
       <body>
-        <Providers initialTenantConfig={mockTenantConfig}>{children}</Providers>
+        <Providers initialTenantConfig={defaultTenantConfig}>{children}</Providers>
       </body>
     </html>
   );
