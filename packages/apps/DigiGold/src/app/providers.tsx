@@ -7,6 +7,8 @@ import { resolveTenantConfig } from '@/features/tenant/tenant.service';
 import { resolveTenantFromHost } from '@/lib/utils/resolveTenantFromHost';
 import { makeStore } from '@/store';
 import { tenantConfigReceived } from '@/store/tenant/tenant.slice';
+import { sessionRestored } from '@/store/session/session.slice';
+import { readStoredAccessToken } from '@/lib/auth/tokenStorage';
 import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
 import { ToastProvider } from '@/components/common/Toast/Toast';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
@@ -52,6 +54,12 @@ export function Providers({ children, initialTenantConfig }: ProvidersProps) {
     return () => {
       cancelled = true;
     };
+  }, [store]);
+
+  useEffect(() => {
+    // Runs after the first client render (never during SSR, where localStorage is empty),
+    // so authenticated-only views don't flash their signed-out state on every reload.
+    if (readStoredAccessToken()) store.dispatch(sessionRestored());
   }, [store]);
 
   return (

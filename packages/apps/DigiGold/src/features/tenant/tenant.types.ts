@@ -1,6 +1,4 @@
-// NOTE: candidate for @digigold/core — MainServer will need to validate/serve this same
-// shape once its tenant config endpoint exists; move it there instead of duplicating once
-// packages/libs/core is built and importable.
+// Frontend presentation model, adapted from MainServer's public tenant metadata.
 
 export type TenantColorRole = 'primary' | 'secondary' | 'tertiary' | 'neutral';
 
@@ -22,4 +20,13 @@ export type TenantConfig = {
     vault: boolean;
     ecommerce: boolean;
   };
+};
+
+// GET /api/v1/tenant/info returns public metadata directly, without a data envelope.
+// UI configuration is arbitrary JSONB and may contain layout arrays rather than theme data.
+export type TenantInfoResponse = {
+  tenant_uuid: string;
+  full_name: string;
+  short_name: string;
+  ui_json_config?: unknown;
 };

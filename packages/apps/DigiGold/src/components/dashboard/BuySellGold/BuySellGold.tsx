@@ -7,7 +7,11 @@ import { Badge } from '@/components/common/Badge/Badge';
 import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
 import { CountdownTimer } from '@/components/common/CountdownTimer/CountdownTimer';
-import { ClockIcon, CloseIcon, CoinsIcon } from '@/components/common/icons/Icons';
+import {
+  ClockIcon,
+  CloseIcon,
+  CoinsIcon,
+} from '@/components/common/icons/Icons';
 import { useToast } from '@/components/common/Toast/Toast';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useLiveRate } from '@/features/market/hooks/useLiveRate';
@@ -39,6 +43,7 @@ export function BuySellGold() {
   if (tenantConfig && !tenantConfig.activeModules.trading) return null;
 
   const pricePerGram = rate?.pricePerGramInr ?? 0;
+  const hasRate = Number.isFinite(pricePerGram) && pricePerGram > 0;
   const grams = Number(gramsInput) || 0;
   const totalInr = grams * pricePerGram;
   const gstAmount = totalInr - totalInr / (1 + GST_RATE);
@@ -68,6 +73,7 @@ export function BuySellGold() {
       router.push(ROUTES.login);
       return;
     }
+    if (!hasRate || grams <= 0) return;
     showToast({
       variant: 'success',
       title: 'Order queued',
@@ -84,41 +90,57 @@ export function BuySellGold() {
           <div>
             <div className={styles.titleRow}>
               <h3 className={styles.title}>Spot Gold Purchase</h3>
-              <Badge variant="brand">{rate?.purityLabel ?? '24K • 99.99%'}</Badge>
+              <Badge variant="brand">
+                {rate?.purityLabel ?? '24K • 99.99%'}
+              </Badge>
             </div>
-            {isLoading || !rate ? (
+            {isLoading ? (
               <Loader size="sm" label="Loading live rate" />
+            ) : !hasRate ? (
+              <p className={styles.rateRow} role="status">
+                Live rate is currently unavailable. Waiting for an update.
+              </p>
             ) : (
               <p className={styles.rateRow}>
-                Live Market Rate: <strong>{formatCurrency(rate.pricePerGramInr, 'INR')}/g</strong>
+                Live Market Rate:{' '}
+                <strong>{formatCurrency(pricePerGram, 'INR')}/g</strong>
               </p>
             )}
           </div>
 
-          <div className={styles.priceLock}>
-            <span className={styles.priceLockLabel}>
-              <ClockIcon width={12} height={12} /> Price Locked
-            </span>
-            <CountdownTimer
-              key={lockKey}
-              seconds={PRICE_LOCK_SECONDS}
-              onExpire={() => setLockKey((key) => key + 1)}
-              className={styles.priceLockTimer}
-            />
-          </div>
+          {hasRate && (
+            <div className={styles.priceLock}>
+              <span className={styles.priceLockLabel}>
+                <ClockIcon width={12} height={12} /> Price Locked
+              </span>
+              <CountdownTimer
+                key={lockKey}
+                seconds={PRICE_LOCK_SECONDS}
+                onExpire={() => setLockKey((key) => key + 1)}
+                className={styles.priceLockTimer}
+              />
+            </div>
+          )}
         </div>
 
         <div className={styles.toggleRow}>
           <button
             type="button"
-            className={cn(styles.toggleButton, mode === 'inr' && styles.toggleButtonActive)}
+            className={cn(
+              styles.toggleButton,
+              mode === 'inr' && styles.toggleButtonActive,
+            )}
             onClick={() => setMode('inr')}
+            disabled={!hasRate}
           >
             Buy in Rupees (₹)
           </button>
           <button
             type="button"
-            className={cn(styles.toggleButton, mode === 'grams' && styles.toggleButtonActive)}
+            className={cn(
+              styles.toggleButton,
+              mode === 'grams' && styles.toggleButtonActive,
+            )}
             onClick={() => setMode('grams')}
           >
             Buy in Grams (g)
@@ -161,6 +183,7 @@ export function BuySellGold() {
                 className={styles.input}
                 inputMode="decimal"
                 value={inrInputValue}
+                disabled={!hasRate}
                 onChange={(event) => handleInrChange(event.target.value)}
               />
               <button
@@ -194,46 +217,63 @@ export function BuySellGold() {
                   type="button"
                   className={styles.quickAddChip}
                   onClick={() => handleQuickAddInr(increment)}
+                  disabled={!hasRate}
                 >
                   +{formatCurrency(increment, 'INR')}
                 </button>
               ))}
         </div>
 
-        <div className={styles.summary}>
-          {mode === 'inr' ? (
-            <>
-              <div className={styles.summaryRow}>
-                <span>Total Investment Amount:</span>
-                <span className={styles.summaryValueBrand}>{formatCurrency(totalInr, 'INR')}</span>
-              </div>
-              <div className={styles.summaryRow}>
-                <span>Gold Weight to be Added:</span>
-                <span className={styles.summaryValueSuccess}>{grams.toFixed(4)} g</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className={styles.summaryRow}>
-                <span>Gold Weight to be Added:</span>
-                <span className={styles.summaryValueBrand}>{grams.toFixed(4)} g</span>
-              </div>
-              <div className={styles.summaryRow}>
-                <span>Total Investment Amount:</span>
-                <span className={styles.summaryValueSuccess}>{formatCurrency(totalInr, 'INR')}</span>
-              </div>
-            </>
-          )}
-          <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
-            <span>Applicable GST (3% included):</span>
-            <span>{formatCurrency(gstAmount, 'INR')}</span>
+        {hasRate && (
+          <div className={styles.summary}>
+            {mode === 'inr' ? (
+              <>
+                <div className={styles.summaryRow}>
+                  <span>Total Investment Amount:</span>
+                  <span className={styles.summaryValueBrand}>
+                    {formatCurrency(totalInr, 'INR')}
+                  </span>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>Gold Weight to be Added:</span>
+                  <span className={styles.summaryValueSuccess}>
+                    {grams.toFixed(4)} g
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.summaryRow}>
+                  <span>Gold Weight to be Added:</span>
+                  <span className={styles.summaryValueBrand}>
+                    {grams.toFixed(4)} g
+                  </span>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>Total Investment Amount:</span>
+                  <span className={styles.summaryValueSuccess}>
+                    {formatCurrency(totalInr, 'INR')}
+                  </span>
+                </div>
+              </>
+            )}
+            <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
+              <span>Applicable GST (3% included):</span>
+              <span>{formatCurrency(gstAmount, 'INR')}</span>
+            </div>
           </div>
-        </div>
+        )}
 
-        <Button fullWidth disabled={grams <= 0 || isLoading} onClick={handleProceed}>
+        <Button
+          fullWidth
+          disabled={grams <= 0 || isLoading || !hasRate}
+          onClick={handleProceed}
+        >
           <CoinsIcon width={16} height={16} />{' '}
           {isAuthenticated
-            ? `Proceed to Pay ${formatCurrency(totalInr, 'INR')}`
+            ? hasRate
+              ? `Proceed to Pay ${formatCurrency(totalInr, 'INR')}`
+              : 'Waiting for live rate'
             : 'Login to Proceed'}
         </Button>
       </Card>

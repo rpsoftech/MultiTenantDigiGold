@@ -72,6 +72,17 @@
   padding: var(--space-8) 0;
 }
 
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  color: var(--color-text-muted);
+  text-align: center;
+  font-size: 0.875rem;
+}
+
 .productCard {
   padding: 0;
   overflow: hidden;

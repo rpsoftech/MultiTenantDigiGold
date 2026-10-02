@@ -1,31 +1,13 @@
 import type { TenantConfig } from './tenant.types';
+import { defaultTenantConfig } from './tenant.defaults';
 
-// All retailer codes resolve to this single mock until MainServer's tenant config
-// endpoint is ready — see tenant.service.ts's USE_MOCK_TENANT_CONFIG flag.
+// Explicit development fixture; live requests resolve metadata from /tenant/info.
 export const mockTenantConfig: TenantConfig = {
-  tenantId: 'aurelian-digital',
-  displayName: 'Aurelian Digital',
-  brandLogo: {
-    url: '/brand/logo.svg',
-    alt: 'Aurelian Digital',
-  },
+  ...defaultTenantConfig,
+  brandLogo: { ...defaultTenantConfig.brandLogo },
   theme: {
-    colors: {
-      primary: '#D4AF37',
-      secondary: '#1A1A1A',
-      tertiary: '#C5A028',
-      neutral: '#F8F9FA',
-    },
-    fontFamily: {
-      headline: 'Hanken Grotesk',
-      body: 'Hanken Grotesk',
-      label: 'Hanken Grotesk',
-    },
+    colors: { ...defaultTenantConfig.theme.colors },
+    fontFamily: { ...defaultTenantConfig.theme.fontFamily },
   },
-  activeModules: {
-    home: true,
-    trading: true,
-    vault: true,
-    ecommerce: true,
-  },
+  activeModules: { ...defaultTenantConfig.activeModules },
 };

@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { OtpForm } from '@/components/auth/OtpForm/OtpForm';
 import { ROUTES } from '@/lib/constants/routes';
 import { MOBILE_NUMBER_PATTERN } from '@/lib/constants/regex';
 
-export default function OtpPage() {
+function OtpContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mobileNumber = searchParams.get('mobile') ?? '';
@@ -21,4 +21,12 @@ export default function OtpPage() {
   if (!isValidMobile) return null;
 
   return <OtpForm mobileNumber={mobileNumber} />;
+}
+
+export default function OtpPage() {
+  return (
+    <Suspense fallback={null}>
+      <OtpContent />
+    </Suspense>
+  );
 }
