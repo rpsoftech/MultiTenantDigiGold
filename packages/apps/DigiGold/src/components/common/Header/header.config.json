@@ -25,7 +25,30 @@
       "label": "Vault",
       "url": "/vault",
       "enabled": true,
-      "order": 3
+      "order": 3,
+      "children": [
+        {
+          "id": "passbook",
+          "label": "Passbook",
+          "url": "/vault/passbook",
+          "enabled": true,
+          "order": 1
+        },
+        {
+          "id": "redemptions",
+          "label": "Redeem Gold",
+          "url": "/vault/redemptions",
+          "enabled": true,
+          "order": 2
+        },
+        {
+          "id": "vault-security",
+          "label": "Security",
+          "url": "/vault/security",
+          "enabled": true,
+          "order": 3
+        }
+      ]
     },
     {
       "id": "invest",
