@@ -3,6 +3,7 @@
 .overlay {
   position: fixed;
   inset: 0;
+  z-index: 100;
   background: rgba(0, 0, 0, 0.5);
   animation: fadeIn 0.15s ease;
 
@@ -13,6 +14,7 @@
 
 .content {
   position: fixed;
+  z-index: 101;
   background: var(--color-surface);
   padding: var(--space-6);
   box-shadow: var(--shadow-card);

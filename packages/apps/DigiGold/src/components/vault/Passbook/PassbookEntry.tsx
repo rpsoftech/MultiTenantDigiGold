@@ -1,6 +1,9 @@
 import { Badge, type BadgeVariant } from '@/components/common/Badge/Badge';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
-import type { TradeHistoryEntry, TradeEventType } from '@/features/trade/trade.types';
+import type {
+  TradeHistoryEntry,
+  TradeEventType,
+} from '@/features/trade/trade.types';
 import styles from './PassbookEntry.module.scss';
 
 const EVENT_LABELS: Record<TradeEventType, string> = {
@@ -29,7 +32,10 @@ function humanizePaymentMode(mode: string): string {
 }
 
 export function PassbookEntry({ entry }: { entry: TradeHistoryEntry }) {
-  const signedWeight = entry.weight_grams >= 0 ? `+${entry.weight_grams.toFixed(4)}` : entry.weight_grams.toFixed(4);
+  const signedWeight =
+    entry.weight_grams >= 0
+      ? `+${entry.weight_grams.toFixed(4)}`
+      : entry.weight_grams.toFixed(4);
 
   return (
     <div className={styles.entry}>
@@ -37,7 +43,9 @@ export function PassbookEntry({ entry }: { entry: TradeHistoryEntry }) {
         <Badge variant={EVENT_BADGE_VARIANTS[entry.event_type]}>
           {EVENT_LABELS[entry.event_type] ?? entry.event_type}
         </Badge>
-        <span className={styles.date}>{new Date(entry.created_at).toLocaleString('en-IN')}</span>
+        <span className={styles.date}>
+          {new Date(entry.created_at).toLocaleString('en-IN')}
+        </span>
       </div>
 
       <div className={styles.detailGrid}>
@@ -47,7 +55,9 @@ export function PassbookEntry({ entry }: { entry: TradeHistoryEntry }) {
         </div>
         <div className={styles.detailItem}>
           <span className={styles.detailLabel}>Amount</span>
-          <span className={styles.detailValue}>{formatCurrency(entry.total_amount_inr, 'INR')}</span>
+          <span className={styles.detailValue}>
+            {formatCurrency(entry.total_amount_inr, 'INR')}
+          </span>
         </div>
         <div className={styles.detailItem}>
           <span className={styles.detailLabel}>Final Rate</span>
@@ -57,15 +67,21 @@ export function PassbookEntry({ entry }: { entry: TradeHistoryEntry }) {
         </div>
         <div className={styles.detailItem}>
           <span className={styles.detailLabel}>Running Balance</span>
-          <span className={styles.detailValue}>{entry.running_gold_balance_grams.toFixed(4)} g</span>
+          <span className={styles.detailValue}>
+            {entry.running_gold_balance_grams.toFixed(4)} g
+          </span>
         </div>
         <div className={styles.detailItem}>
           <span className={styles.detailLabel}>Payment Mode</span>
-          <span className={styles.detailValue}>{humanizePaymentMode(entry.payment_mode)}</span>
+          <span className={styles.detailValue}>
+            {humanizePaymentMode(entry.payment_mode)}
+          </span>
         </div>
         <div className={styles.detailItem}>
           <span className={styles.detailLabel}>Reference</span>
-          <span className={styles.detailValueMuted}>{entry.reference_id ?? '—'}</span>
+          <span className={styles.detailValueMuted}>
+            {entry.reference_id ?? '—'}
+          </span>
         </div>
       </div>
     </div>

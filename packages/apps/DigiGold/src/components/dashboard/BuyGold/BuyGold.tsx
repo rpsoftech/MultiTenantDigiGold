@@ -21,7 +21,7 @@ import type { InitiateBuyResult } from '@/features/trade/trade.types';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import { cn } from '@/lib/utils/cn';
 import { ROUTES } from '@/lib/constants/routes';
-import styles from './BuySellGold.module.scss';
+import styles from './BuyGold.module.scss';
 
 const QUICK_ADD_GRAMS = [0.5, 1, 5, 10];
 const QUICK_ADD_INR = [1000, 5000, 10000, 25000];
@@ -35,7 +35,7 @@ function secondsUntil(isoTimestamp: string): number {
   return Math.max(0, Math.round((new Date(isoTimestamp).getTime() - Date.now()) / 1000));
 }
 
-export function BuySellGold() {
+export function BuyGold() {
   const router = useRouter();
   const tenantConfig = useTenantConfig();
   const { showToast } = useToast();

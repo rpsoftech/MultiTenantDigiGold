@@ -1,4 +1,4 @@
-.entry {
+.card {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -8,7 +8,7 @@
   background: var(--color-surface);
 }
 
-.entryHeader {
+.header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -58,9 +58,52 @@
   color: var(--brand-primary);
 }
 
-.detailValueMuted {
-  font-family: var(--font-body);
+.dangerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-danger);
+  font-family: var(--font-label);
   font-size: 0.8125rem;
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
+  font-weight: 600;
+  line-height: 1;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--color-danger) 85%, #000000);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-danger);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
+.modalActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+
+  .dangerButton {
+    align-self: stretch;
+    padding: var(--space-3) var(--space-6);
+    font-size: 0.9375rem;
+  }
+}
+
+.modalLoader {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) 0;
 }
