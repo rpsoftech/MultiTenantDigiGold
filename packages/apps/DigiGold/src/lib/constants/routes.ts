@@ -4,6 +4,7 @@ export const ROUTES = {
   profileSetup: '/profile-setup',
   home: '/home',
   passbook: '/vault/passbook',
+  kyc: '/kyc',
   sip: '/invest/sip',
   jewelry: '/marketplace/jewelry',
   marketplace: '/marketplace',

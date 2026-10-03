@@ -1,0 +1,85 @@
+@use '@/styles/mixins' as *;
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-6) var(--space-4);
+
+  @include md {
+    max-width: 480px;
+    margin-inline: auto;
+  }
+}
+
+.statusPage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+.statusCard {
+  width: 100%;
+  align-items: center;
+  text-align: center;
+}
+
+.title {
+  font-family: var(--font-headline);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.notice {
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+
+  &[data-variant='danger'] {
+    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+    color: var(--color-danger);
+  }
+}
+
+.link {
+  font-family: var(--font-label);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+}
+
+.loaderRow {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-8) 0;
+}
+
+.formContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  &[hidden] {
+    display: none;
+  }
+}

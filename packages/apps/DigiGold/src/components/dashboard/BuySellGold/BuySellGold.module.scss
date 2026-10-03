@@ -269,3 +269,11 @@
     color: var(--color-danger);
   }
 }
+
+.statusLink {
+  display: inline-block;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

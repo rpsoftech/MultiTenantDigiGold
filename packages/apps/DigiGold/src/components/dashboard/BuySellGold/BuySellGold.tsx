@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/common/Card/Card';
@@ -365,8 +366,13 @@ export function BuySellGold() {
 
         {kycBlocked && (
           <p className={styles.statusMessage} data-variant="warning">
-            Purchases above {formatCurrency(KYC_GATED_AMOUNT_INR, 'INR')} require KYC verification.
-            Complete your KYC to continue.
+            Purchases above {formatCurrency(KYC_GATED_AMOUNT_INR, 'INR')} require KYC verification.{' '}
+            {user?.kycStatus === 'pending'
+              ? 'Your KYC is under review.'
+              : 'Complete your KYC to continue.'}{' '}
+            <Link href={ROUTES.kyc} className={styles.statusLink}>
+              {user?.kycStatus === 'pending' ? 'View KYC status' : 'Go to KYC'}
+            </Link>
           </p>
         )}
 

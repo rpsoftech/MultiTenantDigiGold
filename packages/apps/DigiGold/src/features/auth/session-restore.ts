@@ -1,5 +1,6 @@
 import { getAccessToken, clearTokens } from '@/lib/auth/tokenStorage';
 import { decodeJwtPayload, isJwtExpired } from '@/lib/utils/jwt';
+import { getStoredKycStatus } from '@/features/kyc/kyc-status-storage';
 import type { SessionUser } from '@/store/session/session.types';
 
 // See internal/service/jwt.go UserClaims on MainServer — customer access tokens carry
@@ -31,6 +32,6 @@ export function restoreSessionUser(): SessionUser | null {
     role: 'customer',
     mobileNumber: claims.phone,
     isNewUser: false,
-    kycStatus: 'not_started',
+    kycStatus: getStoredKycStatus(claims.user_uuid),
   };
 }

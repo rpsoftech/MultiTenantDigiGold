@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@/store';
-import type { SessionUser } from './session.types';
+import type { KycStatus, SessionUser } from './session.types';
 
 type SessionState = {
   user: SessionUser | null;
@@ -48,6 +48,9 @@ const sessionSlice = createSlice({
       state.registrationToken = null;
       state.registrationPhone = null;
     },
+    kycStatusUpdated: (state, action: PayloadAction<KycStatus>) => {
+      if (state.user) state.user.kycStatus = action.payload;
+    },
     sessionCleared: (state) => {
       state.user = null;
       state.isAuthenticated = false;
@@ -61,6 +64,7 @@ export const {
   sessionEstablished,
   registrationStarted,
   profileCompleted,
+  kycStatusUpdated,
   sessionCleared,
 } = sessionSlice.actions;
 export const sessionReducer = sessionSlice.reducer;
