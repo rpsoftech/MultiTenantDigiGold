@@ -16,13 +16,24 @@ export type InitiateBuyResult = {
   quote_expires_at: number; // unix seconds (TradeQuote.ExpiresAt), not an ISO string
 };
 
-// Subset of MainServerGo's models.GoldTransactionLedger — only the fields the buy flow
-// needs to detect settlement of a specific payment.
+// Ledger event types a customer's history can contain (see MainServerGo's
+// ledgerEventPurchase/ledgerEventRedemption/ledgerEventReversal constants in
+// internal/service/trade_service.go; ADMIN_ADJUSTMENT is written by admin tooling).
+export type TradeEventType =
+  | 'GOLD_PURCHASE'
+  | 'PHYSICAL_REDEMPTION'
+  | 'SYSTEM_REVERSAL'
+  | 'ADMIN_ADJUSTMENT';
+
+// Mirrors MainServerGo's models.GoldTransactionLedger (see gold_ledger.go) — the fields
+// the buy flow needs to detect settlement, plus the passbook display fields.
 export type TradeHistoryEntry = {
   gl_uuid: string;
-  event_type: string;
+  event_type: TradeEventType;
+  payment_mode: string;
   weight_grams: number;
   total_amount_inr: number;
+  running_gold_balance_grams: number;
   final_rate_per_gram: number;
   reference_id?: string;
   created_at: string;
@@ -30,7 +41,7 @@ export type TradeHistoryEntry = {
 
 export type TradeHistoryResult = {
   success: boolean;
-  data: TradeHistoryEntry[];
+  data: TradeHistoryEntry[] | null; // null for an empty history on older MainServer builds
   page: number;
   limit: number;
 };
