@@ -1,7 +1,8 @@
 import { mockLiveRateStream } from './market.mock';
-import { parseRateFrameToPrice } from './market.utils';
+import { parseRateFrame } from './market.utils';
 import { MARKET_PURITY_LABEL } from './market.types';
 import type { MarketConnectionStatus, MarketRate } from './market.types';
+import { normalizeApiBaseURL } from '@/lib/api/client';
 
 // GET /api/v1/rates/stream — Server-Sent Events over plain HTTP.
 //
@@ -31,10 +32,8 @@ let currentStatus: MarketConnectionStatus = 'connecting';
 const listeners = new Set<LiveRateListener>();
 
 function buildStreamUrl(): string | null {
-  // EventSource can't reuse the axios instance, so this mirrors apiClient's baseURL
-  // convention directly (same env var, same lack of trailing-slash handling) rather than
-  // introducing a second way of resolving the API origin.
-  const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  // EventSource and axios must resolve origin-only and /api URLs identically.
+  const baseURL = normalizeApiBaseURL(process.env.NEXT_PUBLIC_API_BASE_URL);
   if (!baseURL) return null;
   return `${baseURL.replace(/\/+$/, '')}/rates/stream`;
 }
@@ -48,12 +47,17 @@ function emitFrame(rawFrame: string) {
   const now = Date.now();
   if (now - lastTickAt < MIN_TICK_INTERVAL_MS) return;
 
-  const price = parseRateFrameToPrice(rawFrame);
-  if (price === null) return;
+  const frame = parseRateFrame(rawFrame);
+  if (frame === null) return;
 
   lastTickAt = now;
   const rate: MarketRate = {
-    pricePerGramInr: price,
+    pricePerGramInr: frame.finalRatePerGramInr,
+    mcxBaseRateInr: frame.mcxBaseRateInr,
+    marginAppliedInr: frame.marginAppliedInr,
+    gstAppliedInr: frame.gstAppliedInr,
+    bidPerGramInr: frame.bidPerGramInr,
+    askPerGramInr: frame.askPerGramInr,
     purityLabel: MARKET_PURITY_LABEL,
     updatedAt: new Date().toISOString(),
   };
@@ -84,7 +88,9 @@ function connect() {
   source.onerror = () => {
     // The browser retries automatically; just reflect the transient state so the UI
     // can show a "reconnecting" hint instead of treating this as a fatal error.
-    setStatus(source.readyState === EventSource.CONNECTING ? 'connecting' : 'error');
+    setStatus(
+      source.readyState === EventSource.CONNECTING ? 'connecting' : 'error',
+    );
   };
 }
 

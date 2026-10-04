@@ -2,7 +2,7 @@ import { PromoCarousel } from '@/components/dashboard/PromoCarousel/PromoCarouse
 import { CategoryCarousel } from '@/components/dashboard/CategoryCarousel/CategoryCarousel';
 import { DashboardEssentials } from '@/components/dashboard/DashboardEssentials/DashboardEssentials';
 import { TrendingJewelry } from '@/components/dashboard/TrendingJewelry/TrendingJewelry';
-import { BuySellGold } from '@/components/dashboard/BuySellGold/BuySellGold';
+import { BuyGold } from '@/components/dashboard/BuyGold/BuyGold';
 
 export default function HomePage() {
   return (
@@ -11,7 +11,7 @@ export default function HomePage() {
       <CategoryCarousel />
       <DashboardEssentials />
       <TrendingJewelry />
-      <BuySellGold />
+      <BuyGold />
     </>
   );
 }

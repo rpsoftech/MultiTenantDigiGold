@@ -64,9 +64,10 @@ export type MobileNavProps = {
   onOpenChange: (open: boolean) => void;
   menus: MenuItem[];
   actions: HeaderAction[];
+  profileMenu?: React.ReactNode;
 };
 
-export function MobileNav({ open, onOpenChange, menus, actions }: MobileNavProps) {
+export function MobileNav({ open, onOpenChange, menus, actions, profileMenu }: MobileNavProps) {
   const close = () => onOpenChange(false);
 
   return (
@@ -87,7 +88,7 @@ export function MobileNav({ open, onOpenChange, menus, actions }: MobileNavProps
             ))}
           </ul>
 
-          {actions.length > 0 && (
+          {(actions.length > 0 || profileMenu) && (
             <div className={styles.actions}>
               {actions.map((action) => (
                 <HeaderActionLink
@@ -97,6 +98,7 @@ export function MobileNav({ open, onOpenChange, menus, actions }: MobileNavProps
                   onClick={close}
                 />
               ))}
+              {profileMenu}
             </div>
           )}
         </Dialog.Content>

@@ -5,5 +5,6 @@ export function useTrendingProducts() {
   return useQuery({
     queryKey: ['marketplace', 'trending'],
     queryFn: marketplaceService.getTrendingProducts,
+    retry: false,
   });
 }

@@ -236,3 +236,44 @@
   font-weight: 700;
   color: var(--color-success);
 }
+
+.summaryDisclaimer {
+  font-family: var(--font-body);
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.statusMessage {
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+
+  &[data-variant='info'] {
+    background: var(--color-surface-secondary);
+    color: var(--color-text-primary);
+  }
+
+  &[data-variant='warning'] {
+    background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+    color: var(--color-warning);
+  }
+
+  &[data-variant='danger'] {
+    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+    color: var(--color-danger);
+  }
+}
+
+.statusLink {
+  display: inline-block;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
