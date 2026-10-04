@@ -65,9 +65,10 @@ apiClient.interceptors.request.use((config) => {
     config.headers.set('X-Api-Token', accessToken);
   } else if (accessToken && !tokenIsUsable) {
     // Token expired client-side — there's no customer-facing refresh endpoint to fall
-    // back to, so treat this exactly like a server-rejected session.
+    // back to. Clear it without redirecting: this request may be a public one, and if it
+    // isn't, the server's 401 below triggers the redirect.
     clearTokens();
-    emitSessionExpired();
+    emitSessionExpired('expired');
   }
 
   return config;
@@ -78,7 +79,7 @@ apiClient.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response?.status === 401 && !isPublicAuthEndpoint(error.config?.url)) {
       clearTokens();
-      emitSessionExpired();
+      emitSessionExpired('rejected');
     }
     return Promise.reject(normalizeApiError(error));
   },
