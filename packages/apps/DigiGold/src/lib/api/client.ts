@@ -217,6 +217,22 @@ export function refreshAdminTokens(): Promise<AdminTokens> {
       return data;
     })
     .catch((error: unknown) => {
+      // Refresh tokens are single use (MainServer consumes them), and tabs share
+      // localStorage. If another tab of this same session rotated the pair first, our
+      // refresh was rejected (or the session "changed" mid-flight) — adopt the pair it
+      // stored instead of failing the request or signing the admin out. A logout (no
+      // tokens) or a different sign-in (new session id) still falls through to failure.
+      const latestAccess = getAdminAccessToken();
+      const latestRefresh = getAdminRefreshToken();
+      if (
+        latestAccess &&
+        latestRefresh &&
+        latestRefresh !== refreshToken &&
+        getAdminSessionId() === sessionId
+      ) {
+        return { access_token: latestAccess, refresh_token: latestRefresh };
+      }
+
       const normalizedError = normalizeApiError(error);
       if (
         normalizedError.status === 400 ||

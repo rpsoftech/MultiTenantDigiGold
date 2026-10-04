@@ -98,11 +98,11 @@ describe('adminAuthService', () => {
     expectNoAdminSession();
   });
 
-  it('maps only the exact already-enabled response to the existing-authenticator flow', async () => {
+  it('maps only the ADMIN_TOTP_ALREADY_ENABLED response to the existing-authenticator flow', async () => {
     jest.spyOn(apiClient, 'post').mockRejectedValue({
-      status: 400,
+      status: 409,
       message: 'TOTP is already enabled for this admin',
-      code: 'ERR_BAD_REQUEST',
+      code: 'ADMIN_TOTP_ALREADY_ENABLED',
     });
 
     await expect(adminAuthService.setupTotp(challenge)).resolves.toBeNull();
@@ -111,13 +111,14 @@ describe('adminAuthService', () => {
 
   it.each([
     {
-      status: 400,
-      message: 'Invalid temporary token',
-      code: 'ERR_BAD_REQUEST',
+      status: 401,
+      message: 'Your sign-in has expired. Please enter your password again.',
+      code: 'ADMIN_TEMP_TOKEN_INVALID',
     },
+    // The pre-name response shape: matching on message text is exactly what was removed.
     {
       status: 400,
-      message: 'TOTP is already enabled',
+      message: 'TOTP is already enabled for this admin',
       code: 'ERR_BAD_REQUEST',
     },
     {

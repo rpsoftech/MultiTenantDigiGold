@@ -77,9 +77,11 @@ describe('admin authentication session', () => {
         code: '012345',
       });
     });
+    // The admin session is separate from the customer one, which stays signed out.
     expect(store.getState().session).toMatchObject({
-      isAuthenticated: true,
-      user: { userId: 'manager-uuid', role: 'admin' },
+      isAuthenticated: false,
+      user: null,
+      admin: { userId: 'manager-uuid', role: 'admin' },
     });
     expect(window.localStorage.getItem('admin_access_token')).toBe(token);
     unmount();

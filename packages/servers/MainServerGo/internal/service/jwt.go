@@ -8,6 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces" // Assuming you move your Sentinel Errors here
+	utility_functions "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions"
 )
 
 // ==========================================
@@ -157,28 +158,41 @@ func (s *JWTService) GenerateRegistrationToken(phone string, tenantUUID string) 
 
 // GenerateAdminTokens generates both Access (15m) and Refresh (7d) tokens for an admin
 func (s *JWTService) GenerateAdminTokens(adminUUID string, role string, tenantID int64) (string, string, error) {
-	accessToken, err := sign(&AdminClaims{
+	accessToken, refreshToken, _, err := s.GenerateAdminTokenPair(adminUUID, role, tenantID)
+	return accessToken, refreshToken, err
+}
+
+// GenerateAdminTokenPair is GenerateAdminTokens plus the refresh token's unique ID (jti).
+// AdminAuthService records that ID server-side, which is what lets a refresh token be
+// used once, and revoked on logout, despite being a self-contained JWT.
+func (s *JWTService) GenerateAdminTokenPair(adminUUID string, role string, tenantID int64) (accessToken, refreshToken, refreshID string, err error) {
+	accessToken, err = sign(&AdminClaims{
 		AdminUUID:        adminUUID,
 		Role:             role,
 		TenantID:         tenantID,
 		RegisteredClaims: newRegisteredClaims(audAdminAccess, accessTokenTTL),
 	}, s.accessKey)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	refreshToken, err := sign(&AdminClaims{
+	refreshClaims := newRegisteredClaims(audAdminRefresh, refreshTokenTTL)
+	refreshClaims.ID = utility_functions.GenerateNewUUID()
+	refreshToken, err = sign(&AdminClaims{
 		AdminUUID:        adminUUID,
 		Role:             role,
 		TenantID:         tenantID,
-		RegisteredClaims: newRegisteredClaims(audAdminRefresh, refreshTokenTTL),
+		RegisteredClaims: refreshClaims,
 	}, s.refreshKey)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	return accessToken, refreshToken, nil
+	return accessToken, refreshToken, refreshClaims.ID, nil
 }
+
+// AdminRefreshTokenTTL is how long an admin refresh token (and its server-side record) lives.
+const AdminRefreshTokenTTL = refreshTokenTTL
 
 // ==========================================
 // VALIDATION METHODS

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	"github.com/redis/go-redis/v9"
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
@@ -46,6 +48,34 @@ func InitAdminAuthService() *AdminAuthService {
 
 // maxTOTPAttempts is the number of wrong TOTP codes allowed per login temp token.
 const maxTOTPAttempts = 5
+
+// Client-facing admin auth failures. Each has a stable Name the frontend switches on (never
+// the message text), and goes through GlobalErrorHandler like every other API error. Any
+// error NOT listed here is a server fault: it becomes a generic 500 and is reported to
+// monitoring, instead of being shown to the admin as "invalid code" with internal details.
+func adminAuthError(status, code int, name, message string) *interfaces.RequestError {
+	return &interfaces.RequestError{StatusCode: status, Code: code, Name: name, Message: message}
+}
+
+var (
+	errAdminTempTokenInvalid = adminAuthError(http.StatusUnauthorized, interfaces.ERROR_INVALID_TOKEN,
+		"ADMIN_TEMP_TOKEN_INVALID", "Your sign-in has expired. Please enter your password again.")
+	errAdminTOTPCodeInvalid = adminAuthError(http.StatusUnauthorized, interfaces.ERROR_OTP_INVALID,
+		"ADMIN_TOTP_CODE_INVALID", "That code is incorrect or has expired.")
+	errAdminTOTPNotSetUp = adminAuthError(http.StatusBadRequest, interfaces.ERROR_INVALID_INPUT,
+		"ADMIN_TOTP_NOT_SET_UP", "Set up your authenticator app before entering a code.")
+	errAdminTOTPAlreadyEnabled = adminAuthError(http.StatusConflict, interfaces.ERROR_INVALID_INPUT,
+		"ADMIN_TOTP_ALREADY_ENABLED", "TOTP is already enabled for this admin")
+	errAdminRefreshTokenInvalid = adminAuthError(http.StatusUnauthorized, interfaces.ERROR_INVALID_TOKEN,
+		"ADMIN_REFRESH_TOKEN_INVALID", "Your admin session has expired. Please sign in again.")
+	errAdminDeactivated = adminAuthError(http.StatusForbidden, interfaces.ERROR_PERMISSION_NOT_ALLOWED,
+		"ADMIN_DEACTIVATED", "This admin account has been deactivated.")
+)
+
+// adminRefreshKey is the server-side record of one live admin refresh token (by jti).
+func adminRefreshKey(refreshID string) string {
+	return "auth:admin_refresh:" + refreshID
+}
 
 // dummyPasswordHash is compared against when the admin does not exist (timing equalization).
 var dummyPasswordHash, _ = bcrypt.GenerateFromPassword([]byte("digigold-timing-dummy"), bcrypt.DefaultCost)
@@ -121,15 +151,18 @@ func (s *AdminAuthService) SetupTOTP(ctx context.Context, tempToken string) (str
 	}
 
 	admin, err := s.AdminRepo.GetFullAdminByUUID(ctx, payload.TenantID, payload.AdminID)
+	if errors.Is(err, interfaces.ErrUserNotFound) {
+		return "", "", errAdminTempTokenInvalid
+	}
 	if err != nil {
 		return "", "", err
 	}
 
 	if admin.IsTOTPEnabled {
-		return "", "", repository.ErrTOTPAlreadyEnabled
+		return "", "", errAdminTOTPAlreadyEnabled
 	}
 	if !admin.IsActive {
-		return "", "", interfaces.ErrUserNotFound
+		return "", "", errAdminDeactivated
 	}
 
 	// Reuse an unfinished enrollment. Retrying setup must never invalidate a
@@ -152,10 +185,13 @@ func (s *AdminAuthService) SetupTOTP(ctx context.Context, tempToken string) (str
 	// The repository returns the stored secret, including the winner of a
 	// concurrent setup from another login or browser tab.
 	secret, err := s.AdminRepo.InitializeTOTPSecret(ctx, payload.TenantID, payload.AdminID, candidateSecret)
+	if errors.Is(err, repository.ErrTOTPAlreadyEnabled) {
+		return "", "", errAdminTOTPAlreadyEnabled
+	}
+	if errors.Is(err, interfaces.ErrUserNotFound) {
+		return "", "", errAdminTempTokenInvalid
+	}
 	if err != nil {
-		if err == repository.ErrTOTPAlreadyEnabled {
-			return "", "", err
-		}
 		return "", "", fmt.Errorf("failed to save TOTP secret: %w", err)
 	}
 
@@ -187,12 +223,18 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 	}
 
 	admin, err := s.AdminRepo.GetFullAdminByUUID(ctx, payload.TenantID, payload.AdminID)
+	if errors.Is(err, interfaces.ErrUserNotFound) {
+		return "", "", errAdminTempTokenInvalid
+	}
 	if err != nil {
 		return "", "", err
 	}
+	if !admin.IsActive {
+		return "", "", errAdminDeactivated
+	}
 
 	if admin.TOTPSecret == "" {
-		return "", "", fmt.Errorf("TOTP secret not found, please call setup first")
+		return "", "", errAdminTOTPNotSetUp
 	}
 
 	// Validate TOTP Code
@@ -206,7 +248,7 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 			_ = s.Redis.RemoveKey(ctx, fmt.Sprintf("auth:temp_token:%s", tempToken))
 			s.Redis.Client.Del(ctx, attemptsKey)
 		}
-		return "", "", fmt.Errorf("invalid TOTP code")
+		return "", "", errAdminTOTPCodeInvalid
 	}
 
 	// Begin TX for event sourcing
@@ -238,9 +280,9 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 	}
 
 	// Issue final JWTs
-	accessToken, refreshToken, err := GetJWTService().GenerateAdminTokens(admin.UUID, admin.Role, admin.TenantID)
+	accessToken, refreshToken, err := s.issueAdminTokens(ctx, admin.UUID, admin.Role, admin.TenantID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate access token: %w", err)
+		return "", "", err
 	}
 
 	// Invalidate Temp Token
@@ -250,39 +292,93 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 	return accessToken, refreshToken, nil
 }
 
+// issueAdminTokens signs a token pair and records the refresh token server-side, so it can
+// be used exactly once (RefreshAdminTokens) and revoked (RevokeAdminRefreshToken).
+func (s *AdminAuthService) issueAdminTokens(ctx context.Context, adminUUID, role string, tenantID int64) (string, string, error) {
+	accessToken, refreshToken, refreshID, err := GetJWTService().GenerateAdminTokenPair(adminUUID, role, tenantID)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate admin tokens: %w", err)
+	}
+	if err := s.Redis.SetStringDataWithExpiry(ctx, adminRefreshKey(refreshID), adminUUID, AdminRefreshTokenTTL); err != nil {
+		return "", "", fmt.Errorf("failed to record admin refresh token: %w", err)
+	}
+	return accessToken, refreshToken, nil
+}
+
+// RefreshAdminTokens exchanges a refresh token for a new pair. Refresh tokens are single
+// use: the old one's server-side record is consumed atomically (GETDEL), so a copied token
+// stops working once either party uses it, and logout can revoke it. A refresh token
+// without a record (already used, revoked, or issued before records existed) is rejected.
 func (s *AdminAuthService) RefreshAdminTokens(ctx context.Context, refreshToken string) (string, string, error) {
 	claims, err := GetJWTService().ValidateAdminRefreshToken(refreshToken)
+	if err != nil || claims.ID == "" {
+		return "", "", errAdminRefreshTokenInvalid
+	}
+
+	key := adminRefreshKey(claims.ID)
+	owner, err := s.Redis.Client.GetDel(ctx, s.Redis.GetRedisKey(key)).Result()
+	if errors.Is(err, redis.Nil) || (err == nil && owner != claims.AdminUUID) {
+		return "", "", errAdminRefreshTokenInvalid
+	}
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("failed to read admin refresh token record: %w", err)
+	}
+
+	// From here on a server fault must not cost the admin their session: put the consumed
+	// record back so the same refresh token can be retried.
+	restore := func() {
+		if remaining := time.Until(claims.ExpiresAt.Time); remaining > 0 {
+			_ = s.Redis.SetStringDataWithExpiry(context.Background(), key, owner, remaining)
+		}
 	}
 
 	admin, err := s.AdminRepo.GetFullAdminByUUID(ctx, claims.TenantID, claims.AdminUUID)
+	if errors.Is(err, interfaces.ErrUserNotFound) {
+		return "", "", errAdminRefreshTokenInvalid
+	}
 	if err != nil {
+		restore()
 		return "", "", err
 	}
-
 	if !admin.IsActive {
-		return "", "", fmt.Errorf("admin user is deactivated")
+		return "", "", errAdminDeactivated
 	}
 
-	newAccessToken, newRefreshToken, err := GetJWTService().GenerateAdminTokens(admin.UUID, admin.Role, admin.TenantID)
+	accessToken, newRefreshToken, err := s.issueAdminTokens(ctx, admin.UUID, admin.Role, admin.TenantID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate access tokens: %w", err)
+		restore()
+		return "", "", err
 	}
+	return accessToken, newRefreshToken, nil
+}
 
-	return newAccessToken, newRefreshToken, nil
+// RevokeAdminRefreshToken ends the session a refresh token belongs to (admin logout). An
+// invalid or already-revoked token is not an error: the outcome the caller wants holds.
+func (s *AdminAuthService) RevokeAdminRefreshToken(ctx context.Context, refreshToken string) error {
+	claims, err := GetJWTService().ValidateAdminRefreshToken(refreshToken)
+	if err != nil || claims.ID == "" {
+		return nil
+	}
+	if err := s.Redis.RemoveKey(ctx, adminRefreshKey(claims.ID)); err != nil {
+		return fmt.Errorf("failed to revoke admin refresh token: %w", err)
+	}
+	return nil
 }
 
 func (s *AdminAuthService) verifyTempToken(ctx context.Context, tempToken string) (*TempTokenPayload, error) {
 	cacheKey := fmt.Sprintf("auth:temp_token:%s", tempToken)
 	jsonData, err := s.Redis.GetStringData(ctx, cacheKey)
-	if err != nil || jsonData == "" {
-		return nil, fmt.Errorf("invalid or expired temporary token")
+	if errors.Is(err, redis.Nil) || (err == nil && jsonData == "") {
+		return nil, errAdminTempTokenInvalid
+	}
+	if err != nil {
+		// Redis unavailable: a server fault, not an expired sign-in.
+		return nil, fmt.Errorf("failed to read admin temp token: %w", err)
 	}
 
 	var payload TempTokenPayload
 	if err := json.Unmarshal([]byte(jsonData), &payload); err != nil {
-		return nil, fmt.Errorf("failed to parse temporary token")
+		return nil, errAdminTempTokenInvalid
 	}
 	return &payload, nil
 }

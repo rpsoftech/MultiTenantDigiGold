@@ -25,7 +25,7 @@ const mockReplace = jest.fn();
 const mockRouter = { replace: mockReplace };
 jest.mock('next/navigation', () => ({ useRouter: () => mockRouter }));
 jest.mock('@/features/admin-auth/admin-auth.service', () => ({
-  adminAuthService: { refresh: jest.fn() },
+  adminAuthService: { refresh: jest.fn(), logout: jest.fn() },
 }));
 
 const mockRefresh = jest.mocked(adminAuthService.refresh);
@@ -90,7 +90,7 @@ it('restores an admin session from persisted access credentials before mounting 
   const { store } = renderGuard();
 
   expect(screen.getByText('Protected admin panel')).toBeTruthy();
-  expect(store.getState().session.user).toMatchObject({
+  expect(store.getState().session.admin).toMatchObject({
     userId: 'admin-123',
     role: 'admin',
   });
@@ -135,7 +135,7 @@ it('waits for a successful refresh when the persisted access token is expired', 
   });
 
   expect(screen.getByText('Protected admin panel')).toBeTruthy();
-  expect(store.getState().session.user?.role).toBe('admin');
+  expect(store.getState().session.admin?.role).toBe('admin');
 });
 
 it('clears expired admin credentials and cache after refresh rejection', async () => {
@@ -149,7 +149,7 @@ it('clears expired admin credentials and cache after refresh rejection', async (
   expect(mounted).not.toHaveBeenCalled();
   expect(getAdminAccessToken()).toBeNull();
   expect(getAdminRefreshToken()).toBeNull();
-  expect(store.getState().session.user).toBeNull();
+  expect(store.getState().session.admin).toBeNull();
   expect(queryClient.getQueryData(['admin', 'profile'])).toBeUndefined();
   expect(queryClient.getQueryData(['customer', 'wallet'])).toEqual({
     balance: 10,
@@ -178,13 +178,13 @@ it('removes protected content and admin cache when a request expires the session
   act(() => window.dispatchEvent(new Event('admin-session-expired')));
 
   expect(screen.queryByText('Protected admin panel')).toBeNull();
-  expect(store.getState().session.user).toBeNull();
+  expect(store.getState().session.admin).toBeNull();
   expect(getAdminAccessToken()).toBeNull();
   expect(queryClient.getQueryData(['admin', 'profile'])).toBeUndefined();
   expect(mockReplace).toHaveBeenCalledWith(ROUTES.adminLogin);
 });
 
-it('clears admin credentials and cache on logout without clearing customer credentials', () => {
+it('clears admin credentials and cache on logout without clearing customer credentials', async () => {
   storeAdminTokens(tokens);
   window.localStorage.setItem('access_token', 'customer-access');
   window.localStorage.setItem('refresh_token', 'customer-refresh');
@@ -192,7 +192,7 @@ it('clears admin credentials and cache on logout without clearing customer crede
   fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
   expect(screen.queryByText('Protected admin panel')).toBeNull();
-  expect(store.getState().session.user).toBeNull();
+  expect(store.getState().session.admin).toBeNull();
   expect(getAdminAccessToken()).toBeNull();
   expect(getAdminRefreshToken()).toBeNull();
   expect(window.localStorage.getItem('access_token')).toBe('customer-access');
@@ -202,6 +202,10 @@ it('clears admin credentials and cache on logout without clearing customer crede
     balance: 10,
   });
   expect(mockReplace).toHaveBeenCalledWith(ROUTES.adminLogin);
+  // The session's refresh token is revoked server-side, not just dropped locally.
+  await waitFor(() =>
+    expect(adminAuthService.logout).toHaveBeenCalledWith(tokens.refresh_token),
+  );
 });
 
 it('does not restore a session from a late refresh after logout', async () => {
@@ -218,6 +222,6 @@ it('does not restore a session from a late refresh after logout', async () => {
   await act(async () => resolveRefresh(tokens));
 
   expect(mounted).not.toHaveBeenCalled();
-  expect(store.getState().session.user).toBeNull();
+  expect(store.getState().session.admin).toBeNull();
   expect(getAdminAccessToken()).toBeNull();
 });

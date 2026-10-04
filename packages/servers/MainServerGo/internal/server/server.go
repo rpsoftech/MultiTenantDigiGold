@@ -3,6 +3,8 @@
 package server
 
 import (
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -19,9 +21,28 @@ import (
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 )
 
+// corsAllowOriginsKey lists the frontend origins allowed to call the API, comma-separated
+// (e.g. "https://shop.example.com,https://admin.example.com"). Unset keeps the wildcard,
+// which is only meant for local development: tokens travel in the X-Api-Token header (not
+// cookies), so "*" is not a CSRF hole, but production should still name its own domains.
+const corsAllowOriginsKey = "CORS_ALLOW_ORIGINS"
+
+func corsAllowedOrigins() []string {
+	var origins []string
+	for _, origin := range strings.Split(os.Getenv(corsAllowOriginsKey), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{"*"}
+	}
+	return origins
+}
+
 func corsMiddleware() fiber.Handler {
 	return cors.New(cors.Config{
-		AllowOrigins: []string{"*"}, // Replace with your frontend domains in prod
+		AllowOrigins: corsAllowedOrigins(),
 		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-Id", env.XApiToken},
 	})
 }

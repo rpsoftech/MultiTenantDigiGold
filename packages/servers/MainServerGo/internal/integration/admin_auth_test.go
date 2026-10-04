@@ -91,7 +91,7 @@ func TestAdminFirstLoginEnrollmentPersistsEventAndIssuesTokens(t *testing.T) {
 	replay := call(t, "POST", "/admin/auth/totp/verify", "", database.SeedDemoTenantUUID, map[string]string{
 		"temp_token": tempToken, "code": code,
 	})
-	expectStatus(t, replay, http.StatusUnauthorized)
+	expectError(t, replay, http.StatusUnauthorized, "ADMIN_TEMP_TOKEN_INVALID")
 	refresh := call(t, "POST", "/admin/auth/refresh", "", database.SeedDemoTenantUUID, map[string]string{
 		"refresh_token": refreshToken,
 	})
@@ -99,9 +99,32 @@ func TestAdminFirstLoginEnrollmentPersistsEventAndIssuesTokens(t *testing.T) {
 	if _, err := service.GetJWTService().ValidateAdminToken(str(refresh.Body["access_token"])); err != nil {
 		t.Fatalf("refreshed admin access token rejected: %v", err)
 	}
-	if _, err := service.GetJWTService().ValidateAdminRefreshToken(str(refresh.Body["refresh_token"])); err != nil {
+	rotatedRefresh := str(refresh.Body["refresh_token"])
+	if _, err := service.GetJWTService().ValidateAdminRefreshToken(rotatedRefresh); err != nil {
 		t.Fatalf("refreshed admin refresh token rejected: %v", err)
 	}
+
+	// Refresh tokens are single use: the one just exchanged must not work again.
+	reused := call(t, "POST", "/admin/auth/refresh", "", database.SeedDemoTenantUUID, map[string]string{
+		"refresh_token": refreshToken,
+	})
+	expectError(t, reused, http.StatusUnauthorized, "ADMIN_REFRESH_TOKEN_INVALID")
+
+	// Logout revokes the current refresh token server-side.
+	logout := call(t, "POST", "/admin/auth/logout", "", database.SeedDemoTenantUUID, map[string]string{
+		"refresh_token": rotatedRefresh,
+	})
+	expectStatus(t, logout, http.StatusOK)
+	afterLogout := call(t, "POST", "/admin/auth/refresh", "", database.SeedDemoTenantUUID, map[string]string{
+		"refresh_token": rotatedRefresh,
+	})
+	expectError(t, afterLogout, http.StatusUnauthorized, "ADMIN_REFRESH_TOKEN_INVALID")
+
+	// A malformed refresh token is a client error with a stable name, not leaked internals.
+	garbage := call(t, "POST", "/admin/auth/refresh", "", database.SeedDemoTenantUUID, map[string]string{
+		"refresh_token": "not-a-jwt",
+	})
+	expectError(t, garbage, http.StatusUnauthorized, "ADMIN_REFRESH_TOKEN_INVALID")
 }
 
 func TestAdminPendingEnrollmentSurvivesSetupRetriesAndPasswordLogins(t *testing.T) {
@@ -142,10 +165,9 @@ func TestAdminPendingEnrollmentSurvivesSetupRetriesAndPasswordLogins(t *testing.
 	alreadyEnabled := call(t, "POST", "/admin/auth/totp/setup", "", database.SeedDemoTenantUUID, map[string]string{
 		"temp_token": secondToken,
 	})
-	expectStatus(t, alreadyEnabled, http.StatusBadRequest)
-	if str(alreadyEnabled.Body["error"]) != "TOTP is already enabled for this admin" {
-		t.Fatal("enrolled admins must be directed to verification without a replacement QR")
-	}
+	// Enrolled admins must be directed to verification without a replacement QR; the
+	// frontend keys off this stable name, never the message text.
+	expectError(t, alreadyEnabled, http.StatusConflict, "ADMIN_TOTP_ALREADY_ENABLED")
 }
 
 func TestAdminConcurrentSetupUsesOneEnrollmentSecret(t *testing.T) {

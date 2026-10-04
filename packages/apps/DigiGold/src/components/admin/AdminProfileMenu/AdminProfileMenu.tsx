@@ -3,7 +3,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import Link from 'next/link';
 import { useAppSelector } from '@/store/hooks';
-import { selectSessionUser } from '@/store/session/session.slice';
+import { selectAdminUser } from '@/store/session/session.slice';
 import { useAdminLogout } from '@/features/admin-auth/hooks/useAdminLogout';
 import { ROUTES } from '@/lib/constants/routes';
 import { ChevronDownIcon, KeyIcon, LogOutIcon, UserIcon } from '@/components/common/icons/Icons';
@@ -20,7 +20,7 @@ function getInitials(name: string): string {
 }
 
 export function AdminProfileMenu() {
-  const user = useAppSelector(selectSessionUser);
+  const user = useAppSelector(selectAdminUser);
   const logout = useAdminLogout();
   const displayName = user?.name ?? 'Admin';
 

@@ -1,4 +1,8 @@
-import { apiClient, refreshAdminTokens } from '@/lib/api/client';
+import {
+  apiClient,
+  isNormalizedApiError,
+  refreshAdminTokens,
+} from '@/lib/api/client';
 import {
   getAdminRefreshToken,
   getAdminSessionId,
@@ -67,15 +71,12 @@ export const adminAuthService = {
       }
       return response.data;
     } catch (error) {
-      // Login supplies no enrollment flag. Only this specific setup response
-      // means the admin should use their existing authenticator.
+      // Login supplies no enrollment flag. Only this setup response means the admin
+      // should use their existing authenticator. Matched on MainServer's stable error
+      // name, never the message text, which may be reworded or translated.
       if (
-        typeof error === 'object' &&
-        error !== null &&
-        'status' in error &&
-        error.status === 400 &&
-        'message' in error &&
-        error.message === 'TOTP is already enabled for this admin'
+        isNormalizedApiError(error) &&
+        error.code === 'ADMIN_TOTP_ALREADY_ENABLED'
       ) {
         return null;
       }
@@ -104,6 +105,19 @@ export const adminAuthService = {
     }
     storeAdminTokens(tokens);
     return tokens;
+  },
+
+  // Revokes the session's refresh token on MainServer. Best effort: logout must still
+  // complete locally when offline, so failures are swallowed here.
+  logout: async (refreshToken: string | null): Promise<void> => {
+    if (shouldUseMockAdminAuth() || !refreshToken) return;
+    try {
+      await apiClient.post('/admin/auth/logout', {
+        refresh_token: refreshToken,
+      });
+    } catch {
+      // The token still expires on its own; nothing more the client can do.
+    }
   },
 
   refresh: async (): Promise<AdminTokenPair> => {

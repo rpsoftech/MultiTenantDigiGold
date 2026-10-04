@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from 'react-redux';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/common/Button/Button';
 import { adminAuthService } from '@/features/admin-auth/admin-auth.service';
 import { adminSessionUser } from '@/features/admin-auth/admin-session';
 import {
@@ -16,10 +17,11 @@ import { ROUTES } from '@/lib/constants/routes';
 import type { RootState } from '@/store';
 import { useAppSelector } from '@/store/hooks';
 import {
+  adminSessionCleared,
+  adminSessionEstablished,
   selectIsAdmin,
-  sessionCleared,
-  sessionEstablished,
 } from '@/store/session/session.slice';
+import styles from './AdminSessionGuard.module.scss';
 
 export function AdminSessionGuard({ children }: { children: React.ReactNode }) {
   const store = useStore<RootState>();
@@ -42,9 +44,7 @@ export function AdminSessionGuard({ children }: { children: React.ReactNode }) {
       clearAdminTokens();
       void queryClient.cancelQueries({ queryKey: ['admin'] });
       queryClient.removeQueries({ queryKey: ['admin'] });
-      if (store.getState().session.user?.role === 'admin') {
-        store.dispatch(sessionCleared());
-      }
+      store.dispatch(adminSessionCleared());
       router.replace(ROUTES.adminLogin);
     }
 
@@ -53,7 +53,7 @@ export function AdminSessionGuard({ children }: { children: React.ReactNode }) {
       if (!token) return false;
       try {
         const user = adminSessionUser(token);
-        store.dispatch(sessionEstablished(user));
+        store.dispatch(adminSessionEstablished(user));
         setStatus('ready');
         return true;
       } catch {
@@ -114,26 +114,26 @@ export function AdminSessionGuard({ children }: { children: React.ReactNode }) {
   if (status === 'ready' && isAdmin) return children;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+    <main className={styles.screen}>
       {status === 'failed' ? (
-        <div className="max-w-sm space-y-4 text-center">
-          <p role="alert" className="text-sm text-slate-600">
+        <div className={styles.panel}>
+          <p role="alert" className={styles.message}>
             We couldn’t restore your admin session. Check your connection and
             try again.
           </p>
-          <button
+          <Button
             type="button"
-            className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white"
+            variant="outlined"
             onClick={() => {
               setStatus('checking');
               setAttempt((value) => value + 1);
             }}
           >
             Try again
-          </button>
+          </Button>
         </div>
       ) : (
-        <p role="status" className="text-sm text-slate-600">
+        <p role="status" className={styles.message}>
           Checking your admin session…
         </p>
       )}

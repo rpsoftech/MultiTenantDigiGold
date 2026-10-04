@@ -344,6 +344,44 @@ describe('admin API authentication', () => {
     expect(getAdminRefreshToken()).toBeNull();
   });
 
+  it('adopts a pair another tab rotated when its own single-use refresh is rejected', async () => {
+    const sentTokens: unknown[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/admin/auth/refresh') {
+        // Another tab of the same session refreshed first: it stored the rotated pair, so
+        // MainServer has already consumed the refresh token this tab is sending.
+        window.localStorage.setItem(
+          'admin_access_token',
+          rotatedTokens.access_token,
+        );
+        window.localStorage.setItem(
+          'admin_refresh_token',
+          rotatedTokens.refresh_token,
+        );
+        throw httpError(config, 401, {
+          message: 'Your admin session has expired. Please sign in again.',
+          name: 'ADMIN_REFRESH_TOKEN_INVALID',
+        });
+      }
+      sentTokens.push(config.headers.get('X-Api-Token'));
+      if (config.headers.get('X-Api-Token') === initialTokens.access_token) {
+        throw httpError(config, 401);
+      }
+      return response(config, { ok: true });
+    };
+
+    await expect(apiClient.get('/admin/users')).resolves.toMatchObject({
+      data: { ok: true },
+    });
+    expect(sentTokens).toEqual([
+      initialTokens.access_token,
+      rotatedTokens.access_token,
+    ]);
+    // The session survives: nothing was cleared.
+    expect(getAdminAccessToken()).toBe(rotatedTokens.access_token);
+    expect(getAdminRefreshToken()).toBe(rotatedTokens.refresh_token);
+  });
+
   it('does not clear a newer session when an older refresh fails', async () => {
     const refreshStarted = deferred<void>();
     const completeRefresh = deferred<void>();

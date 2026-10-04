@@ -2,6 +2,7 @@ package admin
 
 import (
 	"github.com/gofiber/fiber/v3"
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/service"
 )
@@ -24,6 +25,17 @@ func (c *AdminAuthController) RegisterRoutes(router fiber.Router) {
 	authGroup.Post("/totp/setup", c.TOTPSetup)
 	authGroup.Post("/totp/verify", c.TOTPVerify)
 	authGroup.Post("/refresh", c.Refresh)
+	authGroup.Post("/logout", c.Logout)
+}
+
+// Every handler returns its error to GlobalErrorHandler rather than writing the response
+// itself: client errors keep their status and stable Name, and anything else becomes a
+// generic 500 (reported to monitoring) instead of a 401 carrying internal error text.
+var errInvalidAuthBody = &interfaces.RequestError{
+	StatusCode: fiber.StatusBadRequest,
+	Code:       interfaces.ERROR_INVALID_INPUT,
+	Name:       "INVALID_INPUT",
+	Message:    "Invalid request body",
 }
 
 type AdminLoginRequest struct {
@@ -34,7 +46,7 @@ type AdminLoginRequest struct {
 func (c *AdminAuthController) Login(ctx fiber.Ctx) error {
 	var req AdminLoginRequest
 	if err := ctx.Bind().Body(&req); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		return errInvalidAuthBody
 	}
 
 	// Tenant resolved from X-Tenant-ID header by TenantInterceptor — never from JSON body.
@@ -57,12 +69,12 @@ type TOTPSetupRequest struct {
 func (c *AdminAuthController) TOTPSetup(ctx fiber.Ctx) error {
 	var req TOTPSetupRequest
 	if err := ctx.Bind().Body(&req); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		return errInvalidAuthBody
 	}
 
 	_, uri, err := c.adminAuthService.SetupTOTP(ctx.Context(), req.TempToken)
 	if err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{
@@ -78,13 +90,13 @@ type TOTPVerifyRequest struct {
 func (c *AdminAuthController) TOTPVerify(ctx fiber.Ctx) error {
 	var req TOTPVerifyRequest
 	if err := ctx.Bind().Body(&req); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		return errInvalidAuthBody
 	}
 
 	clientIP := ctx.IP()
 	accessToken, refreshToken, err := c.adminAuthService.VerifyTOTP(ctx.Context(), req.TempToken, req.Code, clientIP)
 	if err != nil {
-		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{
@@ -100,16 +112,33 @@ type AdminRefreshRequest struct {
 func (c *AdminAuthController) Refresh(ctx fiber.Ctx) error {
 	var req AdminRefreshRequest
 	if err := ctx.Bind().Body(&req); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		return errInvalidAuthBody
 	}
 
 	accessToken, refreshToken, err := c.adminAuthService.RefreshAdminTokens(ctx.Context(), req.RefreshToken)
 	if err != nil {
-		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+		return err
 	}
 
 	return ctx.JSON(fiber.Map{
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 	})
+}
+
+type AdminLogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// Logout revokes the session's refresh token server-side. Clearing tokens in the browser
+// alone left a copied refresh token usable until it expired (7 days).
+func (c *AdminAuthController) Logout(ctx fiber.Ctx) error {
+	var req AdminLogoutRequest
+	if err := ctx.Bind().Body(&req); err != nil {
+		return errInvalidAuthBody
+	}
+	if err := c.adminAuthService.RevokeAdminRefreshToken(ctx.Context(), req.RefreshToken); err != nil {
+		return err
+	}
+	return ctx.JSON(fiber.Map{"success": true})
 }
