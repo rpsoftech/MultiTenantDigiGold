@@ -41,7 +41,7 @@ export type TradeHistoryEntry = {
 
 export type TradeHistoryResult = {
   success: boolean;
-  data: TradeHistoryEntry[];
+  data: TradeHistoryEntry[] | null; // null for an empty history on older MainServer builds
   page: number;
   limit: number;
 };

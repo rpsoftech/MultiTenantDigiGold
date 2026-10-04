@@ -11,7 +11,7 @@ import type { AppStore } from '@/store';
 import { makeStore } from '@/store';
 import { sessionCleared, sessionEstablished } from '@/store/session/session.slice';
 import { tenantConfigReceived } from '@/store/tenant/tenant.slice';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
@@ -38,6 +38,7 @@ function TenantThemeSync({ config }: { config: TenantConfig }) {
 function SessionLifecycle({ store }: { store: AppStore }) {
   const router = useRouter();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const restoredUser = restoreSessionUser();
@@ -46,6 +47,8 @@ function SessionLifecycle({ store }: { store: AppStore }) {
     return onSessionExpired((reason) => {
       const { isAuthenticated, user } = store.getState().session;
       store.dispatch(sessionCleared());
+      // Same reason as useLogout: don't leave this user's cached data for the next login.
+      if (isAuthenticated) queryClient.clear();
 
       // Concurrent 401s each fire this event — only the first, which still sees a live
       // session, tells the user why they were signed out.
@@ -61,7 +64,7 @@ function SessionLifecycle({ store }: { store: AppStore }) {
         router.push(user?.role === 'admin' ? ROUTES.adminLogin : ROUTES.login);
       }
     });
-  }, [store, router, showToast]);
+  }, [store, router, showToast, queryClient]);
 
   return null;
 }

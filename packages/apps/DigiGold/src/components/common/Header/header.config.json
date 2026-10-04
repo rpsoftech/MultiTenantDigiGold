@@ -38,7 +38,7 @@
           "id": "vault-security",
           "label": "Security",
           "url": "/vault/security",
-          "enabled": true,
+          "enabled": false,
           "order": 2
         }
       ]
