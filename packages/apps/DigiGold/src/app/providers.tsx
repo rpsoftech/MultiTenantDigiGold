@@ -1,20 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Provider } from 'react-redux';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { resolveTenantConfig } from '@/features/tenant/tenant.service';
-import { makeStore } from '@/store';
-import { tenantConfigReceived } from '@/store/tenant/tenant.slice';
-import { sessionEstablished, sessionCleared } from '@/store/session/session.slice';
-import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
-import { restoreSessionUser } from '@/features/auth/session-restore';
-import { onSessionExpired } from '@/lib/auth/sessionEvents';
 import { ToastProvider, useToast } from '@/components/common/Toast/Toast';
-import { ROUTES } from '@/lib/constants/routes';
+import { restoreSessionUser } from '@/features/auth/session-restore';
+import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
+import { resolveTenantConfig } from '@/features/tenant/tenant.service';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
+import { onSessionExpired } from '@/lib/auth/sessionEvents';
+import { ROUTES } from '@/lib/constants/routes';
 import type { AppStore } from '@/store';
+import { makeStore } from '@/store';
+import { sessionCleared, sessionEstablished } from '@/store/session/session.slice';
+import { tenantConfigReceived } from '@/store/tenant/tenant.slice';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Provider } from 'react-redux';
 
 type ProvidersProps = {
   children: React.ReactNode;
