@@ -1,8 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Card } from '@/components/common/Card/Card';
@@ -10,8 +8,7 @@ import { Input } from '@/components/common/Input/Input';
 import { Loader } from '@/components/common/Loader/Loader';
 import { Button } from '@/components/common/Button/Button';
 import { useToast } from '@/components/common/Toast/Toast';
-import { useSession } from '@/features/auth/hooks/useSession';
-import { useSessionResolved } from '@/features/auth/hooks/useSessionResolved';
+import { useSessionGate } from '@/features/auth/hooks/useSessionGate';
 import { useKycStatus } from '@/features/kyc/hooks/useKycStatus';
 import { useSubmitKyc } from '@/features/kyc/hooks/useSubmitKyc';
 import { KYC_REQUIRED_ABOVE_INR } from '@/features/kyc/kyc.constants';
@@ -37,20 +34,12 @@ function StatusCard({ title, body }: { title: string; body: string }) {
 }
 
 export function Kyc() {
-  const router = useRouter();
-  // `isAuthenticated`, not `user`: registrationStarted creates a user for someone halfway
-  // through sign-up, who has no access token and would only get a 401 on submit.
-  const { isAuthenticated } = useSession();
-  // isAuthenticated is false until SessionLifecycle restores a stored session after mount,
-  // so wait for that before deciding the visitor is signed out.
-  const sessionResolved = useSessionResolved();
+  // Waits for session restore, then redirects anyone without an access token (including a
+  // half-registered visitor) to login.
+  const { isReady } = useSessionGate();
   const { status, isError, isFetching, refetch } = useKycStatus();
 
-  useEffect(() => {
-    if (sessionResolved && !isAuthenticated) router.replace(ROUTES.login);
-  }, [sessionResolved, isAuthenticated, router]);
-
-  if (isAuthenticated && isError && !status) {
+  if (isReady && isError && !status) {
     return (
       <div className={styles.statusPage}>
         <Card className={cn(styles.card, styles.statusCard)}>
@@ -64,7 +53,7 @@ export function Kyc() {
     );
   }
 
-  if (!isAuthenticated || !status) {
+  if (!isReady || !status) {
     return (
       <div className={styles.statusPage}>
         <Loader label="Loading your KYC status" />

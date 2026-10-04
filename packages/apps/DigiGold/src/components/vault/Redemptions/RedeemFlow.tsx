@@ -21,7 +21,7 @@ import {
   formatGrams,
 } from '@/features/redemption/redemption.utils';
 import type { Redemption } from '@/features/redemption/redemption.types';
-import type { NormalizedApiError } from '@/lib/api/client';
+import { describeApiError } from '@/lib/api/client';
 import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils/cn';
 import { PickupCodeCard } from './PickupCodeCard';
@@ -71,11 +71,10 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
       });
       setStep({ name: 'success', redemption: result.redemption });
     } catch (error) {
-      const normalized = error as NormalizedApiError;
       showToast({
         variant: 'danger',
         title: 'Could not create redemption',
-        description: normalized.message ?? 'Please try again in a moment.',
+        description: describeApiError(error) ?? 'Please try again in a moment.',
       });
     }
   };

@@ -21,6 +21,7 @@ import { useSession } from '@/features/auth/hooks/useSession';
 import { useInitiateBuy } from '@/features/trade/hooks/useInitiateBuy';
 import { useBuySettlement } from '@/features/trade/hooks/useBuySettlement';
 import { KYC_STATUS_QUERY_KEY, useKycStatus } from '@/features/kyc/hooks/useKycStatus';
+import { PORTFOLIO_QUERY_KEY } from '@/features/portfolio/hooks/usePortfolio';
 import { KYC_REQUIRED_ABOVE_INR } from '@/features/kyc/kyc.constants';
 import {
   loadRazorpayScript,
@@ -233,7 +234,8 @@ export function BuyGold() {
           : 'Your purchase is complete.',
       });
       queryClient.invalidateQueries({ queryKey: ['trade', 'history'] });
-      queryClient.invalidateQueries({ queryKey: ['user', 'portfolio'] });
+      // The vault balance (and the redeemable amount) just changed.
+      queryClient.invalidateQueries({ queryKey: PORTFOLIO_QUERY_KEY });
       resetForm();
     } else if (settlementStatus === 'timeout') {
       setStage('timeout');

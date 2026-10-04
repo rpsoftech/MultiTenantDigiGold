@@ -4,13 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
-import { useSession } from '@/features/auth/hooks/useSession';
+import { VaultUnavailableState } from '@/components/portfolio/VaultStates/VaultStates';
+import { useSessionGate } from '@/features/auth/hooks/useSessionGate';
+import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useTradeHistory } from '@/features/trade/hooks/useTradeHistory';
 import type { TradeEventType } from '@/features/trade/trade.types';
-import { getAccessToken } from '@/lib/auth/tokenStorage';
 import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils/cn';
-import { isJwtExpired } from '@/lib/utils/jwt';
 import { PassbookEntry } from './PassbookEntry';
 import styles from './Passbook.module.scss';
 
@@ -24,17 +24,11 @@ const FILTERS: { value: FilterValue; label: string }[] = [
   { value: 'ADMIN_ADJUSTMENT', label: 'Adjustments' },
 ];
 
-// After a full refresh, isAuthenticated stays false until SessionLifecycle restores the
-// session in an effect — so a stored, unexpired token means "restore pending", not
-// "logged out". Only redirect once neither exists.
-function hasUsableStoredToken(): boolean {
-  const token = getAccessToken();
-  return token !== null && !isJwtExpired(token);
-}
-
 export function Passbook() {
   const router = useRouter();
-  const { isAuthenticated } = useSession();
+  const tenantConfig = useTenantConfig();
+  const { isReady } = useSessionGate();
+  const vaultEnabled = tenantConfig?.activeModules.vault ?? true;
   const [filter, setFilter] = useState<FilterValue>('ALL');
   const {
     entries,
@@ -43,12 +37,8 @@ export function Passbook() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useTradeHistory({ enabled: isAuthenticated });
+  } = useTradeHistory({ enabled: isReady && vaultEnabled });
   const sentinelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isAuthenticated && !hasUsableStoredToken()) router.replace(ROUTES.login);
-  }, [isAuthenticated, router]);
 
   const filteredEntries =
     filter === 'ALL'
@@ -75,6 +65,12 @@ export function Passbook() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // The nav hides vault pages for a tenant without the module; a typed or bookmarked URL
+  // gets the same explanation as /vault instead of a working passbook.
+  if (!vaultEnabled) {
+    return <VaultUnavailableState onGoHome={() => router.push(ROUTES.home)} />;
+  }
 
   const emptyMessage =
     filter === 'ALL'
@@ -103,7 +99,7 @@ export function Passbook() {
         ))}
       </div>
 
-      {!isAuthenticated || isLoading ? (
+      {!isReady || isLoading ? (
         <div className={styles.stateRow}>
           <Loader label="Loading passbook" />
         </div>

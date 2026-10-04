@@ -1,24 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from './useSession';
+import { useSessionResolved } from './useSessionResolved';
 import { ROUTES } from '@/lib/constants/routes';
 
-// The session is restored from the stored token in an effect after the first render, so
-// `user` is null on first paint even for a logged-in customer. Screens that choose what to
-// render from session data wait on `isReady` first, otherwise the wrong state flashes.
-// A visitor with no session once the check settles is sent to login.
+// For pages that are only meaningful to a signed-in customer. Waits for the stored session
+// to be restored (useSessionResolved) so a logged-in user doesn't flash a signed-out state
+// on refresh, then sends anyone still unauthenticated to login.
+// Gates on `isAuthenticated`, not `user`: registrationStarted creates a user for someone
+// halfway through sign-up, who has no access token yet.
 export function useSessionGate() {
   const router = useRouter();
-  const { user } = useSession();
-  const [isChecked, setIsChecked] = useState(false);
+  const { user, isAuthenticated } = useSession();
+  const resolved = useSessionResolved();
 
   useEffect(() => {
-    setIsChecked(true);
-  }, []);
+    if (resolved && !isAuthenticated) router.replace(ROUTES.login);
+  }, [resolved, isAuthenticated, router]);
 
-  useEffect(() => {
-    if (isChecked && !user) router.replace(ROUTES.login);
-  }, [isChecked, user, router]);
-
-  return { user, isReady: isChecked && Boolean(user) };
+  return { user, isReady: resolved && isAuthenticated };
 }
