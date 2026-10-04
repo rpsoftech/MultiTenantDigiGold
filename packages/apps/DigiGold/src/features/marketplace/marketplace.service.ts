@@ -4,11 +4,13 @@ import type { Category, Product } from './marketplace.types';
 import {
   mockGetCategories,
   mockGetCategoryProducts,
-  mockGetAllProducts,
   mockGetProduct,
   mockGetTrendingProducts,
 } from './marketplace.mock';
 
+// MainServer has no /marketplace/* endpoints yet; these flags select the mock catalogue.
+// Everything here is called from client components only — never at build time — so the
+// static export builds the same with either setting.
 const USE_MOCK_CATEGORY_PRODUCTS =
   process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE_CATEGORY === 'true';
 const USE_MOCK_MARKETPLACE =
@@ -36,7 +38,7 @@ export const marketplaceService = {
       return mockGetCategoryProducts(categoryId);
     }
     const response = await apiClient.get<ApiResponse<Product[]>>(
-      `/marketplace/categories/${categoryId}/products`,
+      `/marketplace/categories/${encodeURIComponent(categoryId)}/products`,
     );
     return response.data.data;
   },
@@ -44,10 +46,8 @@ export const marketplaceService = {
   getProduct: async (productId: string): Promise<Product | null> => {
     if (USE_MOCK_CATEGORY_PRODUCTS) return mockGetProduct(productId);
     const response = await apiClient.get<ApiResponse<Product>>(
-      `/marketplace/products/${productId}`,
+      `/marketplace/products/${encodeURIComponent(productId)}`,
     );
     return response.data.data;
   },
-
-  getMockProducts: mockGetAllProducts,
 };

@@ -16,9 +16,10 @@
     {
       "id": "jewellery",
       "label": "Jewellery",
-      "url": "/jewellery/category/bangles",
+      "url": "/jewellery",
       "enabled": true,
-      "order": 2
+      "order": 2,
+      "module": "ecommerce"
     },
     {
       "id": "vault",

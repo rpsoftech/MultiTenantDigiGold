@@ -1,27 +1,15 @@
-import CategoryPageClient from '../../../marketplace/category/[categoryId]/CategoryPageClient';
-
-const CATEGORY_IDS = [
-  'anklets',
-  'bangles',
-  'bracelet',
-  'chain',
-  'chain-pendant',
-  'kada',
-  'watch',
-  'tanmaniya',
-  'pendant-set',
-  'necklace',
-  'rings',
-];
+import { CategoryCatalogue } from '@/components/jewellery/CategoryCatalogue/CategoryCatalogue';
+import { JEWELLERY_CATEGORIES } from '@/features/marketplace/marketplace.catalogue';
 
 export function generateStaticParams() {
-  return CATEGORY_IDS.map((categoryId) => ({ categoryId }));
+  return JEWELLERY_CATEGORIES.map(({ id }) => ({ categoryId: id }));
 }
 
-export default function JewelleryCategoryPage({
+export default async function JewelleryCategoryPage({
   params,
 }: {
   params: Promise<{ categoryId: string }>;
 }) {
-  return <CategoryPageClient params={params} />;
+  const { categoryId } = await params;
+  return <CategoryCatalogue categoryId={categoryId} />;
 }

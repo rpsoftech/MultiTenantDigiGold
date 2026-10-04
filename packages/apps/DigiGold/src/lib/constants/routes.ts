@@ -8,8 +8,11 @@ export const ROUTES = {
   redemptions: '/vault/redemptions',
   kyc: '/kyc',
   sip: '/invest/sip',
-  jewelry: '/jewellery/category/bangles',
-  marketplace: '/jewellery/category/bangles',
+  // /jewellery redirects to the default category (DEFAULT_JEWELLERY_CATEGORY_ID); category
+  // and product URLs come from features/marketplace/marketplace.catalogue.ts.
+  jewellery: '/jewellery',
+  jewelry: '/jewellery',
+  marketplace: '/jewellery',
   aboutUs: '/about-us',
   vaultSecurity: '/vault/security',
   privacyPolicy: '/privacy-policy',

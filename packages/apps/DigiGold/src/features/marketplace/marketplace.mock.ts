@@ -47,7 +47,7 @@ const createProduct = (
     .replace('-', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase()),
   isNew: index % 3 === 1,
-  url: `/jewellery/${category}-design-${index}`,
+  isBisHallmarked: true,
   ...overrides,
 });
 
@@ -61,8 +61,9 @@ const MOCK_TRENDING_PRODUCTS: Product[] = [
     price: 145000,
     currency: 'INR',
     ...PRODUCT_DEFAULTS,
+    category: 'Necklace',
+    isBisHallmarked: true,
     isNew: true,
-    url: '/jewellery/heritage-necklace-22k',
   },
   {
     id: 'minimalist-bangle-24k',
@@ -73,8 +74,8 @@ const MOCK_TRENDING_PRODUCTS: Product[] = [
     price: 85500,
     currency: 'INR',
     ...PRODUCT_DEFAULTS,
+    isBisHallmarked: true,
     isNew: false,
-    url: '/jewellery/minimalist-bangle-24k',
   },
 ];
 
@@ -146,23 +147,23 @@ const MOCK_CATEGORY_PRODUCTS: Product[] = [
 export async function mockGetCategoryProducts(
   categoryId: string,
 ): Promise<Product[]> {
-  const products = MOCK_CATEGORY_PRODUCTS.filter(
+  // An unknown category is empty, not "everything" — showing every product under the
+  // wrong heading was the old fallback.
+  return MOCK_CATEGORY_PRODUCTS.filter(
     (product) =>
       product.category.toLowerCase().replace(' ', '-') === categoryId,
   );
-  return products.length > 0 ? products : MOCK_CATEGORY_PRODUCTS;
 }
 
 export async function mockGetProduct(
   productId: string,
 ): Promise<Product | null> {
   return (
-    MOCK_CATEGORY_PRODUCTS.find((product) => product.id === productId) ?? null
+    // Trending products are linked from the home page, so they must resolve too.
+    [...MOCK_CATEGORY_PRODUCTS, ...MOCK_TRENDING_PRODUCTS].find(
+      (product) => product.id === productId,
+    ) ?? null
   );
-}
-
-export function mockGetAllProducts(): Product[] {
-  return MOCK_CATEGORY_PRODUCTS;
 }
 
 const MOCK_CATEGORIES: Category[] = [

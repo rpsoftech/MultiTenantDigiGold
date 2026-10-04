@@ -14,8 +14,9 @@ export type Product = {
   gender: 'Ladies';
   collection: string;
   gifts: 'For Her' | 'For Him';
+  // Only shown as a certification claim when the catalogue says so — never assumed.
+  isBisHallmarked?: boolean;
   isNew: boolean;
-  url: string;
 };
 
 export type Category = {

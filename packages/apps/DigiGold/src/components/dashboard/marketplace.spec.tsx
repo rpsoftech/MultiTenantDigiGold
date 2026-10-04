@@ -76,7 +76,6 @@ describe.each([
                 collection: 'Everyday',
                 gifts: 'For Her',
                 isNew: false,
-                url: '/marketplace/ring-1',
               },
             ],
       ),
