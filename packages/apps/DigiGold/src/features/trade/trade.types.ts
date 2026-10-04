@@ -13,7 +13,7 @@ export type InitiateBuyResult = {
   amount: number;
   weight_grams: number;
   final_rate_per_gram: number;
-  quote_expires_at: string;
+  quote_expires_at: number; // unix seconds (TradeQuote.ExpiresAt), not an ISO string
 };
 
 // Subset of MainServerGo's models.GoldTransactionLedger — only the fields the buy flow

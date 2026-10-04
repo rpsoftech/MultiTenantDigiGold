@@ -11,7 +11,7 @@ import { sessionEstablished, sessionCleared } from '@/store/session/session.slic
 import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
 import { restoreSessionUser } from '@/features/auth/session-restore';
 import { onSessionExpired } from '@/lib/auth/sessionEvents';
-import { ToastProvider } from '@/components/common/Toast/Toast';
+import { ToastProvider, useToast } from '@/components/common/Toast/Toast';
 import { ROUTES } from '@/lib/constants/routes';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
 import type { AppStore } from '@/store';
@@ -37,16 +37,31 @@ function TenantThemeSync({ config }: { config: TenantConfig }) {
 // apiClient signaling that the session is no longer valid (expired token, backend 401).
 function SessionLifecycle({ store }: { store: AppStore }) {
   const router = useRouter();
+  const { showToast } = useToast();
 
   useEffect(() => {
     const restoredUser = restoreSessionUser();
     if (restoredUser) store.dispatch(sessionEstablished(restoredUser));
 
-    return onSessionExpired(() => {
+    return onSessionExpired((reason) => {
+      const { isAuthenticated, user } = store.getState().session;
       store.dispatch(sessionCleared());
-      router.push(ROUTES.login);
+
+      // Concurrent 401s each fire this event — only the first, which still sees a live
+      // session, tells the user why they were signed out.
+      if (isAuthenticated) {
+        showToast({
+          variant: 'danger',
+          title: 'Session expired',
+          description: 'Please sign in again to continue.',
+        });
+      }
+
+      if (reason === 'rejected') {
+        router.push(user?.role === 'admin' ? ROUTES.adminLogin : ROUTES.login);
+      }
     });
-  }, [store, router]);
+  }, [store, router, showToast]);
 
   return null;
 }
