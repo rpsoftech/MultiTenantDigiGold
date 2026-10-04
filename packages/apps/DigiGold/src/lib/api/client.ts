@@ -1,4 +1,7 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
+import { getAccessToken, clearTokens } from '@/lib/auth/tokenStorage';
+import { emitSessionExpired } from '@/lib/auth/sessionEvents';
+import { isJwtExpired } from '@/lib/utils/jwt';
 
 import {
   clearAdminTokens,
@@ -28,6 +31,12 @@ export function normalizeApiBaseURL(
   return `${trimmedBaseURL}/api/v1`;
 }
 
+// MainServer's error body is { success, message, code: <int>, name: <string>, extra }
+// (see interfaces/req-interfaces.go RequestError); some handlers still answer
+// { error: <string> }. `name` (e.g. ERROR_RECENT_OTP_REQ_EXIST, RATE_LIMITED) is the
+// stable identifier callers should switch on — prefer it over axios's own transport-level
+// error.code, which only ever says something like "ERR_BAD_REQUEST". Errors that are
+// already normalized (e.g. a failed admin refresh re-thrown by a retry) pass through.
 function normalizeApiError(error: unknown): NormalizedApiError {
   if (
     !axios.isAxiosError(error) &&
@@ -45,7 +54,7 @@ function normalizeApiError(error: unknown): NormalizedApiError {
 
   const axiosError = axios.isAxiosError(error) ? error : undefined;
   const responseData = axiosError?.response?.data as
-    | { message?: unknown; error?: unknown }
+    | { message?: unknown; error?: unknown; name?: unknown }
     | undefined;
 
   return {
@@ -57,11 +66,18 @@ function normalizeApiError(error: unknown): NormalizedApiError {
           : error instanceof Error
             ? error.message
             : 'The request failed.',
-    code: axiosError?.code ?? 'UNKNOWN_ERROR',
+    code:
+      typeof responseData?.name === 'string'
+        ? responseData.name
+        : (axiosError?.code ?? 'UNKNOWN_ERROR'),
     status: axiosError?.response?.status ?? null,
   };
 }
 
+// Admin and customer sessions are separate: /admin/* (except its public auth routes) uses
+// the admin tokens in admin-tokens.ts with refresh-and-retry; everything else uses the
+// customer token in tokenStorage.ts, which has no refresh endpoint and expires the
+// session instead.
 function isProtectedAdminEndpoint(url: string | undefined): boolean {
   return url?.startsWith('/admin/') === true && !isPublicAuthEndpoint(url);
 }
@@ -79,6 +95,13 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
+  const tenantUuid = process.env.NEXT_PUBLIC_TENANT_UUID;
+  if (tenantUuid) config.headers.set('X-Tenant-ID', tenantUuid);
+  // Never forward a token the caller (or a retried config) carried in; set it fresh below.
+  config.headers.delete('X-Api-Token');
+
+  if (isPublicAuthEndpoint(config.url)) return config;
+
   if (isProtectedAdminEndpoint(config.url)) {
     const adminConfig = config as AdminRetryConfig;
     const sessionId = getAdminSessionId();
@@ -87,19 +110,22 @@ apiClient.interceptors.request.use((config) => {
     } else if (adminConfig.adminSessionId !== sessionId) {
       throw adminSessionChangedError();
     }
+
+    // Never fall back to the customer token for an admin route.
+    const adminToken = getAdminAccessToken();
+    if (adminToken) config.headers.set('X-Api-Token', adminToken);
+    return config;
   }
 
-  const tenantUuid = process.env.NEXT_PUBLIC_TENANT_UUID;
-  const accessToken = isProtectedAdminEndpoint(config.url)
-    ? getAdminAccessToken()
-    : typeof window !== 'undefined'
-      ? window.localStorage.getItem('access_token')
-      : null;
-
-  if (tenantUuid) config.headers.set('X-Tenant-ID', tenantUuid);
-  config.headers.delete('X-Api-Token');
-  if (accessToken && !isPublicAuthEndpoint(config.url)) {
+  const accessToken = getAccessToken();
+  if (accessToken && !isJwtExpired(accessToken)) {
     config.headers.set('X-Api-Token', accessToken);
+  } else if (accessToken) {
+    // Token expired client-side — there's no customer-facing refresh endpoint to fall
+    // back to. Clear it without redirecting: this request may be a public one, and if it
+    // isn't, the server's 401 below triggers the redirect.
+    clearTokens();
+    emitSessionExpired('expired');
   }
 
   return config;
@@ -216,6 +242,7 @@ type AdminRetryConfig = InternalAxiosRequestConfig & {
   adminSessionId?: string | null;
 };
 
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: unknown) => {
@@ -224,14 +251,18 @@ apiClient.interceptors.response.use(
       | AdminRetryConfig
       | undefined;
 
-    if (
-      normalizedError.status !== 401 ||
-      !config ||
-      !isProtectedAdminEndpoint(config.url)
-    ) {
+    if (normalizedError.status !== 401 || !config) throw normalizedError;
+
+    // Customer routes: no refresh endpoint exists, so a 401 ends the customer session.
+    if (!isProtectedAdminEndpoint(config.url)) {
+      if (!isPublicAuthEndpoint(config.url)) {
+        clearTokens();
+        emitSessionExpired('rejected');
+      }
       throw normalizedError;
     }
 
+    // Admin routes: refresh once and retry, without ever touching the customer session.
     if (config.adminSessionId !== getAdminSessionId()) {
       throw adminSessionChangedError();
     }
@@ -258,3 +289,45 @@ apiClient.interceptors.response.use(
     return apiClient.request(config);
   },
 );
+
+// The interceptor above rejects with a plain NormalizedApiError object, not an Error, so
+// `error instanceof Error` is false for every API failure. Without this guard, consumers
+// silently fall back to generic copy and hide the real reason (offline, 401, 500, timeout).
+export function isNormalizedApiError(
+  error: unknown,
+): error is NormalizedApiError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    'code' in error &&
+    'status' in error
+  );
+}
+
+// Turns a failed request into something a customer can act on. Axios's own messages
+// ("Network Error", "timeout of 15000ms exceeded") are developer-facing, so they are mapped
+// to plain language; a server-supplied message is passed through untouched since the API
+// already writes them for humans.
+export function describeApiError(error: unknown): string | null {
+  if (!isNormalizedApiError(error)) {
+    if (error instanceof Error) return error.message;
+    return null;
+  }
+
+  if (error.status === null) {
+    return error.code === 'ECONNABORTED'
+      ? 'The server took too long to respond. Please try again.'
+      : "Can't reach the server. Check your connection and try again.";
+  }
+
+  if (error.status === 401) {
+    return 'Your session has expired. Please sign in again.';
+  }
+
+  if (error.status >= 500) {
+    return 'The server is having trouble right now. Please try again shortly.';
+  }
+
+  return error.message;
+}

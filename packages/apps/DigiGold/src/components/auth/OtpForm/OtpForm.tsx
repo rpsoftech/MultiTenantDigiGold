@@ -13,7 +13,17 @@ import { useRequestOtp } from '@/features/auth/hooks/useRequestOtp';
 import { OTP_PATTERN } from '@/lib/constants/regex';
 import { ROUTES } from '@/lib/constants/routes';
 import { formatMobileNumber } from '@/lib/utils/formatMobileNumber';
+import { isNormalizedApiError } from '@/lib/api/client';
 import styles from './OtpForm.module.scss';
+
+// Every OTP rate-limit case (30s resend cooldown, max resend attempts, max verify
+// attempts, generic per-IP limiter) returns HTTP 429 with a real, user-facing `message`
+// from MainServer (see interfaces/error_translator.go) — show that instead of a generic
+// string so the user knows it's a cooldown/lockout, not a wrong code.
+function rateLimitMessage(error: unknown): string | undefined {
+  if (!isNormalizedApiError(error) || error.status !== 429) return undefined;
+  return error.message;
+}
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -48,11 +58,12 @@ export function OtpForm({
       router.push(
         successRoute ?? (result.is_registered ? ROUTES.home : ROUTES.profileSetup)
       );
-    } catch {
+    } catch (error) {
+      const cooldownMessage = rateLimitMessage(error);
       showToast({
         variant: 'danger',
-        title: 'Incorrect OTP',
-        description: 'Please check the code and try again.',
+        title: cooldownMessage ? 'Too many attempts' : 'Incorrect OTP',
+        description: cooldownMessage ?? 'Please check the code and try again.',
       });
     }
   };
@@ -69,8 +80,13 @@ export function OtpForm({
         title: 'OTP resent',
         description: result.dev_otp ? `Local code: ${result.dev_otp}` : undefined,
       });
-    } catch {
-      showToast({ variant: 'danger', title: 'Could not resend OTP' });
+    } catch (error) {
+      const cooldownMessage = rateLimitMessage(error);
+      showToast({
+        variant: 'danger',
+        title: cooldownMessage ? 'Please wait' : 'Could not resend OTP',
+        description: cooldownMessage,
+      });
     }
   };
 

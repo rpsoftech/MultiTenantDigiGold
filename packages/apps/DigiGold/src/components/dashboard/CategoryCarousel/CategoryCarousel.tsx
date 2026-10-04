@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader } from '@/components/common/Loader/Loader';
+import { Button } from '@/components/common/Button/Button';
+import { describeApiError } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
-import { ChevronLeftIcon, ChevronRightIcon } from '@/components/common/icons/Icons';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from '@/components/common/icons/Icons';
 import { useCategories } from '@/features/marketplace/hooks/useCategories';
 import { useCategoryCarouselConfig } from './useCategoryCarouselConfig';
 import { CategoryCard } from './CategoryCard';
@@ -15,7 +20,15 @@ const SCROLL_END_THRESHOLD = 4;
 
 export function CategoryCarousel() {
   const config = useCategoryCarouselConfig();
-  const { data: categories, isLoading } = useCategories();
+  const {
+    data: categories,
+    isLoading,
+    isError,
+    isSuccess,
+    error,
+    isFetching,
+    refetch,
+  } = useCategories();
   const trackRef = useRef<HTMLDivElement>(null);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
@@ -26,7 +39,8 @@ export function CategoryCarousel() {
     if (!track) return;
     setCanScrollPrev(track.scrollLeft > SCROLL_END_THRESHOLD);
     setCanScrollNext(
-      track.scrollLeft < track.scrollWidth - track.clientWidth - SCROLL_END_THRESHOLD
+      track.scrollLeft <
+        track.scrollWidth - track.clientWidth - SCROLL_END_THRESHOLD,
     );
   }, []);
 
@@ -50,7 +64,10 @@ export function CategoryCarousel() {
       const track = trackRef.current;
       if (!track) return;
 
-      if (track.scrollLeft >= track.scrollWidth - track.clientWidth - SCROLL_END_THRESHOLD) {
+      if (
+        track.scrollLeft >=
+        track.scrollWidth - track.clientWidth - SCROLL_END_THRESHOLD
+      ) {
         track.scrollTo({ left: 0, behavior: 'smooth' });
       } else {
         track.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' });
@@ -61,7 +78,10 @@ export function CategoryCarousel() {
   }, [categories, isPaused]);
 
   const scrollByAmount = (direction: 1 | -1) => {
-    trackRef.current?.scrollBy({ left: direction * SCROLL_STEP, behavior: 'smooth' });
+    trackRef.current?.scrollBy({
+      left: direction * SCROLL_STEP,
+      behavior: 'smooth',
+    });
   };
 
   return (
@@ -74,6 +94,21 @@ export function CategoryCarousel() {
         </div>
       )}
 
+      {isError && (
+        <div className={styles.errorState} role="alert">
+          <p>We couldn't load categories.</p>
+          <p>{describeApiError(error) ?? 'Please try again.'}</p>
+          <Button
+            variant="outlined"
+            onClick={() => void refetch()}
+            isLoading={isFetching}
+            aria-label="Retry loading categories"
+          >
+            Try again
+          </Button>
+        </div>
+      )}
+
       {!isLoading && categories && categories.length > 0 && (
         <div
           className={styles.carousel}
@@ -82,7 +117,10 @@ export function CategoryCarousel() {
         >
           <button
             type="button"
-            className={cn(styles.navButton, !canScrollPrev && styles.navButtonHidden)}
+            className={cn(
+              styles.navButton,
+              !canScrollPrev && styles.navButtonHidden,
+            )}
             data-direction="prev"
             onClick={() => scrollByAmount(-1)}
             aria-label="Scroll categories left"
@@ -98,7 +136,10 @@ export function CategoryCarousel() {
 
           <button
             type="button"
-            className={cn(styles.navButton, !canScrollNext && styles.navButtonHidden)}
+            className={cn(
+              styles.navButton,
+              !canScrollNext && styles.navButtonHidden,
+            )}
             data-direction="next"
             onClick={() => scrollByAmount(1)}
             aria-label="Scroll categories right"
@@ -108,7 +149,7 @@ export function CategoryCarousel() {
         </div>
       )}
 
-      {!isLoading && categories && categories.length === 0 && (
+      {isSuccess && categories.length === 0 && (
         <p className={styles.emptyState}>No categories available right now.</p>
       )}
     </section>

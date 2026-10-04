@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api/client';
+import { setTokens } from '@/lib/auth/tokenStorage';
 import type {
   RequestOtpPayload,
   RequestOtpResult,
@@ -34,12 +35,10 @@ export const authService = {
       phone: payload.mobileNumber,
       otp: payload.otp,
     });
-    if (response.data.access_token) {
-      window.localStorage.setItem('access_token', response.data.access_token);
-    }
-    if (response.data.refresh_token) {
-      window.localStorage.setItem('refresh_token', response.data.refresh_token);
-    }
+    setTokens({
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+    });
     return response.data;
   },
 
@@ -50,14 +49,13 @@ export const authService = {
     const response = await apiClient.post<VerifyOtpResult>('/auth/register', {
       registration_token: payload.registrationToken,
       full_name: payload.fullName,
+      location: payload.location,
       email_id: payload.emailId || undefined,
     });
-    if (response.data.access_token) {
-      window.localStorage.setItem('access_token', response.data.access_token);
-    }
-    if (response.data.refresh_token) {
-      window.localStorage.setItem('refresh_token', response.data.refresh_token);
-    }
+    setTokens({
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+    });
     return response.data;
   },
 };

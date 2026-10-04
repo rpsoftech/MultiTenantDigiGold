@@ -1,2 +1,3 @@
-yarn nx affected -t lint
+# Check this commit's staged/working changes, rather than all branch history since main.
+yarn nx affected -t lint --uncommitted
 yarn lint-staged

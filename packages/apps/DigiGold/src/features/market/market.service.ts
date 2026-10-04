@@ -2,7 +2,7 @@ import { apiClient } from '@/lib/api/client';
 import type { MarketRate } from './market.types';
 import { MARKET_PURITY_LABEL } from './market.types';
 import { mockGetLastRate } from './market.mock';
-import { parseRateFrameToPrice } from './market.utils';
+import { parseRateFrame } from './market.utils';
 
 const USE_MOCK_MARKET = process.env.NEXT_PUBLIC_USE_MOCK_MARKET === 'true';
 
@@ -14,11 +14,16 @@ export const marketService = {
     if (USE_MOCK_MARKET) return mockGetLastRate();
 
     const response = await apiClient.get<LastRateResponse>('/rates/last-rate');
-    const price = parseRateFrameToPrice(response.data.latest_rate);
-    if (price === null) return null;
+    const frame = parseRateFrame(response.data.latest_rate);
+    if (frame === null) return null;
 
     return {
-      pricePerGramInr: price,
+      pricePerGramInr: frame.finalRatePerGramInr,
+      mcxBaseRateInr: frame.mcxBaseRateInr,
+      marginAppliedInr: frame.marginAppliedInr,
+      gstAppliedInr: frame.gstAppliedInr,
+      bidPerGramInr: frame.bidPerGramInr,
+      askPerGramInr: frame.askPerGramInr,
       purityLabel: MARKET_PURITY_LABEL,
       updatedAt: new Date().toISOString(),
     };

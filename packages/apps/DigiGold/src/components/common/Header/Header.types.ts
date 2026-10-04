@@ -1,4 +1,5 @@
 import type { IconKey } from '@/components/common/icons/iconRegistry';
+import type { TenantConfig } from '@/features/tenant/tenant.types';
 
 export type NavIconKey = IconKey;
 
@@ -12,6 +13,8 @@ export type MenuItem = {
   order: number;
   icon?: NavIconKey;
   target?: MenuTarget;
+  // Hidden when the tenant has this module switched off in activeModules.
+  module?: keyof TenantConfig['activeModules'];
   children?: MenuItem[];
 };
 
