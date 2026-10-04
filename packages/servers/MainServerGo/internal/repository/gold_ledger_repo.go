@@ -169,7 +169,8 @@ func (r *GoldLedgerRepository) GetTransactionHistory(ctx context.Context, tenant
 	}
 	defer rows.Close()
 
-	var history []*models.GoldTransactionLedger
+	// Non-nil so an empty result marshals as [] rather than null.
+	history := []*models.GoldTransactionLedger{}
 	for rows.Next() {
 		var entry models.GoldTransactionLedger
 		var refID sql.NullString
@@ -213,7 +214,8 @@ func (r *GoldLedgerRepository) GetLedgerByTenant(ctx context.Context, tenantID i
 	}
 	defer rows.Close()
 
-	var history []*models.GoldTransactionLedger
+	// Non-nil so an empty result marshals as [] rather than null.
+	history := []*models.GoldTransactionLedger{}
 	for rows.Next() {
 		var entry models.GoldTransactionLedger
 		var refID sql.NullString

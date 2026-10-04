@@ -3,6 +3,7 @@ export const ROUTES = {
   otp: '/otp',
   profileSetup: '/profile-setup',
   home: '/home',
+  vault: '/vault',
   passbook: '/vault/passbook',
   kyc: '/kyc',
   sip: '/invest/sip',

@@ -1,12 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Card } from '@/components/common/Card/Card';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
+import { useSession } from '@/features/auth/hooks/useSession';
 import { useTradeHistory } from '@/features/trade/hooks/useTradeHistory';
 import type { TradeEventType } from '@/features/trade/trade.types';
+import { getAccessToken } from '@/lib/auth/tokenStorage';
+import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils/cn';
+import { isJwtExpired } from '@/lib/utils/jwt';
 import { PassbookEntry } from './PassbookEntry';
 import styles from './Passbook.module.scss';
 
@@ -20,7 +24,17 @@ const FILTERS: { value: FilterValue; label: string }[] = [
   { value: 'ADMIN_ADJUSTMENT', label: 'Adjustments' },
 ];
 
+// After a full refresh, isAuthenticated stays false until SessionLifecycle restores the
+// session in an effect — so a stored, unexpired token means "restore pending", not
+// "logged out". Only redirect once neither exists.
+function hasUsableStoredToken(): boolean {
+  const token = getAccessToken();
+  return token !== null && !isJwtExpired(token);
+}
+
 export function Passbook() {
+  const router = useRouter();
+  const { isAuthenticated } = useSession();
   const [filter, setFilter] = useState<FilterValue>('ALL');
   const {
     entries,
@@ -29,8 +43,12 @@ export function Passbook() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useTradeHistory();
+  } = useTradeHistory({ enabled: isAuthenticated });
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated && !hasUsableStoredToken()) router.replace(ROUTES.login);
+  }, [isAuthenticated, router]);
 
   const filteredEntries =
     filter === 'ALL'
@@ -39,7 +57,9 @@ export function Passbook() {
 
   // Backend doesn't support filtering by event type, so pagination is driven off the
   // unfiltered set — this only auto-advances the underlying fetch, the filter itself is
-  // applied to whatever pages have already loaded.
+  // applied to whatever pages have already loaded. The sentinel stays mounted while a
+  // filter has no matches yet, so it keeps pulling older pages until one turns up or the
+  // history runs out.
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || !hasNextPage) return;
@@ -55,6 +75,13 @@ export function Passbook() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const emptyMessage =
+    filter === 'ALL'
+      ? 'No transactions recorded yet.'
+      : hasNextPage
+        ? 'No matching entries yet — checking older transactions…'
+        : 'No entries match this filter.';
 
   return (
     <section className={styles.section}>
@@ -76,7 +103,7 @@ export function Passbook() {
         ))}
       </div>
 
-      {isLoading ? (
+      {!isAuthenticated || isLoading ? (
         <div className={styles.stateRow}>
           <Loader label="Loading passbook" />
         </div>
@@ -84,19 +111,17 @@ export function Passbook() {
         <p className={styles.emptyState}>
           Couldn&apos;t load your passbook. Please try again.
         </p>
-      ) : filteredEntries.length === 0 ? (
-        <p className={styles.emptyState}>
-          {filter === 'ALL'
-            ? 'No transactions recorded yet.'
-            : 'No entries match this filter.'}
-        </p>
       ) : (
         <>
-          <div className={styles.entryList}>
-            {filteredEntries.map((entry) => (
-              <PassbookEntry key={entry.gl_uuid} entry={entry} />
-            ))}
-          </div>
+          {filteredEntries.length === 0 ? (
+            <p className={styles.emptyState}>{emptyMessage}</p>
+          ) : (
+            <div className={styles.entryList}>
+              {filteredEntries.map((entry) => (
+                <PassbookEntry key={entry.gl_uuid} entry={entry} />
+              ))}
+            </div>
+          )}
 
           <div ref={sentinelRef} />
 
