@@ -99,7 +99,9 @@ export function Header() {
         onOpenChange={setMobileNavOpen}
         menus={menus}
         actions={actions}
-        profileMenu={isAuthenticated ? <ProfileMenu /> : undefined}
+        profileMenu={
+          isAuthenticated ? <ProfileMenu onNavigate={() => setMobileNavOpen(false)} /> : undefined
+        }
       />
     </header>
   );

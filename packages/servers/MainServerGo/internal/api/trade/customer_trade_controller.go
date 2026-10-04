@@ -2,12 +2,15 @@ package trade_api
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/service"
 )
@@ -44,6 +47,7 @@ func (tc *CustomerTradeController) RegisterRoutes(api fiber.Router, guards ...an
 
 	user := api.Group("/user", guards...)
 	user.Get("/portfolio", tc.Portfolio)
+	user.Get("/kyc", tc.GetKYC)
 	user.Post("/kyc", tc.UploadKYC)
 }
 
@@ -74,22 +78,24 @@ func (tc *CustomerTradeController) InitiateBuy(c fiber.Ctx) error {
 		return interfaces.ErrInvalidTradePayload
 	}
 
-	// KYC Check: Block trades > 50,000 INR if not verified
-	if req.TotalAmountINR > 50000.0 && user.KYCStatus != "verified" {
-		return &interfaces.RequestError{
-			StatusCode: fiber.StatusForbidden,
-			Code:       interfaces.ERROR_INVALID_INPUT,
-			Message:    "KYC Verification is required for trades above 50,000 INR",
+	tenant, err := tc.TenantRepo.GetFullTenantByID(c.Context(), tenantID)
+	if err != nil {
+		return interfaces.ParseDBError(err)
+	}
+
+	if user.KYCStatus != models.KYCStatusVerified {
+		// 'upfront' tenants require verified KYC before any purchase; every tenant
+		// requires it above the regulatory threshold.
+		if tenant.KYCMode == kycModeUpfront {
+			return kycRequiredError("KYC verification is required before your first purchase")
+		}
+		if req.TotalAmountINR > kycRequiredAboveINR {
+			return kycRequiredError("KYC Verification is required for trades above 50,000 INR")
 		}
 	}
 
 	req.TenantID = tenantID
 	req.UserID = user.ID
-
-	tenant, err := tc.TenantRepo.GetFullTenantByID(c.Context(), tenantID)
-	if err != nil {
-		return interfaces.ParseDBError(err)
-	}
 
 	config, err := tc.ConfigRepo.GetConfigByTenantUUID(c.Context(), tenant.UUID)
 	if err != nil || config.PaymentConfig == nil {
@@ -273,18 +279,79 @@ func pageParams(c fiber.Ctx) (page, limit, offset int) {
 	return page, limit, (page - 1) * limit
 }
 
+const (
+	// Purchases above this need verified KYC on every tenant (matches the frontend's
+	// KYC_REQUIRED_ABOVE_INR).
+	kycRequiredAboveINR = 50000.0
+	kycModeUpfront      = "upfront"
+)
+
+var (
+	panPattern          = regexp.MustCompile(`^[A-Z]{5}[0-9]{4}[A-Z]$`)
+	aadhaarLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
+)
+
+func kycRequiredError(message string) *interfaces.RequestError {
+	return &interfaces.RequestError{
+		StatusCode: fiber.StatusForbidden,
+		Code:       interfaces.ERROR_KYC_REQUIRED,
+		Message:    message,
+		Name:       "KYC_REQUIRED",
+	}
+}
+
+// kycSubmission is the only shape POST /user/kyc accepts. It used to store whatever JSON
+// the client sent; unknown fields are now dropped rather than persisted.
+type kycSubmission struct {
+	PANNumber    string `json:"pan_number"`
+	AadhaarLast4 string `json:"aadhaar_last4"`
+}
+
+// GetKYC returns the customer's KYC status (not_started, pending, verified, rejected) —
+// the only way the app can learn an admin's decision.
+func (tc *CustomerTradeController) GetKYC(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+	userUUID, _ := c.Locals(middleware.LocalsKeyUserUUID).(string)
+
+	user, err := tc.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
+	if err != nil {
+		return interfaces.ParseDBError(err)
+	}
+
+	return c.JSON(fiber.Map{"success": true, "kyc_status": user.CustomerKYCStatus()})
+}
+
 func (tc *CustomerTradeController) UploadKYC(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
 	userUUID, _ := c.Locals(middleware.LocalsKeyUserUUID).(string)
 
-	var payload map[string]interface{}
-	if err := c.Bind().JSON(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid json"})
+	var req kycSubmission
+	if err := c.Bind().JSON(&req); err != nil {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "Invalid JSON payload",
+			Name:       "INVALID_INPUT",
+		}
 	}
 
-	docJSON, err := json.Marshal(payload)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to encode doc"})
+	req.PANNumber = strings.ToUpper(strings.TrimSpace(req.PANNumber))
+	req.AadhaarLast4 = strings.TrimSpace(req.AadhaarLast4)
+	if !panPattern.MatchString(req.PANNumber) {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "Enter a valid PAN, e.g. ABCDE1234F",
+			Name:       "INVALID_INPUT",
+		}
+	}
+	if !aadhaarLast4Pattern.MatchString(req.AadhaarLast4) {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "Enter the last 4 digits of your Aadhaar",
+			Name:       "INVALID_INPUT",
+		}
 	}
 
 	user, err := tc.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
@@ -292,8 +359,25 @@ func (tc *CustomerTradeController) UploadKYC(c fiber.Ctx) error {
 		return interfaces.ParseDBError(err)
 	}
 
-	if err := tc.UserService.UserRepo.UpdateUserDocumentJSON(c.Context(), user.ID, docJSON); err != nil {
+	docJSON, err := json.Marshal(req)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to encode doc"})
+	}
+
+	submitted, err := tc.UserService.UserRepo.SubmitKYCDocuments(c.Context(), user, docJSON)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update kyc"})
+	}
+	if !submitted {
+		// Verified, or already submitted and awaiting review. Resubmitting would drop a
+		// verified customer back to pending (blocking KYC-gated purchases) or overwrite
+		// what an admin is reviewing.
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusConflict,
+			Code:       interfaces.ERROR_KYC_NOT_SUBMITTABLE,
+			Message:    "Your KYC is already verified or under review",
+			Name:       "KYC_NOT_SUBMITTABLE",
+		}
 	}
 
 	return c.JSON(fiber.Map{"success": true, "message": "KYC document uploaded and pending verification"})
