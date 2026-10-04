@@ -13,17 +13,13 @@ import { useRequestOtp } from '@/features/auth/hooks/useRequestOtp';
 import { OTP_PATTERN } from '@/lib/constants/regex';
 import { ROUTES } from '@/lib/constants/routes';
 import { formatMobileNumber } from '@/lib/utils/formatMobileNumber';
-import type { NormalizedApiError } from '@/lib/api/client';
+import { isNormalizedApiError } from '@/lib/api/client';
 import styles from './OtpForm.module.scss';
 
 // Every OTP rate-limit case (30s resend cooldown, max resend attempts, max verify
 // attempts, generic per-IP limiter) returns HTTP 429 with a real, user-facing `message`
 // from MainServer (see interfaces/error_translator.go) — show that instead of a generic
 // string so the user knows it's a cooldown/lockout, not a wrong code.
-function isNormalizedApiError(error: unknown): error is NormalizedApiError {
-  return typeof error === 'object' && error !== null && 'status' in error;
-}
-
 function rateLimitMessage(error: unknown): string | undefined {
   if (!isNormalizedApiError(error) || error.status !== 429) return undefined;
   return error.message;

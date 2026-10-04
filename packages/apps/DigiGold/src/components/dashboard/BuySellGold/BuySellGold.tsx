@@ -8,7 +8,11 @@ import { Badge } from '@/components/common/Badge/Badge';
 import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
 import { CountdownTimer } from '@/components/common/CountdownTimer/CountdownTimer';
-import { ClockIcon, CloseIcon, CoinsIcon } from '@/components/common/icons/Icons';
+import {
+  ClockIcon,
+  CloseIcon,
+  CoinsIcon,
+} from '@/components/common/icons/Icons';
 import { useToast } from '@/components/common/Toast/Toast';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useLiveRate } from '@/features/market/hooks/useLiveRate';
@@ -77,6 +81,7 @@ export function BuySellGold() {
   // still trigger a slippage rejection. See tenantPricing.ts for why this can't be exact
   // without a backend change.
   const pricePerGram = rate?.pricePerGramInr ?? 0;
+  const hasRate = Number.isFinite(pricePerGram) && pricePerGram > 0;
   const grams = Number(gramsInput) || 0;
   const totalInr = grams * pricePerGram;
   const baseAmountInr = grams * (rate?.mcxBaseRateInr ?? 0);
@@ -137,7 +142,7 @@ export function BuySellGold() {
       router.push(ROUTES.login);
       return;
     }
-    if (kycBlocked) return;
+    if (kycBlocked || !hasRate || grams <= 0) return;
 
     // Checked before initiating so a misconfigured deployment doesn't create a backend
     // order (and Razorpay order) on every click that can never be paid.
@@ -222,15 +227,16 @@ export function BuySellGold() {
   }, [settlementStatus]);
 
   const proceedDisabled =
-    grams <= 0 || isLoading || initiateBuy.isPending || stage === 'awaiting-payment' || stage === 'polling';
+    grams <= 0 || isLoading || !hasRate || initiateBuy.isPending || stage === 'awaiting-payment' || stage === 'polling';
 
   const proceedLabel = useMemo(() => {
     if (!isAuthenticated) return 'Login to Proceed';
     if (initiateBuy.isPending) return 'Locking price…';
     if (stage === 'awaiting-payment') return 'Waiting for payment…';
     if (stage === 'polling') return 'Confirming payment…';
+    if (!hasRate) return 'Waiting for live rate';
     return `Proceed to Pay ${formatCurrency(totalInr, 'INR')}`;
-  }, [isAuthenticated, initiateBuy.isPending, stage, totalInr]);
+  }, [isAuthenticated, initiateBuy.isPending, stage, hasRate, totalInr]);
 
   // Must stay below every hook: tenantConfig starts as the static default (trading on) and
   // can flip once /tenant/info resolves — an earlier return would change the hook count.
@@ -245,13 +251,20 @@ export function BuySellGold() {
           <div>
             <div className={styles.titleRow}>
               <h3 className={styles.title}>Spot Gold Purchase</h3>
-              <Badge variant="brand">{rate?.purityLabel ?? '24K • 99.99%'}</Badge>
+              <Badge variant="brand">
+                {rate?.purityLabel ?? '24K • 99.99%'}
+              </Badge>
             </div>
-            {isLoading || !rate ? (
+            {isLoading ? (
               <Loader size="sm" label="Loading live rate" />
+            ) : !hasRate ? (
+              <p className={styles.rateRow} role="status">
+                Live rate is currently unavailable. Waiting for an update.
+              </p>
             ) : (
               <p className={styles.rateRow}>
-                Live Market Rate: <strong>{formatCurrency(rate.pricePerGramInr, 'INR')}/g</strong>
+                Live Market Rate:{' '}
+                <strong>{formatCurrency(pricePerGram, 'INR')}/g</strong>
               </p>
             )}
           </div>
@@ -276,14 +289,21 @@ export function BuySellGold() {
         <div className={styles.toggleRow}>
           <button
             type="button"
-            className={cn(styles.toggleButton, mode === 'inr' && styles.toggleButtonActive)}
+            className={cn(
+              styles.toggleButton,
+              mode === 'inr' && styles.toggleButtonActive,
+            )}
             onClick={() => setMode('inr')}
+            disabled={!hasRate}
           >
             Buy in Rupees (₹)
           </button>
           <button
             type="button"
-            className={cn(styles.toggleButton, mode === 'grams' && styles.toggleButtonActive)}
+            className={cn(
+              styles.toggleButton,
+              mode === 'grams' && styles.toggleButtonActive,
+            )}
             onClick={() => setMode('grams')}
           >
             Buy in Grams (g)
@@ -326,6 +346,7 @@ export function BuySellGold() {
                 className={styles.input}
                 inputMode="decimal"
                 value={inrInputValue}
+                disabled={!hasRate}
                 onChange={(event) => handleInrChange(event.target.value)}
               />
               <button
@@ -359,53 +380,56 @@ export function BuySellGold() {
                   type="button"
                   className={styles.quickAddChip}
                   onClick={() => handleQuickAddInr(increment)}
+                  disabled={!hasRate}
                 >
                   +{formatCurrency(increment, 'INR')}
                 </button>
               ))}
         </div>
 
-        <div className={styles.summary}>
-          {mode === 'inr' ? (
-            <>
-              <div className={styles.summaryRow}>
-                <span>Total Investment Amount (est.):</span>
-                <span className={styles.summaryValueBrand}>{formatCurrency(totalInr, 'INR')}</span>
-              </div>
-              <div className={styles.summaryRow}>
-                <span>Gold Weight to be Added (est.):</span>
-                <span className={styles.summaryValueSuccess}>{grams.toFixed(4)} g</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className={styles.summaryRow}>
-                <span>Gold Weight to be Added:</span>
-                <span className={styles.summaryValueBrand}>{grams.toFixed(4)} g</span>
-              </div>
-              <div className={styles.summaryRow}>
-                <span>Total Investment Amount (est.):</span>
-                <span className={styles.summaryValueSuccess}>{formatCurrency(totalInr, 'INR')}</span>
-              </div>
-            </>
-          )}
-          <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
-            <span>Base Rate (MCX):</span>
-            <span>{formatCurrency(baseAmountInr, 'INR')}</span>
+        {hasRate && (
+          <div className={styles.summary}>
+            {mode === 'inr' ? (
+              <>
+                <div className={styles.summaryRow}>
+                  <span>Total Investment Amount (est.):</span>
+                  <span className={styles.summaryValueBrand}>{formatCurrency(totalInr, 'INR')}</span>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>Gold Weight to be Added (est.):</span>
+                  <span className={styles.summaryValueSuccess}>{grams.toFixed(4)} g</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.summaryRow}>
+                  <span>Gold Weight to be Added:</span>
+                  <span className={styles.summaryValueBrand}>{grams.toFixed(4)} g</span>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>Total Investment Amount (est.):</span>
+                  <span className={styles.summaryValueSuccess}>{formatCurrency(totalInr, 'INR')}</span>
+                </div>
+              </>
+            )}
+            <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
+              <span>Base Rate (MCX):</span>
+              <span>{formatCurrency(baseAmountInr, 'INR')}</span>
+            </div>
+            <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
+              <span>Margin (est.):</span>
+              <span>{formatCurrency(marginAmountInr, 'INR')}</span>
+            </div>
+            <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
+              <span>GST (est.):</span>
+              <span>{formatCurrency(gstAmountInr, 'INR')}</span>
+            </div>
+            <p className={styles.summaryDisclaimer}>
+              Margin and GST are estimated on the client using the platform default — the
+              server applies your tenant&apos;s actual pricing and may differ slightly.
+            </p>
           </div>
-          <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
-            <span>Margin (est.):</span>
-            <span>{formatCurrency(marginAmountInr, 'INR')}</span>
-          </div>
-          <div className={cn(styles.summaryRow, styles.summaryRowMuted)}>
-            <span>GST (est.):</span>
-            <span>{formatCurrency(gstAmountInr, 'INR')}</span>
-          </div>
-          <p className={styles.summaryDisclaimer}>
-            Margin and GST are estimated on the client using the platform default — the
-            server applies your tenant&apos;s actual pricing and may differ slightly.
-          </p>
-        </div>
+        )}
 
         {kycBlocked && (
           <p className={styles.statusMessage} data-variant="warning">

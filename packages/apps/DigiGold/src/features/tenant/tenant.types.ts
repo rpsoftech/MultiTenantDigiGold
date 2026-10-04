@@ -1,6 +1,4 @@
-// NOTE: candidate for @digigold/core — MainServer will need to validate/serve this same
-// shape once its tenant config endpoint exists; move it there instead of duplicating once
-// packages/libs/core is built and importable.
+// Frontend presentation model, adapted from MainServer's public tenant metadata.
 
 export type TenantColorRole = 'primary' | 'secondary' | 'tertiary' | 'neutral';
 
