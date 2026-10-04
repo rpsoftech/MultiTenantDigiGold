@@ -29,3 +29,69 @@
     @content;
   }
 }
+
+@mixin below-md {
+  @media (max-width: 767.98px) {
+    @content;
+  }
+}
+
+// Turns a table into a stack of labelled cards below the md breakpoint.
+// Each <td> needs a data-label attribute; it is shown as the row's caption.
+// Include inside the table's class: `.table { @include stacked-table; }`.
+@mixin stacked-table {
+  @include below-md {
+    min-width: 0;
+
+    thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+
+    tbody,
+    tr,
+    td {
+      display: block;
+      width: 100%;
+    }
+
+    tr {
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    tr:last-child {
+      border-bottom: none;
+    }
+
+    td,
+    tr:last-child td {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      padding: var(--space-2) 0;
+      border-bottom: none;
+      text-align: right;
+    }
+
+    td::before {
+      content: attr(data-label);
+      flex-shrink: 0;
+      font-family: var(--font-label);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+      text-align: left;
+    }
+
+    td:empty::before {
+      content: none;
+    }
+  }
+}

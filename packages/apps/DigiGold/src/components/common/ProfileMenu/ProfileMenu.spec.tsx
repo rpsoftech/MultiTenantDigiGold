@@ -4,7 +4,8 @@ import { Provider } from 'react-redux';
 import { makeStore } from '@/store';
 import { ProfileMenu } from './ProfileMenu';
 
-jest.mock('@/features/auth/hooks/useLogout', () => ({ useLogout: () => jest.fn() }));
+const logoutMock = jest.fn();
+jest.mock('@/features/auth/hooks/useLogout', () => ({ useLogout: () => logoutMock }));
 
 // Radix's popper measures its anchor with ResizeObserver, which jsdom doesn't implement.
 beforeAll(() => {
@@ -36,5 +37,26 @@ describe('ProfileMenu', () => {
 
     expect(onNavigate).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByText('KYC Verification')).toBeNull());
+  });
+
+  // Inside the mobile nav (a modal dialog) a popover would render behind it, so the entries
+  // are shown directly, without needing a trigger click.
+  it('inline: shows KYC and Logout without a trigger and runs their handlers', () => {
+    const onNavigate = jest.fn();
+    logoutMock.mockClear();
+    render(
+      <Provider store={makeStore()}>
+        <ProfileMenu inline onNavigate={onNavigate} />
+      </Provider>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Account menu' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('link', { name: 'KYC Verification' }));
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
+    expect(onNavigate).toHaveBeenCalledTimes(2);
+    expect(logoutMock).toHaveBeenCalledTimes(1);
   });
 });

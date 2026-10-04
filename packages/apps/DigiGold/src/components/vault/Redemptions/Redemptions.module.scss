@@ -35,19 +35,17 @@
 
 // Stays in view while the (potentially long) redemption list scrolls on desktop.
 .flowPane {
+  // Below desktop the card is stacked above the list and spans the full width.
   width: 100%;
-  max-width: 480px;
 
   @include lg {
-    max-width: none;
     display: flex;
     min-height: 0;
-    overflow-y: auto;
 
-    // The card fills the whole left pane and keeps its content vertically centered.
+    // The card matches the list pane's height; RedeemFlow pins its submit button to the
+    // bottom so the extra height reads as intentional spacing rather than empty gaps.
     > * {
       flex: 1;
-      justify-content: center;
     }
   }
 }
@@ -60,14 +58,6 @@
     overflow-y: auto;
     padding-right: var(--space-2);
   }
-}
-
-.heading {
-  font-family: var(--font-headline);
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0;
 }
 
 .stateRow {

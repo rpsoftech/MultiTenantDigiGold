@@ -29,6 +29,8 @@ import styles from './RedeemFlow.module.scss';
 
 const QUICK_GRAMS = [0.5, 1, 5, 10];
 
+const PICKUP_STEPS = ['Request the weight', 'Get your pickup code', 'Collect it in store'];
+
 type Step =
   | { name: 'form' }
   | { name: 'confirm'; grams: number }
@@ -169,6 +171,20 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
             Max
           </button>
         </div>
+
+        <section className={styles.steps} aria-label="How pickup works">
+          <h3 className={styles.stepsTitle}>How pickup works</h3>
+          <ol className={styles.stepList}>
+            {PICKUP_STEPS.map((text, index) => (
+              <li key={text} className={styles.step}>
+                <span className={styles.stepNumber} aria-hidden>
+                  {index + 1}
+                </span>
+                {text}
+              </li>
+            ))}
+          </ol>
+        </section>
 
         <Button type="submit" fullWidth disabled={!isValid}>
           Continue

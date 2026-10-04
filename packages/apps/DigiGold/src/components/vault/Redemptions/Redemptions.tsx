@@ -50,7 +50,6 @@ export function Redemptions() {
 
   return (
     <section className={styles.section}>
-      <h1 className={styles.heading}>Redeem gold</h1>
       <div className={styles.layout}>
         <aside className={styles.flowPane}>
           {/* In mock-portfolio mode the balance is simulated, but /trade/redeem debits the

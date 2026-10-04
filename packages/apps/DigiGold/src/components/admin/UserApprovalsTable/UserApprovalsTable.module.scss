@@ -17,6 +17,8 @@
   width: 100%;
   border-collapse: collapse;
   min-width: 640px;
+
+  @include stacked-table;
 }
 
 .table th {
@@ -72,4 +74,18 @@
   padding: var(--space-1) var(--space-3);
   font-size: 0.75rem;
   width: auto;
+}
+
+.actionsCell {
+  @include below-md {
+    // Overrides the stacked-table row layout so the buttons get the full width.
+    display: block !important;
+    text-align: left !important;
+
+    .actions {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      white-space: normal;
+    }
+  }
 }

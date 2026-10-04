@@ -17,6 +17,8 @@
   width: 100%;
   border-collapse: collapse;
   min-width: 560px;
+
+  @include stacked-table;
 }
 
 .table th {
