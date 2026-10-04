@@ -5,7 +5,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useSession } from '@/features/auth/hooks/useSession';
 import { Logo } from '@/components/common/Logo/Logo';
+import { ProfileMenu } from '@/components/common/ProfileMenu/ProfileMenu';
 import { ArrowLeftIcon, MenuIcon } from '@/components/common/icons/Icons';
 import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils/cn';
@@ -23,12 +25,18 @@ export function Header() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const tenantConfig = useTenantConfig();
   const headerConfig = useHeaderConfig();
+  const { isAuthenticated } = useSession();
   const pathname = usePathname();
   const router = useRouter();
 
   const showBackButton = BACK_NAVIGABLE_ROUTES.includes(pathname);
   const brandName = tenantConfig?.displayName ?? 'DigiGold';
   const { logo } = headerConfig;
+  // "Sign In" only makes sense to a logged-out visitor — header.config.json is static
+  // site config with no session awareness, so filter it here instead of in the config.
+  const actions = headerConfig.actions.filter(
+    (action) => !isAuthenticated || action.url !== ROUTES.login
+  );
 
   return (
     <header className={styles.header}>
@@ -65,9 +73,10 @@ export function Header() {
         <NavMenu items={headerConfig.menus} />
 
         <div className={styles.actions}>
-          {headerConfig.actions.map((action) => (
+          {actions.map((action) => (
             <HeaderActionLink key={action.id} action={action} />
           ))}
+          {isAuthenticated && <ProfileMenu />}
         </div>
 
         <button
@@ -84,7 +93,8 @@ export function Header() {
         open={mobileNavOpen}
         onOpenChange={setMobileNavOpen}
         menus={headerConfig.menus}
-        actions={headerConfig.actions}
+        actions={actions}
+        profileMenu={isAuthenticated ? <ProfileMenu /> : undefined}
       />
     </header>
   );
