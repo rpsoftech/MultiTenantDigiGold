@@ -12,7 +12,9 @@ import styles from './ProfileMenu.module.scss';
 
 // Customer-facing counterpart to AdminProfileMenu. No account/profile screen exists yet
 // in phase 1 (see CLAUDE.md build order), so the dropdown offers KYC and Logout for now.
-export function ProfileMenu() {
+// `onNavigate` lets a container close itself too — the mobile nav dialog stays open after
+// a client-side route change otherwise.
+export function ProfileMenu({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useSession();
   const logout = useLogout();
   const label = user?.name ?? (user?.mobileNumber ? formatMobileNumber(user.mobileNumber) : 'Account');
@@ -30,10 +32,14 @@ export function ProfileMenu() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={styles.content} align="end" sideOffset={8}>
-          <Link href={ROUTES.kyc} className={styles.item}>
-            <ShieldCheckIcon width={16} height={16} />
-            KYC Verification
-          </Link>
+          {/* A Popover (unlike a DropdownMenu) doesn't close when an item inside it is
+              activated, and the header survives the route change — close it explicitly. */}
+          <Popover.Close asChild>
+            <Link href={ROUTES.kyc} className={styles.item} onClick={onNavigate}>
+              <ShieldCheckIcon width={16} height={16} />
+              KYC Verification
+            </Link>
+          </Popover.Close>
           <button type="button" className={cn(styles.item, styles.logoutItem)} onClick={logout}>
             <LogOutIcon width={16} height={16} />
             Logout

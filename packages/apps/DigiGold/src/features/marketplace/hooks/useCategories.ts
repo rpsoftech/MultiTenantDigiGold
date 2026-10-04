@@ -5,5 +5,6 @@ export function useCategories() {
   return useQuery({
     queryKey: ['marketplace', 'categories'],
     queryFn: marketplaceService.getCategories,
+    retry: false,
   });
 }

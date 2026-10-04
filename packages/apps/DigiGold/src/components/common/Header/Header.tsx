@@ -37,6 +37,11 @@ export function Header() {
   const actions = headerConfig.actions.filter(
     (action) => !isAuthenticated || action.url !== ROUTES.login
   );
+  // Same idea for tenant modules: the static config tags items with a module, and a tenant
+  // that has it switched off shouldn't be offered a link to an unavailable page.
+  const menus = headerConfig.menus.filter(
+    (item) => !item.module || (tenantConfig?.activeModules[item.module] ?? true)
+  );
 
   return (
     <header className={styles.header}>
@@ -70,7 +75,7 @@ export function Header() {
           </Link>
         </div>
 
-        <NavMenu items={headerConfig.menus} />
+        <NavMenu items={menus} />
 
         <div className={styles.actions}>
           {actions.map((action) => (
@@ -92,9 +97,11 @@ export function Header() {
       <MobileNav
         open={mobileNavOpen}
         onOpenChange={setMobileNavOpen}
-        menus={headerConfig.menus}
+        menus={menus}
         actions={actions}
-        profileMenu={isAuthenticated ? <ProfileMenu /> : undefined}
+        profileMenu={
+          isAuthenticated ? <ProfileMenu onNavigate={() => setMobileNavOpen(false)} /> : undefined
+        }
       />
     </header>
   );

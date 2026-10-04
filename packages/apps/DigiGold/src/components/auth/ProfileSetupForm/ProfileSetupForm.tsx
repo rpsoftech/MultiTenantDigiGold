@@ -22,6 +22,8 @@ const DEFAULT_REGISTRATION_LOCATION = 'India';
 
 const profileSetupSchema = z.object({
   fullName: z.string().trim().min(2, 'Enter your full name').max(50, 'Full name must be 50 characters or fewer'),
+  // MainServer's /auth/register marks `location` as required (auth_controller.go).
+  location: z.string().trim().min(2, 'Enter your city').max(100, 'City must be 100 characters or fewer'),
   emailId: z.string().email('Enter a valid email').optional().or(z.literal('')),
 });
 
@@ -40,7 +42,7 @@ export function ProfileSetupForm() {
   } = useForm<ProfileSetupFormValues>({
     resolver: zodResolver(profileSetupSchema),
     mode: 'onChange',
-    defaultValues: { fullName: '', emailId: '' },
+    defaultValues: { fullName: '', location: '', emailId: '' },
   });
 
   const onSubmit = async (values: ProfileSetupFormValues) => {
@@ -73,6 +75,14 @@ export function ProfileSetupForm() {
           rightIcon={<UserIcon width={16} height={16} />}
           error={errors.fullName?.message}
           {...register('fullName')}
+        />
+        <Input
+          label="City"
+          placeholder="Mumbai"
+          maxLength={100}
+          autoComplete="address-level2"
+          error={errors.location?.message}
+          {...register('location')}
         />
         <Input
           label="Email (Optional)"

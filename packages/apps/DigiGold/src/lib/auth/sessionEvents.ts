@@ -4,13 +4,23 @@
 
 const SESSION_EXPIRED_EVENT = 'digigold:session-expired';
 
-export function emitSessionExpired(): void {
+// 'rejected': the server answered a protected request with 401 — the user was mid-action,
+// so send them to login. 'expired': the stored token's `exp` passed client-side — clear the
+// session quietly, since the request that noticed may be a public one (e.g. live rates on
+// the home page) and the visitor shouldn't be yanked off the page they're reading.
+export type SessionExpiredReason = 'rejected' | 'expired';
+
+export function emitSessionExpired(reason: SessionExpiredReason): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  window.dispatchEvent(
+    new CustomEvent<SessionExpiredReason>(SESSION_EXPIRED_EVENT, { detail: reason }),
+  );
 }
 
-export function onSessionExpired(handler: () => void): () => void {
+export function onSessionExpired(handler: (reason: SessionExpiredReason) => void): () => void {
   if (typeof window === 'undefined') return () => undefined;
-  window.addEventListener(SESSION_EXPIRED_EVENT, handler);
-  return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
+  const listener = (event: Event) =>
+    handler((event as CustomEvent<SessionExpiredReason>).detail);
+  window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+  return () => window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
 }

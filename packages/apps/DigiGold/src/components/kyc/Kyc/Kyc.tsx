@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Card } from '@/components/common/Card/Card';
@@ -8,19 +10,61 @@ import { Input } from '@/components/common/Input/Input';
 import { Loader } from '@/components/common/Loader/Loader';
 import { Button } from '@/components/common/Button/Button';
 import { useToast } from '@/components/common/Toast/Toast';
-import { useSessionGate } from '@/features/auth/hooks/useSessionGate';
+import { useSession } from '@/features/auth/hooks/useSession';
+import { useSessionResolved } from '@/features/auth/hooks/useSessionResolved';
+import { useKycStatus } from '@/features/kyc/hooks/useKycStatus';
 import { useSubmitKyc } from '@/features/kyc/hooks/useSubmitKyc';
+import { KYC_REQUIRED_ABOVE_INR } from '@/features/kyc/kyc.constants';
 import { kycSchema, type KycFormValues } from '@/features/kyc/kyc.schema';
-import type { NormalizedApiError } from '@/lib/api/client';
+import { describeApiError } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
+import { formatCurrency } from '@/lib/utils/formatCurrency';
 import { ROUTES } from '@/lib/constants/routes';
 import styles from './Kyc.module.scss';
 
-export function Kyc() {
-  const { user, isReady } = useSessionGate();
-  const status = user?.kycStatus ?? 'not_started';
+function StatusCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className={styles.statusPage}>
+      <Card className={cn(styles.card, styles.statusCard)}>
+        <h1 className={styles.title}>{title}</h1>
+        <p className={styles.subtitle}>{body}</p>
+        <Link href={ROUTES.home} className={styles.link}>
+          Back to home
+        </Link>
+      </Card>
+    </div>
+  );
+}
 
-  if (!isReady) {
+export function Kyc() {
+  const router = useRouter();
+  // `isAuthenticated`, not `user`: registrationStarted creates a user for someone halfway
+  // through sign-up, who has no access token and would only get a 401 on submit.
+  const { isAuthenticated } = useSession();
+  // isAuthenticated is false until SessionLifecycle restores a stored session after mount,
+  // so wait for that before deciding the visitor is signed out.
+  const sessionResolved = useSessionResolved();
+  const { status, isError, isFetching, refetch } = useKycStatus();
+
+  useEffect(() => {
+    if (sessionResolved && !isAuthenticated) router.replace(ROUTES.login);
+  }, [sessionResolved, isAuthenticated, router]);
+
+  if (isAuthenticated && isError && !status) {
+    return (
+      <div className={styles.statusPage}>
+        <Card className={cn(styles.card, styles.statusCard)}>
+          <h1 className={styles.title}>Couldn&apos;t load your KYC status</h1>
+          <p className={styles.subtitle}>Please check your connection and try again.</p>
+          <Button variant="outlined" onClick={refetch} isLoading={isFetching}>
+            Try again
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !status) {
     return (
       <div className={styles.statusPage}>
         <Loader label="Loading your KYC status" />
@@ -30,35 +74,19 @@ export function Kyc() {
 
   if (status === 'verified') {
     return (
-      <div className={styles.statusPage}>
-        <Card className={cn(styles.card, styles.statusCard)}>
-          <h1 className={styles.title}>KYC verified</h1>
-          <p className={styles.subtitle}>
-            Your identity is verified. You can buy gold without purchase limits.
-          </p>
-          <Link href={ROUTES.home} className={styles.link}>
-            Back to home
-          </Link>
-        </Card>
-      </div>
+      <StatusCard
+        title="KYC verified"
+        body={`Your identity is verified. Purchases above ${formatCurrency(KYC_REQUIRED_ABOVE_INR, 'INR')} are unlocked.`}
+      />
     );
   }
 
   if (status === 'pending') {
     return (
-      <div className={styles.statusPage}>
-        <Card className={cn(styles.card, styles.statusCard)}>
-          <h1 className={styles.title}>KYC under review</h1>
-          <p className={styles.subtitle}>
-            We&apos;ve received your details. Verification is usually completed
-            shortly. We&apos;ll unlock higher purchase limits once it is
-            approved.
-          </p>
-          <Link href={ROUTES.home} className={styles.link}>
-            Back to home
-          </Link>
-        </Card>
-      </div>
+      <StatusCard
+        title="KYC under review"
+        body="We've received your details. Verification is usually completed shortly, and higher purchase limits unlock once it is approved."
+      />
     );
   }
 
@@ -76,7 +104,7 @@ function KycForm({ rejected }: { rejected: boolean }) {
   } = useForm<KycFormValues>({
     resolver: zodResolver(kycSchema),
     mode: 'onChange',
-    defaultValues: { panNumber: '', aadhaarLast4: '', documentUrl: '' },
+    defaultValues: { panNumber: '', aadhaarLast4: '' },
   });
 
   const onSubmit = async (values: KycFormValues) => {
@@ -84,18 +112,13 @@ function KycForm({ rejected }: { rejected: boolean }) {
       await submitKyc.mutateAsync({
         pan_number: values.panNumber.toUpperCase(),
         aadhaar_last4: values.aadhaarLast4,
-        ...(values.documentUrl ? { document_url: values.documentUrl } : {}),
       });
-      showToast({
-        variant: 'success',
-        title: 'KYC submitted for verification',
-      });
+      showToast({ variant: 'success', title: 'KYC submitted for verification' });
     } catch (error) {
-      const normalized = error as NormalizedApiError;
       showToast({
         variant: 'danger',
         title: 'Could not submit KYC',
-        description: normalized.message ?? 'Please try again in a moment.',
+        description: describeApiError(error) ?? 'Please try again in a moment.',
       });
     }
   };
@@ -112,8 +135,8 @@ function KycForm({ rejected }: { rejected: boolean }) {
       <div className={styles.formContent} hidden={submitKyc.isPending}>
         <h1 className={styles.title}>Complete your KYC</h1>
         <p className={styles.subtitle}>
-          Required for purchases above ₹50,000. We only ask for the last 4
-          digits of your Aadhaar.
+          Required for purchases above {formatCurrency(KYC_REQUIRED_ABOVE_INR, 'INR')}. We only
+          ask for the last 4 digits of your Aadhaar.
         </p>
 
         {rejected && (
@@ -147,15 +170,6 @@ function KycForm({ rejected }: { rejected: boolean }) {
             autoComplete="off"
             error={errors.aadhaarLast4?.message}
             {...register('aadhaarLast4')}
-          />
-          <Input
-            label="Document Link (Optional)"
-            placeholder="https://..."
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            error={errors.documentUrl?.message}
-            {...register('documentUrl')}
           />
 
           <Button type="submit" fullWidth disabled={!isValid}>

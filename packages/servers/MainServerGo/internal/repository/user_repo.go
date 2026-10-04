@@ -324,30 +324,52 @@ func (r *UserRepository) GetUsersByTenant(ctx context.Context, tenantID int64, l
 	return users, nil
 }
 
-func (r *UserRepository) UpdateUserKYCStatus(ctx context.Context, userID int64, status string, adminID *int64) error {
+func (r *UserRepository) UpdateUserKYCStatus(ctx context.Context, u *models.User, status string, adminID *int64) error {
 	query := `UPDATE users SET user_kyc_status = $1, user_status_approved_by = $2 WHERE user_id = $3`
-	_, err := r.DB.Db.ExecContext(ctx, query, status, adminID, userID)
+	_, err := r.DB.Db.ExecContext(ctx, query, status, adminID, u.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update user kyc status: %w", err)
 	}
-	// Note: We should invalidate redis cache here if needed, but we'll assume basic query works for now
+	// Synchronous, unlike the profile-update paths: the cached row is what InitiateBuy and
+	// GET /user/kyc read, so a stale entry would keep a just-approved customer blocked from
+	// KYC-gated purchases for the full cache TTL.
+	r.invalidateUserCaches(ctx, u)
 	return nil
 }
 
-func (r *UserRepository) UpdateUserDocumentJSON(ctx context.Context, userID int64, docJSON []byte) error {
-	query := `UPDATE users SET user_document_json = $1, user_kyc_status = 'pending' WHERE user_id = $2`
-	_, err := r.DB.Db.ExecContext(ctx, query, docJSON, userID)
+// kycResubmittableCondition mirrors models.User.CanSubmitKYC in SQL: never submitted
+// (pending with an empty/null document) or rejected.
+const kycResubmittableCondition = `(user_kyc_status = 'rejected'
+	OR (user_kyc_status = 'pending'
+		AND (user_document_json IS NULL OR user_document_json IN ('{}'::jsonb, 'null'::jsonb))))`
+
+// SubmitKYCDocuments stores the customer's KYC details and moves them to pending review.
+// The resubmission rule is enforced in the UPDATE itself, so a concurrent admin approval
+// can't be overwritten between the caller's check and this write. Returns false when the
+// customer was not in a submittable state.
+func (r *UserRepository) SubmitKYCDocuments(ctx context.Context, u *models.User, docJSON []byte) (bool, error) {
+	query := `UPDATE users SET user_document_json = $1, user_kyc_status = 'pending'
+		WHERE user_id = $2 AND ` + kycResubmittableCondition
+	res, err := r.DB.Db.ExecContext(ctx, query, docJSON, u.ID)
 	if err != nil {
-		return fmt.Errorf("failed to update user document json: %w", err)
+		return false, fmt.Errorf("failed to submit kyc documents: %w", err)
 	}
-	return nil
+	updated, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read kyc update result: %w", err)
+	}
+	r.invalidateUserCaches(ctx, u)
+	return updated == 1, nil
 }
 
 func (r *UserRepository) GetPendingKYCUsersByTenant(ctx context.Context, tenantID int64, limit, offset int) ([]*models.User, error) {
 	query := `
-		SELECT user_id, user_uuid, user_tenant_id, user_full_name, user_phone_number, user_email_id, user_kyc_status, user_document_json, user_vault_balance_grams
-		FROM users 
+		SELECT user_id, user_uuid, user_tenant_id, user_full_name, user_phone_number, user_email_id, user_kyc_status, user_document_json, user_total_vault_balance
+		FROM users
 		WHERE user_tenant_id = $1 AND user_kyc_status = 'pending'
+			-- Every new user defaults to 'pending'; only actual submissions need review.
+			AND user_document_json IS NOT NULL AND user_document_json NOT IN ('{}'::jsonb, 'null'::jsonb)
+		ORDER BY user_modified_at ASC
 		LIMIT $2 OFFSET $3
 	`
 	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset)
@@ -356,7 +378,7 @@ func (r *UserRepository) GetPendingKYCUsersByTenant(ctx context.Context, tenantI
 	}
 	defer rows.Close()
 
-	var users []*models.User
+	users := []*models.User{}
 	for rows.Next() {
 		var u models.User
 		var docJSON []byte

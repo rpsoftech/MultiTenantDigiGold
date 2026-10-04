@@ -7,7 +7,6 @@ import {
 } from '@/store/session/session.slice';
 import { setRegistrationToken } from '@/lib/auth/tokenStorage';
 import { decodeJwtPayload } from '@/lib/utils/jwt';
-import { getStoredKycStatus } from '@/features/kyc/kyc-status-storage';
 
 type UserAccessTokenClaims = { user_uuid: string };
 
@@ -19,14 +18,13 @@ export function useVerifyOtp() {
     onSuccess: (result, variables) => {
       if (result.is_registered && result.access_token) {
         const claims = decodeJwtPayload<UserAccessTokenClaims>(result.access_token);
-        const userId = claims?.user_uuid ?? '';
         dispatch(
           sessionEstablished({
-            userId,
+            userId: claims?.user_uuid ?? '',
             role: 'customer',
             mobileNumber: variables.mobileNumber,
             isNewUser: false,
-            kycStatus: getStoredKycStatus(userId),
+            kycStatus: 'not_started',
           }),
         );
       } else if (result.registration_token) {

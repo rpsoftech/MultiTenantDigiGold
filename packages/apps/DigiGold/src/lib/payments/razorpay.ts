@@ -20,9 +20,14 @@ export type RazorpayCheckoutOptions = {
   modal?: { ondismiss?: () => void };
 };
 
-type RazorpayInstance = {
+export type RazorpayFailureResponse = {
+  error: { code: string; description: string; reason?: string };
+};
+
+export type RazorpayInstance = {
   open: () => void;
-  on: (event: 'payment.failed', handler: (response: { error: { description: string } }) => void) => void;
+  close: () => void;
+  on: (event: 'payment.failed', handler: (response: RazorpayFailureResponse) => void) => void;
 };
 
 type RazorpayConstructor = new (options: RazorpayCheckoutOptions) => RazorpayInstance;
@@ -65,11 +70,15 @@ export function loadRazorpayScript(): Promise<RazorpayConstructor> {
   return loadPromise;
 }
 
+// Razorpay keeps the modal open after a failed attempt so the customer can retry with
+// another method — onPaymentFailed is for surfacing why, not for ending the flow.
 export function openRazorpayCheckout(
   RazorpayCtor: RazorpayConstructor,
   options: RazorpayCheckoutOptions,
+  onPaymentFailed?: (response: RazorpayFailureResponse) => void,
 ): RazorpayInstance {
   const instance = new RazorpayCtor(options);
+  if (onPaymentFailed) instance.on('payment.failed', onPaymentFailed);
   instance.open();
   return instance;
 }

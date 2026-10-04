@@ -161,7 +161,7 @@ func TestOnlineBuy_KYCRequiredAbove50000(t *testing.T) {
 		"total_amount_inr":        60000,
 		"requested_rate_per_gram": demoBuyRate,
 	})
-	expectStatus(t, r, http.StatusForbidden)
+	expectError(t, r, http.StatusForbidden, "KYC_REQUIRED")
 }
 
 func TestCounterBuy_CreditsGold(t *testing.T) {

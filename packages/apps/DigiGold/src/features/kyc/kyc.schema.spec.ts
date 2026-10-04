@@ -1,9 +1,9 @@
 import { kycSchema } from './kyc.schema';
 
-const valid = { panNumber: 'ABCDE1234F', aadhaarLast4: '1234', documentUrl: '' };
+const valid = { panNumber: 'ABCDE1234F', aadhaarLast4: '1234' };
 
 describe('kycSchema', () => {
-  it('accepts valid details with no document link', () => {
+  it('accepts valid details', () => {
     expect(kycSchema.safeParse(valid).success).toBe(true);
   });
 
@@ -18,11 +18,5 @@ describe('kycSchema', () => {
 
   it.each(['123', '12345', 'abcd', ''])('rejects Aadhaar last 4 %p', (aadhaarLast4) => {
     expect(kycSchema.safeParse({ ...valid, aadhaarLast4 }).success).toBe(false);
-  });
-
-  it('accepts an https document link and rejects other values', () => {
-    expect(kycSchema.safeParse({ ...valid, documentUrl: 'https://example.com/doc.pdf' }).success).toBe(true);
-    expect(kycSchema.safeParse({ ...valid, documentUrl: 'http://example.com/doc.pdf' }).success).toBe(false);
-    expect(kycSchema.safeParse({ ...valid, documentUrl: 'not a url' }).success).toBe(false);
   });
 });
