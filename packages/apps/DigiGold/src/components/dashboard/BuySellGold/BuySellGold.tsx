@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/common/Card/Card';
@@ -15,8 +15,13 @@ import { useLiveRate } from '@/features/market/hooks/useLiveRate';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useInitiateBuy } from '@/features/trade/hooks/useInitiateBuy';
 import { useBuySettlement } from '@/features/trade/hooks/useBuySettlement';
-import { loadRazorpayScript, openRazorpayCheckout } from '@/lib/payments/razorpay';
+import {
+  loadRazorpayScript,
+  openRazorpayCheckout,
+  type RazorpayInstance,
+} from '@/lib/payments/razorpay';
 import type { InitiateBuyResult } from '@/features/trade/trade.types';
+import type { NormalizedApiError } from '@/lib/api/client';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import { cn } from '@/lib/utils/cn';
 import { ROUTES } from '@/lib/constants/routes';
@@ -30,8 +35,15 @@ const KYC_GATED_AMOUNT_INR = 50000;
 type BuyMode = 'grams' | 'inr';
 type PaymentStage = 'idle' | 'awaiting-payment' | 'polling' | 'cancelled' | 'timeout';
 
-function secondsUntil(isoTimestamp: string): number {
-  return Math.max(0, Math.round((new Date(isoTimestamp).getTime() - Date.now()) / 1000));
+function secondsUntil(unixSeconds: number): number {
+  return Math.max(0, Math.round(unixSeconds - Date.now() / 1000));
+}
+
+function startPaymentErrorTitle(error: Partial<NormalizedApiError>): string {
+  if (error.status === 403) return 'KYC verification required';
+  // Live rate moved more than the server's slippage tolerance from the rate shown here.
+  if (error.code === 'SLIPPAGE_EXCEEDED') return 'Price changed';
+  return 'Could not start payment';
 }
 
 export function BuySellGold() {
@@ -45,13 +57,17 @@ export function BuySellGold() {
   const [mode, setMode] = useState<BuyMode>('grams');
   const [gramsInput, setGramsInput] = useState('1');
   const [quote, setQuote] = useState<InitiateBuyResult | null>(null);
+  // Captured once when the quote arrives — CountdownTimer restarts whenever `seconds`
+  // changes, so this must not be recomputed on every render.
+  const [quoteLockSeconds, setQuoteLockSeconds] = useState(0);
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [stage, setStage] = useState<PaymentStage>('idle');
+  const checkoutRef = useRef<RazorpayInstance | null>(null);
 
   const initiateBuy = useInitiateBuy();
   const settlement = useBuySettlement(stage === 'polling' ? paymentId : null);
 
-  if (tenantConfig && !tenantConfig.activeModules.trading) return null;
+  useEffect(() => () => checkoutRef.current?.close(), []);
 
   // rate.pricePerGramInr is a CLIENT-SIDE ESTIMATE: MainServer's rate feed only returns the
   // raw MCX ask, so features/market/tenantPricing.ts layers the platform's default margin
@@ -71,7 +87,6 @@ export function BuySellGold() {
   const kycBlocked =
     totalInr > KYC_GATED_AMOUNT_INR && (user?.kycStatus ?? 'not_started') !== 'verified';
 
-  const quoteSecondsLeft = quote ? secondsUntil(quote.quote_expires_at) : 0;
   const settlementStatus = stage === 'polling' ? settlement.status : null;
 
   const resetForm = () => {
@@ -81,11 +96,21 @@ export function BuySellGold() {
     setStage('idle');
   };
 
+  // MainServer refunds any payment captured after the quote expires (pg_service.go), so
+  // once the lock runs out the open checkout can only produce a charge-then-refund — close
+  // it rather than let the customer pay. Stage is set first so the resulting ondismiss
+  // doesn't flip it to 'cancelled'.
   const handleQuoteExpired = () => {
-    if (stage === 'awaiting-payment') {
-      setQuote(null);
-      setStage('idle');
-    }
+    if (stage !== 'awaiting-payment') return;
+    setQuote(null);
+    setStage('idle');
+    checkoutRef.current?.close();
+    checkoutRef.current = null;
+    showToast({
+      variant: 'danger',
+      title: 'Price lock expired',
+      description: 'Proceed again to get a fresh price.',
+    });
   };
 
   const handleGramsChange = (value: string) => {
@@ -114,6 +139,18 @@ export function BuySellGold() {
     }
     if (kycBlocked) return;
 
+    // Checked before initiating so a misconfigured deployment doesn't create a backend
+    // order (and Razorpay order) on every click that can never be paid.
+    const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+    if (!razorpayKeyId) {
+      showToast({
+        variant: 'danger',
+        title: 'Payment unavailable',
+        description: 'Checkout is not configured for this deployment.',
+      });
+      return;
+    }
+
     try {
       // Backend prices buys by amount only — the grams shown here are a display estimate
       // until the quote comes back.
@@ -122,21 +159,11 @@ export function BuySellGold() {
         requested_rate_per_gram: pricePerGram,
       });
       setQuote(result);
+      setQuoteLockSeconds(secondsUntil(result.quote_expires_at));
       setStage('awaiting-payment');
 
-      const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-      if (!razorpayKeyId) {
-        showToast({
-          variant: 'danger',
-          title: 'Payment unavailable',
-          description: 'Checkout is not configured for this deployment.',
-        });
-        setStage('idle');
-        return;
-      }
-
       const Razorpay = await loadRazorpayScript();
-      openRazorpayCheckout(Razorpay, {
+      checkoutRef.current = openRazorpayCheckout(Razorpay, {
         key: razorpayKeyId,
         amount: Math.round(result.amount * 100),
         currency: 'INR',
@@ -146,21 +173,32 @@ export function BuySellGold() {
         prefill: { contact: user?.mobileNumber ?? undefined },
         theme: { color: tenantConfig?.theme.colors.primary },
         handler: (response) => {
+          checkoutRef.current = null;
           setPaymentId(response.razorpay_payment_id);
           setStage('polling');
         },
         modal: {
           ondismiss: () => {
+            checkoutRef.current = null;
             setStage((current) => (current === 'awaiting-payment' ? 'cancelled' : current));
           },
         },
+      }, (failure) => {
+        showToast({
+          variant: 'danger',
+          title: 'Payment failed',
+          description: failure.error.description,
+        });
       });
     } catch (error) {
       setStage('idle');
-      const normalized = error as { message?: string; status?: number | null };
+      const normalized = error as Partial<NormalizedApiError>;
+      if (normalized.code === 'SLIPPAGE_EXCEEDED') {
+        void queryClient.invalidateQueries({ queryKey: ['market', 'last-rate'] });
+      }
       showToast({
         variant: 'danger',
-        title: normalized.status === 403 ? 'KYC verification required' : 'Could not start payment',
+        title: startPaymentErrorTitle(normalized),
         description: normalized.message ?? 'Please try again in a moment.',
       });
     }
@@ -194,6 +232,10 @@ export function BuySellGold() {
     return `Proceed to Pay ${formatCurrency(totalInr, 'INR')}`;
   }, [isAuthenticated, initiateBuy.isPending, stage, totalInr]);
 
+  // Must stay below every hook: tenantConfig starts as the static default (trading on) and
+  // can flip once /tenant/info resolves — an earlier return would change the hook count.
+  if (tenantConfig && !tenantConfig.activeModules.trading) return null;
+
   return (
     <section className={styles.section}>
       <h2 className={styles.heading}>Buy Gold</h2>
@@ -214,14 +256,16 @@ export function BuySellGold() {
             )}
           </div>
 
-          {quote && stage === 'awaiting-payment' && (
+          {/* quoteLockSeconds is 0 only if the client clock is far ahead of the server's —
+              hide the timer then rather than expire a quote the server still honours. */}
+          {quote && stage === 'awaiting-payment' && quoteLockSeconds > 0 && (
             <div className={styles.priceLock}>
               <span className={styles.priceLockLabel}>
                 <ClockIcon width={12} height={12} /> Price Locked
               </span>
               <CountdownTimer
                 key={quote.order_id}
-                seconds={quoteSecondsLeft}
+                seconds={quoteLockSeconds}
                 onExpire={handleQuoteExpired}
                 className={styles.priceLockTimer}
               />

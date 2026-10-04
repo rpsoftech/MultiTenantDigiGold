@@ -13,7 +13,7 @@ export type InitiateBuyResult = {
   amount: number;
   weight_grams: number;
   final_rate_per_gram: number;
-  quote_expires_at: string;
+  quote_expires_at: number; // unix seconds (TradeQuote.ExpiresAt), not an ISO string
 };
 
 // Ledger event types a customer's history can contain (see MainServerGo's
