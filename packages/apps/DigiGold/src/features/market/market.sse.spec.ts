@@ -7,6 +7,18 @@ import {
   jest,
 } from '@jest/globals';
 import type { subscribeToLiveRate } from './market.sse';
+import { applyDefaultTenantPricing } from './tenantPricing';
+
+// Purchase price = raw MCX ask + the default margin/GST estimate (tenantPricing.ts).
+function pricedFields(mcxAsk: number) {
+  const priced = applyDefaultTenantPricing(mcxAsk);
+  return {
+    pricePerGramInr: priced.finalRatePerGramInr,
+    mcxBaseRateInr: priced.mcxBaseRateInr,
+    marginAppliedInr: priced.marginAppliedInr,
+    gstAppliedInr: priced.gstAppliedInr,
+  };
+}
 
 const originalBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const originalMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_MARKET;
@@ -105,7 +117,9 @@ describe('mock live rate stream', () => {
     expect(secondTick).toHaveBeenCalledTimes(1);
     expect(firstTick).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        pricePerGramInr: 7120.83,
+        ...pricedFields(7120.83),
+        bidPerGramInr: 7116.83,
+        askPerGramInr: 7120.83,
         purityLabel: '24K • 99.99%',
       }),
     );
@@ -156,7 +170,7 @@ describe('live quote stream', () => {
       } else {
         expect(onTick).toHaveBeenCalledTimes(1);
         expect(onTick).toHaveBeenCalledWith({
-          pricePerGramInr: expectedPrice,
+          ...pricedFields(expectedPrice),
           bidPerGramInr: expectedBid,
           askPerGramInr: expectedAsk,
           purityLabel: '24K • 99.99%',

@@ -1,14 +1,17 @@
 import { describe, expect, it } from '@jest/globals';
-import { parseRateFrameToPrice, parseRateFrameToQuote } from './market.utils';
+import { parseRateFrame } from './market.utils';
+import { applyDefaultTenantPricing } from './tenantPricing';
 
-describe('parseRateFrameToPrice', () => {
+describe('parseRateFrame', () => {
   it.each([
     '{"bid":7000,"ask":7100,"last-high":7200,"last-low":6900}',
     '{"last-high":7200,"timestamp":1790784000,"bid":7000,"ask":7100}',
     'data: {"last-low":6900,"bid":7000,"ask":7100}\n\n',
     'id: 42\nretry: 3000\ndata: {"bid":7000,\ndata: "ask":7100}\n\n',
-  ])('uses ask regardless of field order or SSE metadata: %s', (frame) => {
-    expect(parseRateFrameToPrice(frame)).toBe(7100);
+  ])('prices off ask regardless of field order or SSE metadata: %s', (frame) => {
+    const parsed = parseRateFrame(frame);
+    expect(parsed?.mcxBaseRateInr).toBe(7100);
+    expect(parsed?.finalRatePerGramInr).toBe(applyDefaultTenantPricing(7100).finalRatePerGramInr);
   });
 
   it.each([
@@ -17,7 +20,7 @@ describe('parseRateFrameToPrice', () => {
     'data: 7120.83\n\n',
     'data:7120.83\r\n\r\n',
   ])('preserves legacy scalar compatibility: %s', (frame) => {
-    expect(parseRateFrameToPrice(frame)).toBe(7120.83);
+    expect(parseRateFrame(frame)?.mcxBaseRateInr).toBe(7120.83);
   });
 
   it.each([
@@ -47,21 +50,14 @@ describe('parseRateFrameToPrice', () => {
     '{"ask":7100,',
     'data: error 503\n\n',
   ])('rejects invalid or missing purchase prices: %s', (frame) => {
-    expect(parseRateFrameToPrice(frame)).toBeNull();
-    expect(parseRateFrameToQuote(frame)).toBeNull();
+    expect(parseRateFrame(frame)).toBeNull();
   });
-});
 
-describe('parseRateFrameToQuote', () => {
   it.each([
     '{"bid":7000,"ask":7100,"last-high":7200,"last-low":6900}',
     'id: 42\ndata: {"last-high":7200,\ndata: "ask":7100,"bid":7000}\n\n',
-  ])('preserves both explicit quote sides: %s', (frame) => {
-    expect(parseRateFrameToQuote(frame)).toEqual({
-      pricePerGramInr: 7100,
-      bidPerGramInr: 7000,
-      askPerGramInr: 7100,
-    });
+  ])('preserves both raw quote sides: %s', (frame) => {
+    expect(parseRateFrame(frame)).toMatchObject({ bidPerGramInr: 7000, askPerGramInr: 7100 });
   });
 
   it.each([
@@ -73,16 +69,11 @@ describe('parseRateFrameToQuote', () => {
     '{"ask":7100,"bid":"7000"}',
     '{"ask":7100,"bid":1e999}',
   ])('keeps a missing or invalid bid unavailable: %s', (frame) => {
-    expect(parseRateFrameToQuote(frame)).toEqual({
-      pricePerGramInr: 7100,
-      bidPerGramInr: null,
-      askPerGramInr: 7100,
-    });
+    expect(parseRateFrame(frame)).toMatchObject({ bidPerGramInr: null, askPerGramInr: 7100 });
   });
 
   it('does not invent bid/ask sides for legacy scalar ticks', () => {
-    expect(parseRateFrameToQuote('data: 7120.83\n\n')).toEqual({
-      pricePerGramInr: 7120.83,
+    expect(parseRateFrame('data: 7120.83\n\n')).toMatchObject({
       bidPerGramInr: null,
       askPerGramInr: null,
     });

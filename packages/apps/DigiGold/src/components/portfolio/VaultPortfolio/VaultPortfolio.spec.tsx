@@ -10,6 +10,10 @@ import { useLiveRate } from '@/features/market/hooks/useLiveRate';
 import type { MarketRate } from '@/features/market/market.types';
 import { VaultPortfolio } from './VaultPortfolio';
 
+// The vault reads only the raw bid/ask sides and updatedAt; BuySellGold's margin/GST
+// breakdown fields are required by MarketRate but irrelevant here.
+const UNUSED_PURCHASE_PRICING = { mcxBaseRateInr: 0, marginAppliedInr: 0, gstAppliedInr: 0 };
+
 jest.mock('next/navigation', () => ({ useRouter: jest.fn() }));
 jest.mock('@/features/market/hooks/useLiveRate', () => ({
   useLiveRate: jest.fn(),
@@ -169,6 +173,7 @@ describe('vault with real APIs enabled', () => {
     const updatedAt = new Date(Date.now() + 1000).toISOString();
     const quote: MarketRate = {
       pricePerGramInr: 7250,
+      ...UNUSED_PURCHASE_PRICING,
       bidPerGramInr: 7200,
       askPerGramInr: 7250,
       purityLabel: '24K',
@@ -198,6 +203,7 @@ describe('vault with real APIs enabled', () => {
     setMarketRate(
       {
         pricePerGramInr: 6000,
+        ...UNUSED_PURCHASE_PRICING,
         bidPerGramInr: 5900,
         askPerGramInr: 6000,
         purityLabel: '24K',
@@ -225,6 +231,7 @@ describe('vault with real APIs enabled', () => {
     setMarketRate(
       {
         pricePerGramInr: 7250,
+        ...UNUSED_PURCHASE_PRICING,
         bidPerGramInr: null,
         askPerGramInr: 7250,
         purityLabel: '24K',
@@ -248,6 +255,7 @@ describe('vault with real APIs enabled', () => {
     setMarketRate(
       {
         pricePerGramInr: 7250,
+        ...UNUSED_PURCHASE_PRICING,
         bidPerGramInr: 7200,
         askPerGramInr: 7250,
         purityLabel: '24K',

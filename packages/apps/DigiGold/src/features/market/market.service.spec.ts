@@ -1,6 +1,19 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import type { apiClient } from '@/lib/api/client';
 import type { marketService } from './market.service';
+import { applyDefaultTenantPricing } from './tenantPricing';
+
+// The rate shown for purchase is the raw MCX ask with the default margin/GST estimate on
+// top (tenantPricing.ts); bid/ask stay as the raw quote sides.
+function pricedFields(mcxAsk: number) {
+  const priced = applyDefaultTenantPricing(mcxAsk);
+  return {
+    pricePerGramInr: priced.finalRatePerGramInr,
+    mcxBaseRateInr: priced.mcxBaseRateInr,
+    marginAppliedInr: priced.marginAppliedInr,
+    gstAppliedInr: priced.gstAppliedInr,
+  };
+}
 
 const originalMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_MARKET;
 
@@ -34,7 +47,9 @@ describe('mock market rate', () => {
 
     expect(getSpy).not.toHaveBeenCalled();
     expect(rate).toEqual({
-      pricePerGramInr: 7120.83,
+      ...pricedFields(7120.83),
+      bidPerGramInr: 7116.83,
+      askPerGramInr: 7120.83,
       purityLabel: '24K • 99.99%',
       updatedAt: expect.any(String),
     });
@@ -76,7 +91,7 @@ describe('live market rate', () => {
         expect(rate).toBeNull();
       } else {
         expect(rate).toEqual({
-          pricePerGramInr: expectedPrice,
+          ...pricedFields(expectedPrice),
           bidPerGramInr: expectedBid,
           askPerGramInr: expectedAsk,
           purityLabel: '24K • 99.99%',

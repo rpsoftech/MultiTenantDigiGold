@@ -52,22 +52,6 @@ const sessionSlice = createSlice({
       state.registrationToken = null;
       state.registrationPhone = null;
     },
-    // A hard refresh wipes the in-memory session, but the JWT survives in localStorage. The
-    // identity fields can't be replayed from it here (only a /me round-trip would supply
-    // them), so this restores *authentication* with a placeholder user and never overwrites
-    // a real identity already resolved during this page's lifetime.
-    sessionRestored: (state) => {
-      state.revision += 1;
-      if (!state.user) {
-        state.user = {
-          userId: '',
-          role: 'customer',
-          isNewUser: false,
-          kycStatus: 'not_started',
-        };
-      }
-      state.isAuthenticated = true;
-    },
     sessionCleared: (state) => {
       state.revision += 1;
       state.user = null;
@@ -82,7 +66,6 @@ export const {
   sessionEstablished,
   registrationStarted,
   profileCompleted,
-  sessionRestored,
   sessionCleared,
 } = sessionSlice.actions;
 export const sessionReducer = sessionSlice.reducer;

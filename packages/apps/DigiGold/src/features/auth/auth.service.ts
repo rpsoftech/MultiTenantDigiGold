@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api/client';
-import { persistTokens } from '@/lib/auth/tokenStorage';
+import { setTokens } from '@/lib/auth/tokenStorage';
 import type {
   RequestOtpPayload,
   RequestOtpResult,
@@ -35,7 +35,7 @@ export const authService = {
       phone: payload.mobileNumber,
       otp: payload.otp,
     });
-    persistTokens({
+    setTokens({
       accessToken: response.data.access_token,
       refreshToken: response.data.refresh_token,
     });
@@ -49,9 +49,10 @@ export const authService = {
     const response = await apiClient.post<VerifyOtpResult>('/auth/register', {
       registration_token: payload.registrationToken,
       full_name: payload.fullName,
+      location: payload.location,
       email_id: payload.emailId || undefined,
     });
-    persistTokens({
+    setTokens({
       accessToken: response.data.access_token,
       refreshToken: response.data.refresh_token,
     });

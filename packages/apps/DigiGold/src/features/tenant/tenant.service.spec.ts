@@ -1,42 +1,15 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  jest,
-} from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { apiClient } from '@/lib/api/client';
 import { resolveTenantConfig } from './tenant.service';
-import { mockTenantConfig } from './tenant.mock';
-import { defaultTenantConfig } from './tenant.defaults';
+import { DEFAULT_TENANT_CONFIG } from './tenant.defaults';
 
-const originalMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_TENANT_CONFIG;
-
-beforeEach(() => {
-  process.env.NEXT_PUBLIC_USE_MOCK_TENANT_CONFIG = 'false';
-});
+const defaultTenantConfig = DEFAULT_TENANT_CONFIG;
 
 afterEach(() => {
   jest.restoreAllMocks();
-  if (originalMockFlag === undefined) {
-    delete process.env.NEXT_PUBLIC_USE_MOCK_TENANT_CONFIG;
-  } else {
-    process.env.NEXT_PUBLIC_USE_MOCK_TENANT_CONFIG = originalMockFlag;
-  }
 });
 
 describe('resolveTenantConfig', () => {
-  it('uses the browser-visible mock flag without requesting an unavailable endpoint', async () => {
-    process.env.NEXT_PUBLIC_USE_MOCK_TENANT_CONFIG = 'true';
-    const request = jest.spyOn(apiClient, 'get');
-
-    await expect(resolveTenantConfig('aurelian-digital')).resolves.toEqual(
-      mockTenantConfig,
-    );
-    expect(request).not.toHaveBeenCalled();
-  });
-
   it('maps the public tenant API response and preserves disabled modules', async () => {
     const request = jest.spyOn(apiClient, 'get').mockResolvedValue({
       data: {
@@ -61,7 +34,7 @@ describe('resolveTenantConfig', () => {
       },
     });
 
-    const config = await resolveTenantConfig('aurelian-digital');
+    const config = await resolveTenantConfig();
 
     expect(request).toHaveBeenCalledWith('/tenant/info');
     expect(config.tenantId).toBe('live-tenant-uuid');
@@ -100,7 +73,7 @@ describe('resolveTenantConfig', () => {
         },
       });
 
-      const config = await resolveTenantConfig('aurelian-digital');
+      const config = await resolveTenantConfig();
 
       expect(config.tenantId).toBe('live-tenant-uuid');
       expect(config.displayName).toBe('Live Gold Jewellers');
@@ -127,7 +100,7 @@ describe('resolveTenantConfig', () => {
       },
     });
 
-    const config = await resolveTenantConfig('aurelian-digital');
+    const config = await resolveTenantConfig();
 
     expect(config.displayName).toBe('Live Gold');
     expect(config.theme.colors).toEqual(defaultTenantConfig.theme.colors);
@@ -149,7 +122,7 @@ describe('resolveTenantConfig', () => {
     };
     jest.spyOn(apiClient, 'get').mockRejectedValue(failure);
 
-    await expect(resolveTenantConfig('aurelian-digital')).rejects.toBe(failure);
+    await expect(resolveTenantConfig()).rejects.toBe(failure);
   });
 
   it('rejects metadata without a tenant identity instead of using the default retailer', async () => {
@@ -157,7 +130,7 @@ describe('resolveTenantConfig', () => {
       data: { full_name: 'Live Gold Jewellers', ui_json_config: {} },
     });
 
-    await expect(resolveTenantConfig('aurelian-digital')).rejects.toThrow(
+    await expect(resolveTenantConfig()).rejects.toThrow(
       'Tenant API returned an invalid tenant identity.',
     );
   });

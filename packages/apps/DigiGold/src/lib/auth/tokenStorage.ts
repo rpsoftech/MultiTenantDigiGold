@@ -1,41 +1,43 @@
-// Single owner of the persisted auth token. MainServer's JWT is the only proof of a session,
-// so every read/write goes through here rather than sprinkling localStorage keys across the
-// API client, the auth service and the store bootstrap. Lives in lib/ (not features/auth)
-// because lib/api consumes it too.
+// Single source of truth for where auth tokens live in browser storage. Nothing outside
+// this module should call localStorage/sessionStorage for these keys directly.
 
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
+const REGISTRATION_TOKEN_KEY = 'registration_token';
 
-function readItem(key: string): string | null {
+export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(key);
+  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
-function writeItem(key: string, value: string | undefined) {
-  if (typeof window === 'undefined' || !value) return;
-  window.localStorage.setItem(key, value);
+export function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
-export function readStoredAccessToken(): string | null {
-  return readItem(ACCESS_TOKEN_KEY);
+export function setTokens(tokens: { accessToken?: string; refreshToken?: string }): void {
+  if (typeof window === 'undefined') return;
+  if (tokens.accessToken) window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+  if (tokens.refreshToken) window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
 }
 
-export function readStoredRefreshToken(): string | null {
-  return readItem(REFRESH_TOKEN_KEY);
-}
-
-// Only the non-null tokens are written, so a partial response can never erase a token the
-// user still holds; use clearStoredTokens() for an explicit sign-out.
-export function persistTokens(tokens: {
-  accessToken?: string;
-  refreshToken?: string;
-}) {
-  writeItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  writeItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
-}
-
-export function clearStoredTokens() {
+export function clearTokens(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(ACCESS_TOKEN_KEY);
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+export function getRegistrationToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.sessionStorage.getItem(REGISTRATION_TOKEN_KEY);
+}
+
+export function setRegistrationToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(REGISTRATION_TOKEN_KEY, token);
+}
+
+export function clearRegistrationToken(): void {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.removeItem(REGISTRATION_TOKEN_KEY);
 }

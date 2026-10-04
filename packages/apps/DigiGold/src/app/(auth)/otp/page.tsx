@@ -6,7 +6,7 @@ import { OtpForm } from '@/components/auth/OtpForm/OtpForm';
 import { ROUTES } from '@/lib/constants/routes';
 import { MOBILE_NUMBER_PATTERN } from '@/lib/constants/regex';
 
-function OtpContent() {
+function OtpPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mobileNumber = searchParams.get('mobile') ?? '';
@@ -26,7 +26,7 @@ function OtpContent() {
 export default function OtpPage() {
   return (
     <Suspense fallback={null}>
-      <OtpContent />
+      <OtpPageContent />
     </Suspense>
   );
 }
