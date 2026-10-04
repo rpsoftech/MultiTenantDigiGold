@@ -20,6 +20,8 @@ import { useLiveRate } from '@/features/market/hooks/useLiveRate';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useInitiateBuy } from '@/features/trade/hooks/useInitiateBuy';
 import { useBuySettlement } from '@/features/trade/hooks/useBuySettlement';
+import { KYC_STATUS_QUERY_KEY, useKycStatus } from '@/features/kyc/hooks/useKycStatus';
+import { KYC_REQUIRED_ABOVE_INR } from '@/features/kyc/kyc.constants';
 import {
   loadRazorpayScript,
   openRazorpayCheckout,
@@ -35,7 +37,6 @@ import styles from './BuySellGold.module.scss';
 const QUICK_ADD_GRAMS = [0.5, 1, 5, 10];
 const QUICK_ADD_INR = [1000, 5000, 10000, 25000];
 const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
-const KYC_GATED_AMOUNT_INR = 50000;
 
 type BuyMode = 'grams' | 'inr';
 type PaymentStage = 'idle' | 'awaiting-payment' | 'polling' | 'cancelled' | 'timeout';
@@ -70,6 +71,7 @@ export function BuySellGold() {
   const checkoutRef = useRef<RazorpayInstance | null>(null);
 
   const initiateBuy = useInitiateBuy();
+  const { status: kycStatus } = useKycStatus();
   const settlement = useBuySettlement(stage === 'polling' ? paymentId : null);
 
   useEffect(() => () => checkoutRef.current?.close(), []);
@@ -90,8 +92,15 @@ export function BuySellGold() {
   const gstAmountInr = grams * (rate?.gstAppliedInr ?? 0);
   const inrInputValue = totalInr ? totalInr.toFixed(2) : '';
 
+  // Mirrors MainServer's InitiateBuy check: 'upfront' tenants need verified KYC for any
+  // purchase, every tenant needs it above the threshold. Only applied once the real status
+  // has loaded — an unknown status must not block a verified customer (the server's 403 is
+  // still the backstop).
+  const kycUpfront = tenantConfig?.kycMode === 'upfront';
   const kycBlocked =
-    totalInr > KYC_GATED_AMOUNT_INR && (user?.kycStatus ?? 'not_started') !== 'verified';
+    kycStatus !== undefined &&
+    kycStatus !== 'verified' &&
+    (kycUpfront || totalInr > KYC_REQUIRED_ABOVE_INR);
 
   const settlementStatus = stage === 'polling' ? settlement.status : null;
 
@@ -201,6 +210,10 @@ export function BuySellGold() {
       const normalized = error as Partial<NormalizedApiError>;
       if (normalized.code === 'SLIPPAGE_EXCEEDED') {
         void queryClient.invalidateQueries({ queryKey: ['market', 'last-rate'] });
+      }
+      // The server's KYC view disagreed with ours (e.g. status changed elsewhere) — resync.
+      if (normalized.code === 'KYC_REQUIRED') {
+        void queryClient.invalidateQueries({ queryKey: KYC_STATUS_QUERY_KEY });
       }
       showToast({
         variant: 'danger',
@@ -434,12 +447,14 @@ export function BuySellGold() {
 
         {kycBlocked && (
           <p className={styles.statusMessage} data-variant="warning">
-            Purchases above {formatCurrency(KYC_GATED_AMOUNT_INR, 'INR')} require KYC verification.{' '}
-            {user?.kycStatus === 'pending'
+            {kycUpfront
+              ? 'This store requires KYC verification before your first purchase.'
+              : `Purchases above ${formatCurrency(KYC_REQUIRED_ABOVE_INR, 'INR')} require KYC verification.`}{' '}
+            {kycStatus === 'pending'
               ? 'Your KYC is under review.'
               : 'Complete your KYC to continue.'}{' '}
             <Link href={ROUTES.kyc} className={styles.statusLink}>
-              {user?.kycStatus === 'pending' ? 'View KYC status' : 'Go to KYC'}
+              {kycStatus === 'pending' ? 'View KYC status' : 'Go to KYC'}
             </Link>
           </p>
         )}

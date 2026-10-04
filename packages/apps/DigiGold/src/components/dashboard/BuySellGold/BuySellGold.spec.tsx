@@ -8,6 +8,9 @@ import { useToast } from '@/components/common/Toast/Toast';
 import { makeStore, type AppStore } from '@/store';
 import { sessionEstablished } from '@/store/session/session.slice';
 import { applyDefaultTenantPricing } from '@/features/market/tenantPricing';
+import { useKycStatus } from '@/features/kyc/hooks/useKycStatus';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+import type { KycStatus } from '@/store/session/session.types';
 import { BuySellGold } from './BuySellGold';
 
 jest.mock('next/navigation', () => ({ useRouter: jest.fn() }));
@@ -15,11 +18,24 @@ jest.mock('@/features/market/hooks/useLiveRate', () => ({
   useLiveRate: jest.fn(),
 }));
 jest.mock('@/components/common/Toast/Toast', () => ({ useToast: jest.fn() }));
+jest.mock('@/features/kyc/hooks/useKycStatus', () => ({
+  useKycStatus: jest.fn(),
+  KYC_STATUS_QUERY_KEY: ['user', 'kyc'],
+}));
 
 const push = jest.fn();
 const showToast = jest.fn();
 let store: AppStore;
 let queryClient: QueryClient;
+
+function setKycStatus(status: KycStatus | undefined) {
+  jest.mocked(useKycStatus).mockReturnValue({
+    status,
+    isError: false,
+    isFetching: false,
+    refetch: jest.fn(),
+  });
+}
 
 // `price` is the purchase price shown to the customer, i.e. after the margin/GST estimate.
 // The fixture carries matching breakdown fields so the summary rows stay consistent.
@@ -72,6 +88,7 @@ beforeEach(() => {
   store = makeStore();
   queryClient = new QueryClient();
   setRate(null);
+  setKycStatus(undefined);
   jest.mocked(useRouter).mockReturnValue({
     push,
     replace: jest.fn(),
@@ -165,5 +182,78 @@ describe('purchase calculator rate availability', () => {
 
     expect(push).toHaveBeenCalledWith('/login');
     expect(showToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('KYC gate', () => {
+  // 1 g at ₹60,000/g crosses the ₹50,000 threshold with the default gram input.
+  const ABOVE_THRESHOLD_PRICE = 60_000;
+
+  function proceedButton() {
+    return screen.getByRole<HTMLButtonElement>('button', { name: /Proceed to Pay/ });
+  }
+
+  it('lets a verified customer buy above the threshold', () => {
+    signIn();
+    setKycStatus('verified');
+    setRate(ABOVE_THRESHOLD_PRICE);
+    render(buySellGold());
+
+    expect(screen.queryByText(/require KYC verification/)).toBeNull();
+    expect(proceedButton().disabled).toBe(false);
+  });
+
+  it('does not block while the KYC status is still loading', () => {
+    signIn();
+    setKycStatus(undefined);
+    setRate(ABOVE_THRESHOLD_PRICE);
+    render(buySellGold());
+
+    expect(screen.queryByText(/require KYC verification/)).toBeNull();
+    expect(proceedButton().disabled).toBe(false);
+  });
+
+  it('blocks an unverified customer above the threshold and links to KYC', () => {
+    signIn();
+    setKycStatus('not_started');
+    setRate(ABOVE_THRESHOLD_PRICE);
+    render(buySellGold());
+
+    expect(screen.getByText(/Purchases above ₹50,000 require KYC verification/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Go to KYC' }).getAttribute('href')).toBe('/kyc');
+    expect(proceedButton().disabled).toBe(true);
+  });
+
+  it('points a customer with a pending review at their status', () => {
+    signIn();
+    setKycStatus('pending');
+    setRate(ABOVE_THRESHOLD_PRICE);
+    render(buySellGold());
+
+    expect(screen.getByText(/Your KYC is under review/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View KYC status' })).toBeTruthy();
+  });
+
+  it('allows small purchases without KYC on a just-in-time tenant', () => {
+    signIn();
+    setKycStatus('not_started');
+    setRate(7000);
+    render(buySellGold());
+
+    expect(screen.queryByText(/KYC verification/)).toBeNull();
+    expect(proceedButton().disabled).toBe(false);
+  });
+
+  it('requires KYC for any purchase on an upfront tenant', () => {
+    store = makeStore({ tenant: { config: { ...DEFAULT_TENANT_CONFIG, kycMode: 'upfront' } } });
+    signIn();
+    setKycStatus('not_started');
+    setRate(7000);
+    render(buySellGold());
+
+    expect(
+      screen.getByText(/This store requires KYC verification before your first purchase/),
+    ).toBeTruthy();
+    expect(proceedButton().disabled).toBe(true);
   });
 });
