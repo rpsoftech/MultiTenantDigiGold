@@ -6,7 +6,10 @@ import { Badge } from '@/components/common/Badge/Badge';
 import { CoinsIcon, WalletIcon } from '@/components/common/icons/Icons';
 import { MARKET_PURITY_LABEL } from '@/features/market/market.types';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
-import { GRAMS_PRECISION } from '@/features/portfolio/portfolio.types';
+import {
+  GRAMS_PRECISION,
+  PORTFOLIO_REFETCH_INTERVAL_MS,
+} from '@/features/portfolio/portfolio.types';
 import type { Portfolio } from '@/features/portfolio/portfolio.types';
 import { ROUTES } from '@/lib/constants/routes';
 import styles from './VaultBalanceCard.module.scss';
@@ -51,7 +54,7 @@ export function VaultBalanceCard({ portfolio }: VaultBalanceCardProps) {
       <p className={styles.hint}>
         {valuationUnavailable
           ? 'Your gold balance is confirmed. A valuation will be available when the bid rate returns.'
-          : 'Last confirmed valuation at the bid rate. Refreshes every 30 seconds.'}{' '}
+          : `Last confirmed valuation at the bid rate. Refreshes every ${PORTFOLIO_REFETCH_INTERVAL_MS / 1000} seconds.`}{' '}
         Holdings updated{' '}
         <time dateTime={portfolio.fetchedAt}>
           {new Date(portfolio.fetchedAt).toLocaleTimeString('en-IN', {

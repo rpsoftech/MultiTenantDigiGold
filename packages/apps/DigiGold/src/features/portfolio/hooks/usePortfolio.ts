@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { portfolioService, shouldUseMockPortfolio } from '../portfolio.service';
+import { PORTFOLIO_REFETCH_INTERVAL_MS } from '../portfolio.types';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
 
-// The valuation is a point-in-time number (grams × bid at fetch time), so it goes stale on
-// its own. A slow background refetch keeps the headline honest without the SSE burst rate —
-// live bid/ask ticking is the stream's job, not this query's.
-const REFETCH_INTERVAL_MS = 30_000;
-
+// apiClient also clears the session and redirects on any 401, so this overlaps with it on
+// purpose: it hides cached holdings and stops polling in this same render, rather than
+// waiting for the global sessionCleared to propagate back down through useSession.
 function isUnauthorized(error: unknown) {
   return isNormalizedApiError(error) && error.status === 401;
 }
@@ -35,7 +34,7 @@ export function usePortfolio() {
       failure.status !== null &&
       failure.status >= 500,
     retryDelay: 1_000,
-    refetchInterval: REFETCH_INTERVAL_MS,
+    refetchInterval: PORTFOLIO_REFETCH_INTERVAL_MS,
     refetchOnWindowFocus: true,
   });
 

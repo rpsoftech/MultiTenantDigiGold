@@ -98,3 +98,22 @@ export function VaultErrorState({
     </Card>
   );
 }
+
+// Shown when the tenant has the vault module switched off. The nav already hides the link,
+// but a bookmarked or typed /vault URL should explain itself rather than render blank.
+export function VaultUnavailableState({ onGoHome }: { onGoHome: () => void }) {
+  return (
+    <Card className={styles.stateCard}>
+      <span className={styles.stateIcon} aria-hidden>
+        <InfoIcon width={22} height={22} />
+      </span>
+      <h3 className={styles.stateTitle}>The vault isn&apos;t available here</h3>
+      <p className={styles.stateBody}>
+        This store doesn&apos;t offer the digital gold vault right now.
+      </p>
+      <Button variant="outlined" onClick={onGoHome}>
+        Back to home
+      </Button>
+    </Card>
+  );
+}

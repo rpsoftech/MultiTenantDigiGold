@@ -8,6 +8,7 @@ import { makeStore, type AppStore } from '@/store';
 import { sessionEstablished } from '@/store/session/session.slice';
 import { useLiveRate } from '@/features/market/hooks/useLiveRate';
 import type { MarketRate } from '@/features/market/market.types';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
 import { VaultPortfolio } from './VaultPortfolio';
 
 // The vault reads only the raw bid/ask sides and updatedAt; BuySellGold's margin/GST
@@ -93,6 +94,25 @@ const portfolioResponse = {
     live_rate: { bid: 7000, ask: 7100 },
   },
 };
+
+describe('vault module availability', () => {
+  it('explains a disabled vault module instead of rendering a blank page', () => {
+    store = makeStore({
+      tenant: {
+        config: {
+          ...DEFAULT_TENANT_CONFIG,
+          activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, vault: false },
+        },
+      },
+    });
+    renderVault();
+
+    expect(screen.getByText("The vault isn't available here")).toBeTruthy();
+    expect(screen.queryByText('Your vault is private')).toBeNull();
+    screen.getByRole('button', { name: 'Back to home' }).click();
+    expect(push).toHaveBeenCalledWith('/home');
+  });
+});
 
 describe('vault with real APIs enabled', () => {
   it('shows a sign-in prompt without requesting holdings, then loads API data after sign-in', async () => {

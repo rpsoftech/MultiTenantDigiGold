@@ -5,6 +5,7 @@ import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useLiveRate } from '@/features/market/hooks/useLiveRate';
 import type { MarketRate } from '@/features/market/market.types';
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
+import { useSessionResolved } from '@/features/auth/hooks/useSessionResolved';
 import type { Portfolio } from '@/features/portfolio/portfolio.types';
 import { Button } from '@/components/common/Button/Button';
 import { ROUTES } from '@/lib/constants/routes';
@@ -14,6 +15,7 @@ import {
   VaultErrorState,
   VaultLoadingState,
   VaultUnauthenticatedState,
+  VaultUnavailableState,
 } from '@/components/portfolio/VaultStates/VaultStates';
 import styles from './VaultPortfolio.module.scss';
 
@@ -70,10 +72,15 @@ export function VaultPortfolio() {
     isMock,
     refetch,
   } = usePortfolio();
-
-  if (tenantConfig && !tenantConfig.activeModules.vault) return null;
+  const sessionResolved = useSessionResolved();
+  const vaultEnabled = tenantConfig?.activeModules.vault ?? true;
 
   const renderContent = () => {
+    if (!vaultEnabled) {
+      return <VaultUnavailableState onGoHome={() => router.push(ROUTES.home)} />;
+    }
+    // Before mount effects run, a logged-in user's session hasn't been restored yet.
+    if (!isAuthenticated && !sessionResolved) return <VaultLoadingState />;
     if (!isAuthenticated) {
       return (
         <VaultUnauthenticatedState onSignIn={() => router.push(ROUTES.login)} />

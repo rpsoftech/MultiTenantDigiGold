@@ -54,10 +54,7 @@ export function LiveRatePanel({
         <div className={styles.rateRow}>
           <span className={styles.rateLabel}>
             Bid
-            <span className={styles.rateCaption}>
-              {' '}
-              — what you receive when you sell
-            </span>
+            <span className={styles.rateCaption}> — market sell-side rate</span>
           </span>
           {bid === null ? (
             <span className={styles.rateUnavailable}>Unavailable</span>
@@ -72,10 +69,7 @@ export function LiveRatePanel({
         <div className={styles.rateRow}>
           <span className={styles.rateLabel}>
             Ask
-            <span className={styles.rateCaption}>
-              {' '}
-              — what you pay when you buy
-            </span>
+            <span className={styles.rateCaption}> — market buy-side rate</span>
           </span>
           {ask === null ? (
             <span className={styles.rateUnavailable}>Unavailable</span>
@@ -94,6 +88,13 @@ export function LiveRatePanel({
           </div>
         )}
       </div>
+
+      {/* These are raw MCX quotes. Presenting ask as "what you pay" understated the real
+          purchase price by the tenant margin + GST that BuySellGold adds on top. */}
+      <p className={styles.footnote}>
+        Raw market (MCX) rates. Purchases add your jeweller&apos;s margin and GST on top of
+        the ask — the buy screen shows the full price before you pay.
+      </p>
 
       {!hasRate && (
         <p className={styles.footnote}>

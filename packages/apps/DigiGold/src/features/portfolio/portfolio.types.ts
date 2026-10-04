@@ -39,3 +39,8 @@ export const EMPTY_LIVE_RATE: LiveRate = {
 // Grams are stored to 4dp on the ledger, so render at the same precision and never show
 // more than the backend can actually account for.
 export const GRAMS_PRECISION = 4;
+
+// The valuation is a point-in-time number (grams × bid at fetch time), so it goes stale on
+// its own. A slow background refetch keeps the headline honest without the SSE burst rate —
+// live bid/ask ticking is the stream's job, not this query's. Also quoted in the UI copy.
+export const PORTFOLIO_REFETCH_INTERVAL_MS = 30_000;

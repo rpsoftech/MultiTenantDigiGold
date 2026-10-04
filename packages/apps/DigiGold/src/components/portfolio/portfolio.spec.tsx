@@ -122,6 +122,21 @@ describe('LiveRatePanel', () => {
     expect(screen.getByText(/raw bid with no tenant margin/i)).toBeTruthy();
     expect(screen.getByText('24.5812 g held')).toBeTruthy();
   });
+
+  it('does not present the raw ask as the purchase price', () => {
+    render(
+      <LiveRatePanel
+        liveRate={PORTFOLIO.liveRate}
+        balanceGrams={PORTFOLIO.balanceGrams}
+        isStreamConnected
+        fetchedAt={PORTFOLIO.fetchedAt}
+      />,
+    );
+
+    // BuySellGold charges ask + margin + GST, so "what you pay" here would understate it.
+    expect(screen.queryByText(/what you pay/i)).toBeNull();
+    expect(screen.getByText(/margin and GST on top of\s+the ask/i)).toBeTruthy();
+  });
 });
 
 describe('VaultStates', () => {
