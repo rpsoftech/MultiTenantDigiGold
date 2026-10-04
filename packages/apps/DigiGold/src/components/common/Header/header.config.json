@@ -43,11 +43,18 @@
           "order": 2
         },
         {
+          "id": "redemptions",
+          "label": "Redeem Gold",
+          "url": "/vault/redemptions",
+          "enabled": true,
+          "order": 3
+        },
+        {
           "id": "vault-security",
           "label": "Security",
           "url": "/vault/security",
           "enabled": false,
-          "order": 3
+          "order": 4
         }
       ]
     },

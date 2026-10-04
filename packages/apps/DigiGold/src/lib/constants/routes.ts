@@ -5,6 +5,7 @@ export const ROUTES = {
   home: '/home',
   vault: '/vault',
   passbook: '/vault/passbook',
+  redemptions: '/vault/redemptions',
   kyc: '/kyc',
   sip: '/invest/sip',
   jewelry: '/marketplace/jewelry',

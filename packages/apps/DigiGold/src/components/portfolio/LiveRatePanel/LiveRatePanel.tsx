@@ -90,7 +90,7 @@ export function LiveRatePanel({
       </div>
 
       {/* These are raw MCX quotes. Presenting ask as "what you pay" understated the real
-          purchase price by the tenant margin + GST that BuySellGold adds on top. */}
+          purchase price by the tenant margin + GST that BuyGold adds on top. */}
       <p className={styles.footnote}>
         Raw market (MCX) rates. Purchases add your jeweller&apos;s margin and GST on top of
         the ask — the buy screen shows the full price before you pay.

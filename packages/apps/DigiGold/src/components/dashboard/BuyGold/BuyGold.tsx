@@ -21,6 +21,7 @@ import { useSession } from '@/features/auth/hooks/useSession';
 import { useInitiateBuy } from '@/features/trade/hooks/useInitiateBuy';
 import { useBuySettlement } from '@/features/trade/hooks/useBuySettlement';
 import { KYC_STATUS_QUERY_KEY, useKycStatus } from '@/features/kyc/hooks/useKycStatus';
+import { PORTFOLIO_QUERY_KEY } from '@/features/portfolio/hooks/usePortfolio';
 import { KYC_REQUIRED_ABOVE_INR } from '@/features/kyc/kyc.constants';
 import {
   loadRazorpayScript,
@@ -32,7 +33,7 @@ import type { NormalizedApiError } from '@/lib/api/client';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import { cn } from '@/lib/utils/cn';
 import { ROUTES } from '@/lib/constants/routes';
-import styles from './BuySellGold.module.scss';
+import styles from './BuyGold.module.scss';
 
 const QUICK_ADD_GRAMS = [0.5, 1, 5, 10];
 const QUICK_ADD_INR = [1000, 5000, 10000, 25000];
@@ -52,7 +53,7 @@ function startPaymentErrorTitle(error: Partial<NormalizedApiError>): string {
   return 'Could not start payment';
 }
 
-export function BuySellGold() {
+export function BuyGold() {
   const router = useRouter();
   const tenantConfig = useTenantConfig();
   const { showToast } = useToast();
@@ -233,7 +234,8 @@ export function BuySellGold() {
           : 'Your purchase is complete.',
       });
       queryClient.invalidateQueries({ queryKey: ['trade', 'history'] });
-      queryClient.invalidateQueries({ queryKey: ['user', 'portfolio'] });
+      // The vault balance (and the redeemable amount) just changed.
+      queryClient.invalidateQueries({ queryKey: PORTFOLIO_QUERY_KEY });
       resetForm();
     } else if (settlementStatus === 'timeout') {
       setStage('timeout');

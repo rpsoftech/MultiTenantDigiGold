@@ -11,7 +11,7 @@ import type { MarketRate } from '@/features/market/market.types';
 import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
 import { VaultPortfolio } from './VaultPortfolio';
 
-// The vault reads only the raw bid/ask sides and updatedAt; BuySellGold's margin/GST
+// The vault reads only the raw bid/ask sides and updatedAt; BuyGold's margin/GST
 // breakdown fields are required by MarketRate but irrelevant here.
 const UNUSED_PURCHASE_PRICING = { mcxBaseRateInr: 0, marginAppliedInr: 0, gstAppliedInr: 0 };
 

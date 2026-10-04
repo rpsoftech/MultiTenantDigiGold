@@ -133,7 +133,7 @@ describe('LiveRatePanel', () => {
       />,
     );
 
-    // BuySellGold charges ask + margin + GST, so "what you pay" here would understate it.
+    // BuyGold charges ask + margin + GST, so "what you pay" here would understate it.
     expect(screen.queryByText(/what you pay/i)).toBeNull();
     expect(screen.getByText(/margin and GST on top of\s+the ask/i)).toBeTruthy();
   });

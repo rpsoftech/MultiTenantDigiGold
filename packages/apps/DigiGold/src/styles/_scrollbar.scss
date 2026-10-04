@@ -1,0 +1,37 @@
+// Thin, low-contrast scrollbars across the whole platform. The thumb is a translucent
+// tint of the text colour, so it stays neutral for every tenant theme.
+:root {
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: color-mix(in srgb, var(--color-text-primary) 28%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--color-text-primary) 50%, transparent);
+}
+
+// Standards-based (Firefox, Chrome 121+, Safari 18.2+). When these are supported the
+// ::-webkit-scrollbar rules below are ignored by the browser.
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+// WebKit fallback for older Chrome, Edge and Safari.
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 999px;
+  // A transparent border inset keeps the visible thumb slim inside the 8px lane.
+  border: 2px solid transparent;
+  background-clip: content-box;
+
+  &:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+}

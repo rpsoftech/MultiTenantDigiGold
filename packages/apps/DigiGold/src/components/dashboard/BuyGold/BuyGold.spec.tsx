@@ -11,7 +11,7 @@ import { applyDefaultTenantPricing } from '@/features/market/tenantPricing';
 import { useKycStatus } from '@/features/kyc/hooks/useKycStatus';
 import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
 import type { KycStatus } from '@/store/session/session.types';
-import { BuySellGold } from './BuySellGold';
+import { BuyGold } from './BuyGold';
 
 jest.mock('next/navigation', () => ({ useRouter: jest.fn() }));
 jest.mock('@/features/market/hooks/useLiveRate', () => ({
@@ -77,7 +77,7 @@ function buySellGold() {
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
-        <BuySellGold />
+        <BuyGold />
       </QueryClientProvider>
     </Provider>
   );

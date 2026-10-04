@@ -8,6 +8,10 @@ import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
 // apiClient also clears the session and redirects on any 401, so this overlaps with it on
 // purpose: it hides cached holdings and stops polling in this same render, rather than
 // waiting for the global sessionCleared to propagate back down through useSession.
+// Prefix of every portfolio query key — invalidate this to refresh the vault balance
+// wherever it's shown (after a redemption, a cancellation, or a settled buy).
+export const PORTFOLIO_QUERY_KEY = ['portfolio'] as const;
+
 function isUnauthorized(error: unknown) {
   return isNormalizedApiError(error) && error.status === 401;
 }
@@ -22,7 +26,7 @@ export function usePortfolio() {
   } | null>(null);
 
   const { data, isFetching, isFetched, isError, error, refetch } = useQuery({
-    queryKey: ['portfolio', isMock ? 'mock' : 'live', sessionRevision],
+    queryKey: [...PORTFOLIO_QUERY_KEY, isMock ? 'mock' : 'live', sessionRevision],
     queryFn: portfolioService.getPortfolio,
     // Both the demo and live vault open only after sign-in.
     enabled: (query) => isAuthenticated && !isUnauthorized(query.state.error),
