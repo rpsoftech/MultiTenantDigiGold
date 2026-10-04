@@ -1,19 +1,15 @@
 import { apiClient } from '@/lib/api/client';
-import type { ApiResponse } from '@/types/api.types';
-import type { TenantConfig } from './tenant.types';
-import { mockTenantConfig } from './tenant.mock';
+import { mapPublicTenantInfoToConfig } from './tenant.mapper';
+import type { PublicTenantInfo, TenantConfig } from './tenant.types';
 
-// MainServer's tenant config endpoint isn't ready yet — flip this one flag when it is,
-// no other code here needs to change.
-const USE_MOCK_TENANT_CONFIG = process.env.USE_MOCK_TENANT_CONFIG === 'true';
-
-export async function resolveTenantConfig(retailerCode: string): Promise<TenantConfig> {
-  if (USE_MOCK_TENANT_CONFIG) {
-    return mockTenantConfig;
-  }
-
-  const response = await apiClient.get<ApiResponse<TenantConfig>>(
-    `/tenants/${retailerCode}/config`
-  );
-  return response.data.data;
+// GET /tenant/info resolves the tenant purely from the X-Tenant-ID header (see
+// TenantInterceptor in MainServerGo). MainServer has no endpoint that resolves a
+// hostname/retailer code to a tenant UUID, so each frontend deployment is pinned to one
+// tenant via NEXT_PUBLIC_TENANT_UUID (already attached to every request by apiClient) —
+// there is nothing left for a retailer code to resolve at request time.
+// TODO: confirm with backend — if a multi-tenant single build is ever needed, this is
+// where a hostname -> tenant UUID lookup would go once MainServer exposes one.
+export async function resolveTenantConfig(): Promise<TenantConfig> {
+  const response = await apiClient.get<PublicTenantInfo>('/tenant/info');
+  return mapPublicTenantInfoToConfig(response.data);
 }
