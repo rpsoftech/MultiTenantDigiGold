@@ -100,7 +100,7 @@ export function Header() {
         menus={menus}
         actions={actions}
         profileMenu={
-          isAuthenticated ? <ProfileMenu onNavigate={() => setMobileNavOpen(false)} /> : undefined
+          isAuthenticated ? <ProfileMenu inline onNavigate={() => setMobileNavOpen(false)} /> : undefined
         }
       />
     </header>

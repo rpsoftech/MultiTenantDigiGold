@@ -4,10 +4,13 @@
   display: flex;
   gap: var(--space-2);
   justify-content: center;
+  width: 100%;
 }
 
 .cell {
-  width: 2.75rem;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 2.75rem;
   height: 3rem;
   text-align: center;
   font-family: var(--font-body);
@@ -17,6 +20,11 @@
   border-radius: var(--radius-md);
   background: var(--color-surface);
   color: var(--color-text-primary);
+
+  @include md {
+    max-width: 3.25rem;
+    height: 3.5rem;
+  }
 
   &:focus-visible {
     @include focus-ring;

@@ -8,7 +8,7 @@ import { Input } from '@/components/common/Input/Input';
 import { Button } from '@/components/common/Button/Button';
 import { useToast } from '@/components/common/Toast/Toast';
 import { useUpdateAdminPassword } from '@/features/admin-auth/hooks/useUpdateAdminPassword';
-import styles from './UpdatePasswordForm.module.scss';
+import styles from '../adminFormCard.module.scss';
 
 const updatePasswordSchema = z
   .object({

@@ -31,15 +31,17 @@ export function RecentUsersTable() {
             <tbody>
               {users.map((user) => (
                 <tr key={user.userId}>
-                  <td className={styles.userName}>{user.name}</td>
-                  <td>
-                    {user.email && <span className={styles.contactLine}>{user.email}</span>}
-                    <span className={styles.contactLine}>
-                      +91 {formatMobileNumber(user.mobileNumber)}
-                    </span>
+                  <td className={styles.userName} data-label="Name">{user.name}</td>
+                  <td data-label="Email / Phone">
+                    <div>
+                      {user.email && <span className={styles.contactLine}>{user.email}</span>}
+                      <span className={styles.contactLine}>
+                        +91 {formatMobileNumber(user.mobileNumber)}
+                      </span>
+                    </div>
                   </td>
-                  <td>{new Date(user.joinedAt).toLocaleDateString('en-IN')}</td>
-                  <td>
+                  <td data-label="Joined Date">{new Date(user.joinedAt).toLocaleDateString('en-IN')}</td>
+                  <td data-label="Status">
                     <Badge variant={KYC_BADGE_VARIANT[user.kycStatus]}>
                       {KYC_LABEL[user.kycStatus]}
                     </Badge>

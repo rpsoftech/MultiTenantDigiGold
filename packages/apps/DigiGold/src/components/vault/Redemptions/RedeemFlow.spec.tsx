@@ -32,6 +32,12 @@ async function continueWith(grams: string) {
 }
 
 describe('RedeemFlow', () => {
+  it('explains how pickup works', () => {
+    render(withProviders(<RedeemFlow balanceGrams={12.5} />));
+    expect(screen.getByRole('region', { name: 'How pickup works' })).toBeTruthy();
+    expect(screen.getByText('Collect it in store')).toBeTruthy();
+  });
+
   it('sends an empty vault to buy gold instead of showing the form', () => {
     render(withProviders(<RedeemFlow balanceGrams={0} />));
     expect(screen.getByText(/Your vault is empty/)).toBeTruthy();

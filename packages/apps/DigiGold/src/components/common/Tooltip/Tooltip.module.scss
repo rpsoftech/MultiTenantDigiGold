@@ -19,8 +19,8 @@
   left: 50%;
   transform: translate(-50%, 0);
   margin-bottom: var(--space-2);
-  min-width: 180px;
-  max-width: 240px;
+  min-width: min(180px, calc(100vw - 2 * var(--space-4)));
+  max-width: min(240px, calc(100vw - 2 * var(--space-4)));
   background: var(--color-text-primary);
   color: var(--color-surface);
   font-family: var(--font-body);
