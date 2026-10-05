@@ -12,7 +12,7 @@ import { useToast } from '@/components/common/Toast/Toast';
 import { useAdminProfile } from '@/features/admin-auth/hooks/useAdminProfile';
 import { useUpdateAdminProfile } from '@/features/admin-auth/hooks/useUpdateAdminProfile';
 import { EMAIL_PATTERN, MOBILE_NUMBER_PATTERN } from '@/lib/constants/regex';
-import styles from './AdminProfileView.module.scss';
+import styles from '../adminFormCard.module.scss';
 
 const profileSchema = z.object({
   name: z.string().min(1, 'Name is required'),

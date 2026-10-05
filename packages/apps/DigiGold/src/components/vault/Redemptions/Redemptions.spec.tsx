@@ -72,6 +72,12 @@ describe('Redemptions page', () => {
     expect(screen.getByLabelText('Weight to redeem (grams)')).toBeTruthy();
   });
 
+  it('keeps a page-level heading', () => {
+    signIn();
+    render(withProviders(<Redemptions />, store));
+    expect(screen.getByRole('heading', { level: 1, name: 'Redeem gold' })).toBeTruthy();
+  });
+
   it('withholds the form while the vault shows demo data', () => {
     signIn();
     setPortfolio(true);

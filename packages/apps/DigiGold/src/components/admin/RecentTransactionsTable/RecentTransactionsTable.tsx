@@ -35,21 +35,25 @@ export function RecentTransactionsTable() {
             <tbody>
               {transactions.map((txn) => (
                 <tr key={txn.id}>
-                  <td>
-                    <span className={styles.userName}>{txn.userName}</span>
-                    <span className={styles.userId}>{txn.userId}</span>
+                  <td data-label="User">
+                    <div>
+                      <span className={styles.userName}>{txn.userName}</span>
+                      <span className={styles.userId}>{txn.userId}</span>
+                    </div>
                   </td>
-                  <td>
-                    <span className={styles.amount}>{formatCurrency(txn.amountInr, 'INR')}</span>
-                    <span className={styles.grams}>{txn.deltaGrams.toFixed(4)} g</span>
+                  <td data-label="Amount / Weight">
+                    <div>
+                      <span className={styles.amount}>{formatCurrency(txn.amountInr, 'INR')}</span>
+                      <span className={styles.grams}>{txn.deltaGrams.toFixed(4)} g</span>
+                    </div>
                   </td>
-                  <td className={styles.typeCell}>{txn.type}</td>
-                  <td>
+                  <td className={styles.typeCell} data-label="Type">{txn.type}</td>
+                  <td data-label="Status">
                     <Badge variant={TRANSACTION_STATUS_BADGE_VARIANT[txn.status]}>
                       {TRANSACTION_STATUS_LABEL[txn.status]}
                     </Badge>
                   </td>
-                  <td>{new Date(txn.timestamp).toLocaleString('en-IN')}</td>
+                  <td data-label="Timestamp">{new Date(txn.timestamp).toLocaleString('en-IN')}</td>
                 </tr>
               ))}
             </tbody>

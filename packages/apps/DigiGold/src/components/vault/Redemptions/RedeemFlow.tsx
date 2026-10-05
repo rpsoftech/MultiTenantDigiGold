@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -29,6 +29,8 @@ import styles from './RedeemFlow.module.scss';
 
 const QUICK_GRAMS = [0.5, 1, 5, 10];
 
+const PICKUP_STEPS = ['Request the weight', 'Get your pickup code', 'Collect it in store'];
+
 type Step =
   | { name: 'form' }
   | { name: 'confirm'; grams: number }
@@ -38,6 +40,7 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
   const { showToast } = useToast();
   const createRedemption = useCreateRedemption();
   const [step, setStep] = useState<Step>({ name: 'form' });
+  const stepsTitleId = useId();
 
   const maxGrams = floorGrams(balanceGrams);
   const confirmGrams = step.name === 'confirm' ? step.grams : null;
@@ -169,6 +172,22 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
             Max
           </button>
         </div>
+
+        <section className={styles.steps} aria-labelledby={stepsTitleId}>
+          <h3 id={stepsTitleId} className={styles.stepsTitle}>
+            How pickup works
+          </h3>
+          <ol className={styles.stepList}>
+            {PICKUP_STEPS.map((text, index) => (
+              <li key={text} className={styles.step}>
+                <span className={styles.stepNumber} aria-hidden>
+                  {index + 1}
+                </span>
+                {text}
+              </li>
+            ))}
+          </ol>
+        </section>
 
         <Button type="submit" fullWidth disabled={!isValid}>
           Continue

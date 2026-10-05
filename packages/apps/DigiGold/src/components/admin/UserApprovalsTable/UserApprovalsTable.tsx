@@ -41,19 +41,21 @@ export function UserApprovalsTable({ selectedUserId, onViewLogs }: UserApprovals
             <tbody>
               {users.map((user) => (
                 <tr key={user.userId}>
-                  <td>
-                    <span className={styles.userName}>{user.name}</span>
-                    <span className={styles.userId}>{user.userId}</span>
+                  <td data-label="User">
+                    <div>
+                      <span className={styles.userName}>{user.name}</span>
+                      <span className={styles.userId}>{user.userId}</span>
+                    </div>
                   </td>
-                  <td>+91 {formatMobileNumber(user.mobileNumber)}</td>
-                  <td>{user.city}</td>
-                  <td className={styles.goldBalance}>{user.goldBalanceGrams.toFixed(4)} g</td>
-                  <td>
+                  <td data-label="Mobile">+91 {formatMobileNumber(user.mobileNumber)}</td>
+                  <td data-label="City">{user.city}</td>
+                  <td className={styles.goldBalance} data-label="Gold Balance">{user.goldBalanceGrams.toFixed(4)} g</td>
+                  <td data-label="KYC Status">
                     <Badge variant={KYC_BADGE_VARIANT[user.kycStatus]}>
                       {KYC_LABEL[user.kycStatus]}
                     </Badge>
                   </td>
-                  <td>
+                  <td className={styles.actionsCell}>
                     <div className={styles.actions}>
                       {user.kycStatus === 'pending' && (
                         <>
