@@ -76,12 +76,10 @@
   width: auto;
 }
 
+// The stacked-table mixin already lays out this unlabelled cell as a full-width block; on
+// small screens the buttons just need to wrap and start from the left.
 .actionsCell {
   @include below-md {
-    // Overrides the stacked-table row layout so the buttons get the full width.
-    display: block !important;
-    text-align: left !important;
-
     .actions {
       flex-wrap: wrap;
       justify-content: flex-start;

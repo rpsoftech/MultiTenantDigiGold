@@ -65,7 +65,7 @@
 .parentButton {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: var(--space-2);
   width: 100%;
   padding: var(--space-3) var(--space-2);
@@ -81,11 +81,6 @@
   &:focus-visible {
     @include focus-ring;
   }
-}
-
-// Expandable rows push the chevron to the far end; plain links stay left-aligned.
-.parentButton {
-  justify-content: space-between;
 }
 
 .label {

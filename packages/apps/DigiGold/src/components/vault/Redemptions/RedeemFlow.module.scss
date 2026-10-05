@@ -75,19 +75,18 @@
   }
 }
 
-// Desktop-only: the card stretches to the list pane's height and this compact panel sits
-// at the bottom, above the submit button. Kept short so the card never needs to scroll.
+// Shown at every size. On desktop the card stretches to the list pane's height, so the
+// panel is pushed to the bottom, just above the submit button.
 .steps {
-  display: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-secondary);
 
   @include lg {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
     margin-top: auto;
-    padding: var(--space-4);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-secondary);
   }
 }
 

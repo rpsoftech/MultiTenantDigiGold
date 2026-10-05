@@ -1,5 +1,8 @@
 @use '@/styles/mixins' as *;
 
+// Shared by AdminProfileView and UpdatePasswordForm: the two admin account forms use the
+// same card layout.
+
 .wrapper {
   display: flex;
   justify-content: center;

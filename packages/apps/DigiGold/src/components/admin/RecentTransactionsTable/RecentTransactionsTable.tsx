@@ -36,12 +36,16 @@ export function RecentTransactionsTable() {
               {transactions.map((txn) => (
                 <tr key={txn.id}>
                   <td data-label="User">
-                    <span className={styles.userName}>{txn.userName}</span>
-                    <span className={styles.userId}>{txn.userId}</span>
+                    <div>
+                      <span className={styles.userName}>{txn.userName}</span>
+                      <span className={styles.userId}>{txn.userId}</span>
+                    </div>
                   </td>
                   <td data-label="Amount / Weight">
-                    <span className={styles.amount}>{formatCurrency(txn.amountInr, 'INR')}</span>
-                    <span className={styles.grams}>{txn.deltaGrams.toFixed(4)} g</span>
+                    <div>
+                      <span className={styles.amount}>{formatCurrency(txn.amountInr, 'INR')}</span>
+                      <span className={styles.grams}>{txn.deltaGrams.toFixed(4)} g</span>
+                    </div>
                   </td>
                   <td className={styles.typeCell} data-label="Type">{txn.type}</td>
                   <td data-label="Status">

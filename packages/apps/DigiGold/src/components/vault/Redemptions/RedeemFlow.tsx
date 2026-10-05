@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -40,6 +40,7 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
   const { showToast } = useToast();
   const createRedemption = useCreateRedemption();
   const [step, setStep] = useState<Step>({ name: 'form' });
+  const stepsTitleId = useId();
 
   const maxGrams = floorGrams(balanceGrams);
   const confirmGrams = step.name === 'confirm' ? step.grams : null;
@@ -172,8 +173,10 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
           </button>
         </div>
 
-        <section className={styles.steps} aria-label="How pickup works">
-          <h3 className={styles.stepsTitle}>How pickup works</h3>
+        <section className={styles.steps} aria-labelledby={stepsTitleId}>
+          <h3 id={stepsTitleId} className={styles.stepsTitle}>
+            How pickup works
+          </h3>
           <ol className={styles.stepList}>
             {PICKUP_STEPS.map((text, index) => (
               <li key={text} className={styles.step}>

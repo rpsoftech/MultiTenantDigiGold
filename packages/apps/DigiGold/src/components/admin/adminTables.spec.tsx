@@ -50,6 +50,14 @@ function dataLabels(container: HTMLElement) {
     .filter(Boolean);
 }
 
+// In the stacked layout each cell is a flex row (caption, value), so a cell with several parts
+// must wrap them in one element; otherwise e.g. a name and its user ID are spread apart.
+function cellsWithLooseParts(container: HTMLElement) {
+  return Array.from(container.querySelectorAll('tbody td[data-label]'))
+    .filter((cell) => cell.children.length > 1)
+    .map((cell) => cell.getAttribute('data-label'));
+}
+
 describe('admin tables (mobile stacked layout)', () => {
   it('labels every Recent Users cell', () => {
     const { container } = render(<RecentUsersTable />);
@@ -73,5 +81,16 @@ describe('admin tables (mobile stacked layout)', () => {
     );
     expect(dataLabels(container)).toEqual(['User', 'Mobile', 'City', 'Gold Balance', 'KYC Status']);
     expect(container.querySelectorAll('tbody td')).toHaveLength(6);
+  });
+
+  it('wraps multi-part cells in a single element', () => {
+    const { container } = render(
+      <>
+        <RecentUsersTable />
+        <RecentTransactionsTable />
+        <UserApprovalsTable selectedUserId={null} onViewLogs={jest.fn()} />
+      </>,
+    );
+    expect(cellsWithLooseParts(container)).toEqual([]);
   });
 });

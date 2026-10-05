@@ -50,6 +50,9 @@ export function Redemptions() {
 
   return (
     <section className={styles.section}>
+      {/* The cards carry their own visible titles; the page heading is for screen readers
+          and document outline only. */}
+      <h1 className={styles.pageTitle}>Redeem gold</h1>
       <div className={styles.layout}>
         <aside className={styles.flowPane}>
           {/* In mock-portfolio mode the balance is simulated, but /trade/redeem debits the

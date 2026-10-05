@@ -33,10 +33,12 @@ export function RecentUsersTable() {
                 <tr key={user.userId}>
                   <td className={styles.userName} data-label="Name">{user.name}</td>
                   <td data-label="Email / Phone">
-                    {user.email && <span className={styles.contactLine}>{user.email}</span>}
-                    <span className={styles.contactLine}>
-                      +91 {formatMobileNumber(user.mobileNumber)}
-                    </span>
+                    <div>
+                      {user.email && <span className={styles.contactLine}>{user.email}</span>}
+                      <span className={styles.contactLine}>
+                        +91 {formatMobileNumber(user.mobileNumber)}
+                      </span>
+                    </div>
                   </td>
                   <td data-label="Joined Date">{new Date(user.joinedAt).toLocaleDateString('en-IN')}</td>
                   <td data-label="Status">

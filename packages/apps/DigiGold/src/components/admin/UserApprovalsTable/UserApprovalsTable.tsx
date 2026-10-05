@@ -42,8 +42,10 @@ export function UserApprovalsTable({ selectedUserId, onViewLogs }: UserApprovals
               {users.map((user) => (
                 <tr key={user.userId}>
                   <td data-label="User">
-                    <span className={styles.userName}>{user.name}</span>
-                    <span className={styles.userId}>{user.userId}</span>
+                    <div>
+                      <span className={styles.userName}>{user.name}</span>
+                      <span className={styles.userId}>{user.userId}</span>
+                    </div>
                   </td>
                   <td data-label="Mobile">+91 {formatMobileNumber(user.mobileNumber)}</td>
                   <td data-label="City">{user.city}</td>
