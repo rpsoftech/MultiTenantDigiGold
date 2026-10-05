@@ -45,7 +45,7 @@ function SessionLifecycle({ store }: { store: AppStore }) {
     if (restoredUser) store.dispatch(sessionEstablished(restoredUser));
 
     return onSessionExpired((reason) => {
-      const { isAuthenticated, user } = store.getState().session;
+      const { isAuthenticated } = store.getState().session;
       store.dispatch(sessionCleared());
       // Same reason as useLogout: don't leave this user's cached data for the next login.
       if (isAuthenticated) queryClient.clear();
@@ -61,7 +61,10 @@ function SessionLifecycle({ store }: { store: AppStore }) {
       }
 
       if (reason === 'rejected') {
-        router.push(user?.role === 'admin' ? ROUTES.adminLogin : ROUTES.login);
+        // Only customer routes raise this event (admin 401s refresh or emit
+        // 'admin-session-expired', handled by AdminSessionGuard), so it's always the
+        // customer login.
+        router.push(ROUTES.login);
       }
     });
   }, [store, router, showToast, queryClient]);

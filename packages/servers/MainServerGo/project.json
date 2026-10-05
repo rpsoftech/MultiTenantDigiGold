@@ -5,6 +5,13 @@
   "sourceRoot": "github.com/rpsoftech/DigiGold/MainServerGo",
   "tags": [],
   "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go run .",
+        "cwd": "packages/servers/MainServerGo/cmd/api"
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "options": {

@@ -787,6 +787,11 @@ paths:
                 type: object
                 properties:
                   temp_token: { type: string }
+                  totp_enabled:
+                    type: boolean
+                    description: >-
+                      `true`: the admin already has an authenticator, so go straight to
+                      `/admin/auth/totp/verify`. `false`: call `/admin/auth/totp/setup` first.
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
@@ -815,11 +820,23 @@ paths:
                 type: object
                 properties:
                   otpauth_uri: { type: string }
-        '400':
-          description: Invalid temp token or TOTP already enabled.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: '`ADMIN_TEMP_TOKEN_INVALID`: temp token expired or already used; log in again.'
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SimpleError' }
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: '`ADMIN_DEACTIVATED`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`ADMIN_TOTP_ALREADY_ENABLED`: use the existing authenticator and verify.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /admin/auth/totp/verify:
     post:
@@ -827,7 +844,9 @@ paths:
       tags: [Admin Auth]
       security: []
       summary: 'Step 2b: verify TOTP code and get tokens'
-      description: 5 wrong codes invalidate the temp token; log in again.
+      description: >-
+        5 wrong codes invalidate the temp token; log in again. Each code is accepted once
+        (RFC 6238), and a temp token yields at most one session.
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
         required: true
@@ -845,11 +864,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TokenPair' }
-        '401':
-          description: Invalid code or temp token.
+        '400':
+          description: '`INVALID_INPUT`, or `ADMIN_TOTP_NOT_SET_UP` (call setup first).'
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SimpleError' }
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: >-
+            `ADMIN_TOTP_CODE_INVALID` (wrong or expired code), `ADMIN_TOTP_CODE_USED` (code
+            already accepted once; wait for the next one) or `ADMIN_TEMP_TOKEN_INVALID`
+            (log in again).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: '`ADMIN_DEACTIVATED`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /admin/auth/refresh:
@@ -858,6 +890,9 @@ paths:
       tags: [Admin Auth]
       security: []
       summary: Exchange an admin refresh token for new tokens
+      description: >-
+        Refresh tokens are single use: the one sent is consumed and a new pair is returned.
+        Tabs sharing a session must not refresh with the same token concurrently.
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
         required: true
@@ -874,11 +909,49 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TokenPair' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401':
-          description: Invalid token or deactivated admin.
+          description: '`ADMIN_REFRESH_TOKEN_INVALID`: expired, already used, revoked or malformed.'
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SimpleError' }
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: '`ADMIN_DEACTIVATED`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/auth/logout:
+    post:
+      operationId: postAdminAuthLogout
+      tags: [Admin Auth]
+      security: []
+      summary: Revoke an admin refresh token (log out)
+      description: >-
+        Ends the session the refresh token belongs to. An invalid or already revoked token
+        still returns `200`. The current access token stays valid until it expires (15 min).
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Logged out.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   # ------------------------------------------------------------------ Admin store
   /admin/store/customers:
