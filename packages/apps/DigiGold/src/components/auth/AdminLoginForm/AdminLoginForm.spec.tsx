@@ -36,6 +36,19 @@ jest.mock('@/features/admin-auth/hooks/useAdminTotpVerify', () => ({
   }),
 }));
 
+// MainServer's real failures (admin_auth_service.go), as apiClient normalizes them. The form
+// must react to the stable `code`, never the wording.
+const invalidCodeError = {
+  message: 'That code is incorrect or has expired.',
+  code: 'ADMIN_TOTP_CODE_INVALID',
+  status: 401,
+};
+const expiredSignInError = {
+  message: 'Your sign-in has expired. Please enter your password again.',
+  code: 'ADMIN_TEMP_TOKEN_INVALID',
+  status: 401,
+};
+
 const enrollmentUri =
   'otpauth://totp/DigiGold:demo-manager?secret=JBSWY3DPEHPK3PXP&issuer=DigiGold';
 
@@ -126,10 +139,7 @@ describe('AdminLoginForm', () => {
 
   it('lets an enrolled admin retry an invalid code without repeating password login', async () => {
     mockSetup.mockResolvedValue(null);
-    mockVerify.mockRejectedValueOnce({
-      message: 'invalid TOTP code',
-      status: 401,
-    });
+    mockVerify.mockRejectedValueOnce(invalidCodeError);
     render(<AdminLoginForm />);
     await submitCredentials();
 
@@ -158,10 +168,7 @@ describe('AdminLoginForm', () => {
   });
 
   it('guides enrollment retries to the displayed QR account and keeps the enrollment challenge', async () => {
-    mockVerify.mockRejectedValueOnce({
-      message: 'invalid TOTP code',
-      status: 401,
-    });
+    mockVerify.mockRejectedValueOnce(invalidCodeError);
     render(<AdminLoginForm />);
     await submitCredentials();
     await screen.findByRole('heading', { name: 'Set up your authenticator' });
@@ -238,10 +245,7 @@ describe('AdminLoginForm', () => {
   it.each(['setup', 'verification'])(
     'restarts password login when the temporary token expires during %s',
     async (phase) => {
-      const expired = {
-        message: 'invalid or expired temporary token',
-        status: 401,
-      };
+      const expired = expiredSignInError;
       if (phase === 'setup') mockSetup.mockRejectedValueOnce(expired);
       else {
         mockSetup.mockResolvedValue(null);
@@ -267,6 +271,75 @@ describe('AdminLoginForm', () => {
     },
   );
 
+  it('skips setup when the password step says the admin is already enrolled', async () => {
+    mockLogin.mockResolvedValue({
+      temp_token: 'temporary-token',
+      totp_enabled: true,
+    });
+    render(<AdminLoginForm />);
+    await submitCredentials();
+
+    await screen.findByRole('heading', { name: 'Verify your identity' });
+    expect(mockSetup).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole('img', { name: 'Authenticator enrollment QR code' }),
+    ).toBeNull();
+    enterCode('654321');
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith(ROUTES.adminDashboard),
+    );
+  });
+
+  it('reacts to the error name, not its wording', async () => {
+    mockSetup.mockResolvedValue(null);
+    // Old server text without a name: not treated as a wrong code or an expired sign-in.
+    mockVerify.mockRejectedValueOnce({
+      message: 'invalid TOTP code',
+      code: 'SOMETHING_ELSE',
+      status: 401,
+    });
+    // A reworded message with the right name still is.
+    mockVerify.mockRejectedValueOnce({
+      ...invalidCodeError,
+      message: 'Reworded server text',
+    });
+    render(<AdminLoginForm />);
+    await submitCredentials();
+    await screen.findByLabelText('Authenticator code');
+
+    enterCode('000000');
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'invalid TOTP code',
+    );
+    enterCode('111111');
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain(
+        'That code wasn’t accepted.',
+      ),
+    );
+    expect(screen.getByLabelText('Authenticator code')).toBeTruthy();
+  });
+
+  it('shows the server explanation when a code was already used', async () => {
+    mockSetup.mockResolvedValue(null);
+    mockVerify.mockRejectedValueOnce({
+      message:
+        'That code was already used. Wait for the next code in your authenticator app.',
+      code: 'ADMIN_TOTP_CODE_USED',
+      status: 401,
+    });
+    render(<AdminLoginForm />);
+    await submitCredentials();
+    await screen.findByLabelText('Authenticator code');
+
+    enterCode('123456');
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'That code was already used. Wait for the next code in your authenticator app.',
+    );
+    // Still on the code step: only a new code is needed, not the password.
+    expect(screen.getByLabelText('Authenticator code')).toBeTruthy();
+  });
+
   it('discards enrollment and clears the password when returning to sign in', async () => {
     render(<AdminLoginForm />);
     await submitCredentials();
@@ -286,6 +359,7 @@ describe('AdminLoginForm', () => {
   it('keeps the credentials screen after a rejected password without requesting TOTP setup', async () => {
     mockLogin.mockRejectedValueOnce({
       message: 'Invalid credentials',
+      code: 'InvalidCredentials',
       status: 401,
     });
     render(<AdminLoginForm />);

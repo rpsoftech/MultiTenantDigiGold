@@ -52,13 +52,14 @@ func (c *AdminAuthController) Login(ctx fiber.Ctx) error {
 	// Tenant resolved from X-Tenant-ID header by TenantInterceptor — never from JSON body.
 	tenantID := middleware.GetTenantIntID(ctx)
 
-	tempToken, err := c.adminAuthService.AdminLogin(ctx.Context(), tenantID, req.Username, req.Password)
+	tempToken, totpEnabled, err := c.adminAuthService.AdminLogin(ctx.Context(), tenantID, req.Username, req.Password)
 	if err != nil {
 		return err
 	}
 
 	return ctx.JSON(fiber.Map{
-		"temp_token": tempToken,
+		"temp_token":   tempToken,
+		"totp_enabled": totpEnabled,
 	})
 }
 

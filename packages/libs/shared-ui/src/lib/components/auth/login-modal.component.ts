@@ -142,7 +142,8 @@ import { AuthService, TenantConfigService } from '@dg/services';
                 >
                 <input
                   id="login-full-name"
-                  type="tel"
+                  type="text"
+                  autocomplete="name"
                   [(ngModel)]="fullName"
                   placeholder="As per PAN Card"
                   class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all font-semibold text-slate-800"

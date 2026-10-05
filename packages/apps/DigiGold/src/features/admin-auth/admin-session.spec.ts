@@ -28,6 +28,18 @@ describe('adminSessionUser', () => {
     },
   );
 
+  it('shows the username MainServer puts in the token as the admin name', () => {
+    expect(
+      adminSessionUser(token({ ...validClaims, username: 'demo-manager' }))
+        .name,
+    ).toBe('demo-manager');
+    // Tokens from before the claim existed, or a blank one, leave the name unset.
+    expect(adminSessionUser(token(validClaims)).name).toBeUndefined();
+    expect(
+      adminSessionUser(token({ ...validClaims, username: '  ' })).name,
+    ).toBeUndefined();
+  });
+
   it('accepts the JWT string form of the admin access audience', () => {
     expect(
       adminSessionUser(token({ ...validClaims, aud: 'digigold:admin:access' }))

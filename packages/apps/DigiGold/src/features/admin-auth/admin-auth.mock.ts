@@ -1,3 +1,4 @@
+import type { NormalizedApiError } from '@/lib/api/client';
 import type {
   AdminLoginPayload,
   AdminLoginResult,
@@ -16,18 +17,34 @@ const mockChallenges = new Map<
   { username: string; expiresAt: number; setup: boolean }
 >();
 const enrolledUsernames = new Set<string>();
-const mockRefreshTokens = new Set<string>();
+// Live mock refresh tokens and the admin each belongs to (single use, like MainServer).
+const mockRefreshTokens = new Map<string, string>();
+
+// Mock failures mirror MainServer's (admin_auth_service.go): the same status and stable
+// error name, already in apiClient's normalized shape, so the UI is exercised exactly as
+// it is against the real API.
+function mockError(
+  status: number,
+  code: string,
+  message: string,
+): NormalizedApiError {
+  return { status, code, message };
+}
 
 function getChallenge(tempToken: string) {
   const challenge = mockChallenges.get(tempToken);
   if (!challenge || challenge.expiresAt <= Date.now()) {
     mockChallenges.delete(tempToken);
-    throw new Error('invalid or expired temporary token');
+    throw mockError(
+      401,
+      'ADMIN_TEMP_TOKEN_INVALID',
+      'Your sign-in has expired. Please enter your password again.',
+    );
   }
   return challenge;
 }
 
-function issueMockTokens(): AdminTokenPair {
+function issueMockTokens(username: string): AdminTokenPair {
   const encode = (value: object) =>
     btoa(JSON.stringify(value))
       .replace(/\+/g, '-')
@@ -37,11 +54,12 @@ function issueMockTokens(): AdminTokenPair {
     admin_uuid: MOCK_ADMIN_PROFILE.userId,
     role: 'manager',
     tenant_id: 1,
+    username,
     aud: ['digigold:admin:access'],
     exp: Math.floor(Date.now() / 1000) + 15 * 60,
   })}.mock`;
   const refreshToken = `mock-admin-refresh-${crypto.randomUUID()}`;
-  mockRefreshTokens.add(refreshToken);
+  mockRefreshTokens.set(refreshToken, username);
   return { access_token: accessToken, refresh_token: refreshToken };
 }
 
@@ -56,7 +74,7 @@ export async function mockAdminLogin(
   payload: AdminLoginPayload,
 ): Promise<AdminLoginResult> {
   if (!payload.username || !payload.password) {
-    throw new Error('Incorrect username or password.');
+    throw mockError(401, 'InvalidCredentials', 'Invalid credentials');
   }
   const tempToken = `mock-admin-login-${crypto.randomUUID()}`;
   mockChallenges.set(tempToken, {
@@ -64,7 +82,10 @@ export async function mockAdminLogin(
     expiresAt: Date.now() + 5 * 60 * 1000,
     setup: false,
   });
-  return { temp_token: tempToken };
+  return {
+    temp_token: tempToken,
+    totp_enabled: enrolledUsernames.has(payload.username),
+  };
 }
 
 export async function mockAdminTotpSetup(
@@ -83,25 +104,39 @@ export async function mockAdminTotpVerify(
 ): Promise<AdminTokenPair> {
   const challenge = getChallenge(payload.temp_token);
   if (!challenge.setup && !enrolledUsernames.has(challenge.username)) {
-    throw new Error('TOTP secret not found, please call setup first');
+    throw mockError(
+      400,
+      'ADMIN_TOTP_NOT_SET_UP',
+      'Set up your authenticator app before entering a code.',
+    );
   }
-  if (payload.code !== '123456') throw new Error('invalid TOTP code');
+  if (payload.code !== '123456') {
+    throw mockError(
+      401,
+      'ADMIN_TOTP_CODE_INVALID',
+      'That code is incorrect or has expired.',
+    );
+  }
   enrolledUsernames.add(challenge.username);
   mockChallenges.delete(payload.temp_token);
-  return issueMockTokens();
+  return issueMockTokens(challenge.username);
 }
 
 export async function mockAdminRefresh(
   refreshToken: string | null,
 ): Promise<AdminTokenPair> {
-  if (!refreshToken || !mockRefreshTokens.delete(refreshToken)) {
+  const username = refreshToken
+    ? mockRefreshTokens.get(refreshToken)
+    : undefined;
+  if (!refreshToken || username === undefined) {
     throw {
       message: 'Your demo session expired. Please sign in again.',
       status: 401,
       code: 'ADMIN_SESSION_EXPIRED',
     };
   }
-  return issueMockTokens();
+  mockRefreshTokens.delete(refreshToken);
+  return issueMockTokens(username);
 }
 
 export async function mockGetAdminProfile(): Promise<AdminProfile> {

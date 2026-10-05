@@ -222,17 +222,18 @@ describe('adminAuthService', () => {
 
     const firstLogin = await adminAuthService.login(mockCredentials);
     expect(firstLogin.temp_token).toBeTruthy();
+    expect(firstLogin.totp_enabled).toBe(false);
     expectNoAdminSession();
     await expect(
       adminAuthService.verifyTotp({ ...firstLogin, code: '123456' }),
-    ).rejects.toThrow('TOTP secret not found, please call setup first');
+    ).rejects.toMatchObject({ code: 'ADMIN_TOTP_NOT_SET_UP', status: 400 });
 
     const firstSetup = await adminAuthService.setupTotp(firstLogin);
     expect(firstSetup?.otpauth_uri).toContain('otpauth://totp/');
     expect(firstSetup?.otpauth_uri).toContain(mockCredentials.username);
     await expect(
       adminAuthService.verifyTotp({ ...firstLogin, code: '000000' }),
-    ).rejects.toThrow('invalid TOTP code');
+    ).rejects.toMatchObject({ code: 'ADMIN_TOTP_CODE_INVALID', status: 401 });
     expectNoAdminSession();
 
     const firstTokens = await adminAuthService.verifyTotp({
@@ -243,10 +244,11 @@ describe('adminAuthService', () => {
     expect(getAdminRefreshToken()).toBe(firstTokens.refresh_token);
     await expect(
       adminAuthService.verifyTotp({ ...firstLogin, code: '123456' }),
-    ).rejects.toThrow('invalid or expired temporary token');
+    ).rejects.toMatchObject({ code: 'ADMIN_TEMP_TOKEN_INVALID', status: 401 });
 
     clearAdminTokens();
     const returningLogin = await adminAuthService.login(mockCredentials);
+    expect(returningLogin.totp_enabled).toBe(true);
     await expect(
       adminAuthService.setupTotp(returningLogin),
     ).resolves.toBeNull();

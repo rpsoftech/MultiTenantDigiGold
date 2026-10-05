@@ -43,6 +43,9 @@ func TestAdminFirstLoginEnrollmentPersistsEventAndIssuesTokens(t *testing.T) {
 	if tempToken == "" || login.Body["access_token"] != nil {
 		t.Fatal("password login must return a temporary token without authenticating")
 	}
+	if enabled, ok := login.Body["totp_enabled"].(bool); !ok || enabled {
+		t.Fatalf("a first login must report totp_enabled=false so the QR code is shown; got %v", login.Body["totp_enabled"])
+	}
 	setup := call(t, "POST", "/admin/auth/totp/setup", "", database.SeedDemoTenantUUID, map[string]string{
 		"temp_token": tempToken,
 	})
@@ -62,8 +65,8 @@ func TestAdminFirstLoginEnrollmentPersistsEventAndIssuesTokens(t *testing.T) {
 	accessToken := str(verify.Body["access_token"])
 	refreshToken := str(verify.Body["refresh_token"])
 	claims, err := service.GetJWTService().ValidateAdminToken(accessToken)
-	if err != nil || claims.AdminUUID != adminUUID || claims.Role != "manager" {
-		t.Fatalf("invalid final admin access token: %v", err)
+	if err != nil || claims.AdminUUID != adminUUID || claims.Role != "manager" || claims.Username != username {
+		t.Fatalf("invalid final admin access token (or missing username): %v", err)
 	}
 	if _, err := service.GetJWTService().ValidateAdminRefreshToken(refreshToken); err != nil {
 		t.Fatalf("invalid final admin refresh token: %v", err)
@@ -96,8 +99,8 @@ func TestAdminFirstLoginEnrollmentPersistsEventAndIssuesTokens(t *testing.T) {
 		"refresh_token": refreshToken,
 	})
 	expectStatus(t, refresh, http.StatusOK)
-	if _, err := service.GetJWTService().ValidateAdminToken(str(refresh.Body["access_token"])); err != nil {
-		t.Fatalf("refreshed admin access token rejected: %v", err)
+	if refreshed, err := service.GetJWTService().ValidateAdminToken(str(refresh.Body["access_token"])); err != nil || refreshed.Username != username {
+		t.Fatalf("refreshed admin access token rejected (or missing username): %v", err)
 	}
 	rotatedRefresh := str(refresh.Body["refresh_token"])
 	if _, err := service.GetJWTService().ValidateAdminRefreshToken(rotatedRefresh); err != nil {
@@ -168,6 +171,22 @@ func TestAdminPendingEnrollmentSurvivesSetupRetriesAndPasswordLogins(t *testing.
 	// Enrolled admins must be directed to verification without a replacement QR; the
 	// frontend keys off this stable name, never the message text.
 	expectError(t, alreadyEnabled, http.StatusConflict, "ADMIN_TOTP_ALREADY_ENABLED")
+
+	// A code is accepted once (RFC 6238 §5.2): replaying it with another password login is
+	// refused while the code would still validate.
+	reused := call(t, "POST", "/admin/auth/totp/verify", "", database.SeedDemoTenantUUID, map[string]string{
+		"temp_token": secondToken, "code": code,
+	})
+	expectError(t, reused, http.StatusUnauthorized, "ADMIN_TOTP_CODE_USED")
+
+	// Once enrolled, the password step says so, letting the client skip setup.
+	login := call(t, "POST", "/admin/auth/login", "", database.SeedDemoTenantUUID, map[string]string{
+		"username": username, "password": adminPassword,
+	})
+	expectStatus(t, login, http.StatusOK)
+	if enabled, ok := login.Body["totp_enabled"].(bool); !ok || !enabled {
+		t.Fatalf("an enrolled admin's login must report totp_enabled=true; got %v", login.Body["totp_enabled"])
+	}
 }
 
 func TestAdminConcurrentSetupUsesOneEnrollmentSecret(t *testing.T) {
@@ -201,14 +220,45 @@ func TestAdminConcurrentSetupUsesOneEnrollmentSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal("enrollment URI was invalid")
 	}
-	code, err := totp.GenerateCode(key.Secret(), time.Now())
-	if err != nil {
-		t.Fatal(err)
+
+	// Two simultaneous verifies of one password login, each with a different valid code
+	// (current step and the previous one, within the allowed clock skew): the temp token
+	// is consumed atomically, so exactly one gets a session.
+	now := time.Now()
+	codes := make([]string, 2)
+	for index, at := range []time.Time{now, now.Add(-30 * time.Second)} {
+		if codes[index], err = totp.GenerateCode(key.Secret(), at); err != nil {
+			t.Fatal(err)
+		}
 	}
-	verify := call(t, "POST", "/admin/auth/totp/verify", "", database.SeedDemoTenantUUID, map[string]string{
-		"temp_token": firstToken, "code": code,
-	})
-	expectStatus(t, verify, http.StatusOK)
+	if codes[0] == codes[1] {
+		t.Skip("consecutive TOTP codes collided; nothing to race")
+	}
+	verifies := make([]response, len(codes))
+	start = make(chan struct{})
+	for index, code := range codes {
+		workers.Add(1)
+		go func(index int, code string) {
+			defer workers.Done()
+			<-start
+			verifies[index] = call(t, "POST", "/admin/auth/totp/verify", "", database.SeedDemoTenantUUID, map[string]string{
+				"temp_token": firstToken, "code": code,
+			})
+		}(index, code)
+	}
+	close(start)
+	workers.Wait()
+	succeeded := 0
+	for _, result := range verifies {
+		if result.Status == http.StatusOK {
+			succeeded++
+			continue
+		}
+		expectError(t, result, http.StatusUnauthorized, "ADMIN_TEMP_TOKEN_INVALID")
+	}
+	if succeeded != 1 {
+		t.Fatalf("%d concurrent verifies of one temp token succeeded, want exactly 1", succeeded)
+	}
 }
 
 func createPendingEnrollmentAdmin(t *testing.T, username, phone string) {

@@ -16,6 +16,7 @@ import {
   EyeOffIcon,
 } from '@/components/common/icons/Icons';
 import { useToast } from '@/components/common/Toast/Toast';
+import { isNormalizedApiError } from '@/lib/api/client';
 import { useAdminLogin } from '@/features/admin-auth/hooks/useAdminLogin';
 import { useAdminTotpSetup } from '@/features/admin-auth/hooks/useAdminTotpSetup';
 import { useAdminTotpVerify } from '@/features/admin-auth/hooks/useAdminTotpVerify';
@@ -42,11 +43,15 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+// MainServer's stable error names (admin_auth_service.go). Never match on the message text:
+// it is written for people and may be reworded.
+function errorCode(error: unknown): string | null {
+  return isNormalizedApiError(error) ? error.code : null;
+}
+
+// The password step expired (5 minutes) or was used up (5 wrong codes, or already signed in).
 function isInvalidTemporaryToken(error: unknown): boolean {
-  const message = getErrorMessage(error, '');
-  return /(?:invalid|expired).*temp(?:orary)?[ _-]?token|temp(?:orary)?[ _-]?token.*(?:invalid|expired)/i.test(
-    message,
-  );
+  return errorCode(error) === 'ADMIN_TEMP_TOKEN_INVALID';
 }
 
 function getEnrollmentSecret(uri: string): string {
@@ -156,7 +161,13 @@ export function AdminLoginForm() {
       setShowPassword(false);
       adminLogin.reset();
       setTempToken(result.temp_token);
-      await prepareAuthenticator(result.temp_token);
+      if (result.totp_enabled === true) {
+        // Already enrolled: no QR code to show, go straight to the code.
+        setEnrollment(null);
+        setStep('verify');
+      } else {
+        await prepareAuthenticator(result.temp_token);
+      }
     } catch (cause) {
       reportError(
         cause,
@@ -196,8 +207,7 @@ export function AdminLoginForm() {
       setStep('complete');
       router.push(ROUTES.adminDashboard);
     } catch (cause) {
-      const invalidCode =
-        getErrorMessage(cause, '').trim().toLowerCase() === 'invalid totp code';
+      const invalidCode = errorCode(cause) === 'ADMIN_TOTP_CODE_INVALID';
       reportError(
         cause,
         'Could not verify code',

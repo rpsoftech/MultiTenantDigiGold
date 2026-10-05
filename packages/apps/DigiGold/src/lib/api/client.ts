@@ -158,6 +158,18 @@ function expireAdminSession(
   }
 }
 
+const ADMIN_REFRESH_LOCK = 'digigold-admin-refresh';
+
+// Runs `task` while holding a lock shared by every tab of this origin (Web Locks API).
+// Where the API is missing (old browsers, jsdom) the task runs directly; the
+// adopt-after-rejection fallback in refreshAdminTokens then covers most cross-tab races.
+function withAdminRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  const locks =
+    typeof navigator === 'undefined' ? undefined : navigator.locks;
+  if (!locks?.request) return task();
+  return locks.request(ADMIN_REFRESH_LOCK, task);
+}
+
 let pendingAdminRefresh:
   | {
       revision: number;
@@ -189,33 +201,48 @@ export function refreshAdminTokens(): Promise<AdminTokens> {
     return pendingAdminRefresh.promise;
   }
 
-  const promise = apiClient
-    .post<AdminTokens>('/admin/auth/refresh', { refresh_token: refreshToken })
-    .then(({ data }) => {
-      if (
-        getAdminTokenRevision() !== revision ||
-        getAdminRefreshToken() !== refreshToken ||
-        getAdminSessionId() !== sessionId
-      ) {
-        throw adminSessionChangedError();
+  // Refresh tokens are single use, and every tab of a session shares them through
+  // localStorage. Holding a cross-tab lock for the whole exchange means only one tab talks
+  // to MainServer at a time; a tab that waited re-reads the stored token and adopts the
+  // pair the other tab just stored, instead of sending the consumed one and being signed out.
+  const promise = withAdminRefreshLock(async (): Promise<AdminTokens> => {
+    const storedRefresh = getAdminRefreshToken();
+    if (storedRefresh !== refreshToken) {
+      const storedAccess = getAdminAccessToken();
+      if (storedRefresh && storedAccess && getAdminSessionId() === sessionId) {
+        return { access_token: storedAccess, refresh_token: storedRefresh };
       }
+      // Logged out, or another admin signed in, while this tab waited.
+      throw adminSessionChangedError();
+    }
 
-      if (
-        typeof data?.access_token !== 'string' ||
-        !data.access_token ||
-        typeof data?.refresh_token !== 'string' ||
-        !data.refresh_token
-      ) {
-        throw {
-          message: 'The server returned an invalid admin session.',
-          code: 'INVALID_ADMIN_SESSION',
-          status: 401,
-        } satisfies NormalizedApiError;
-      }
+    const { data } = await apiClient.post<AdminTokens>('/admin/auth/refresh', {
+      refresh_token: refreshToken,
+    });
+    if (
+      getAdminTokenRevision() !== revision ||
+      getAdminRefreshToken() !== refreshToken ||
+      getAdminSessionId() !== sessionId
+    ) {
+      throw adminSessionChangedError();
+    }
 
-      rotateAdminTokens(data);
-      return data;
-    })
+    if (
+      typeof data?.access_token !== 'string' ||
+      !data.access_token ||
+      typeof data?.refresh_token !== 'string' ||
+      !data.refresh_token
+    ) {
+      throw {
+        message: 'The server returned an invalid admin session.',
+        code: 'INVALID_ADMIN_SESSION',
+        status: 401,
+      } satisfies NormalizedApiError;
+    }
+
+    rotateAdminTokens(data);
+    return data;
+  })
     .catch((error: unknown) => {
       // Refresh tokens are single use (MainServer consumes them), and tabs share
       // localStorage. If another tab of this same session rotated the pair first, our

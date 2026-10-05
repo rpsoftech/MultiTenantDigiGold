@@ -26,6 +26,9 @@ type AdminClaims struct {
 	AdminUUID string `json:"admin_uuid"`
 	Role      string `json:"role"`
 	TenantID  int64  `json:"tenant_id"`
+	// Username is for display only (the admin panel shows who is signed in); authorization
+	// never reads it. Set on access tokens only.
+	Username string `json:"username,omitempty"`
 	*jwt.RegisteredClaims
 }
 
@@ -156,20 +159,17 @@ func (s *JWTService) GenerateRegistrationToken(phone string, tenantUUID string) 
 	}, s.accessKey)
 }
 
-// GenerateAdminTokens generates both Access (15m) and Refresh (7d) tokens for an admin
-func (s *JWTService) GenerateAdminTokens(adminUUID string, role string, tenantID int64) (string, string, error) {
-	accessToken, refreshToken, _, err := s.GenerateAdminTokenPair(adminUUID, role, tenantID)
-	return accessToken, refreshToken, err
-}
-
-// GenerateAdminTokenPair is GenerateAdminTokens plus the refresh token's unique ID (jti).
-// AdminAuthService records that ID server-side, which is what lets a refresh token be
-// used once, and revoked on logout, despite being a self-contained JWT.
-func (s *JWTService) GenerateAdminTokenPair(adminUUID string, role string, tenantID int64) (accessToken, refreshToken, refreshID string, err error) {
+// GenerateAdminTokenPair generates an admin's Access (15m) and Refresh (7d) tokens, plus the
+// refresh token's unique ID (jti). AdminAuthService records that ID server-side, which is
+// what lets a refresh token be used once, and revoked on logout, despite being a
+// self-contained JWT. Admin tokens must only be minted through AdminAuthService
+// (issueAdminTokens): a refresh token without its server-side record is always rejected.
+func (s *JWTService) GenerateAdminTokenPair(adminUUID, username, role string, tenantID int64) (accessToken, refreshToken, refreshID string, err error) {
 	accessToken, err = sign(&AdminClaims{
 		AdminUUID:        adminUUID,
 		Role:             role,
 		TenantID:         tenantID,
+		Username:         username,
 		RegisteredClaims: newRegisteredClaims(audAdminAccess, accessTokenTTL),
 	}, s.accessKey)
 	if err != nil {
@@ -234,7 +234,7 @@ func (s *JWTService) ValidateRegistrationToken(tokenStr string) (string, string,
 	return claims.Phone, claims.TenantUUID, nil
 }
 
-// ValidateAdminToken validates a JWT issued by GenerateAdminTokens and returns AdminClaims.
+// ValidateAdminToken validates a JWT issued by GenerateAdminTokenPair and returns AdminClaims.
 func (s *JWTService) ValidateAdminToken(tokenStr string) (*AdminClaims, error) {
 	claims := &AdminClaims{}
 	if err := parse(tokenStr, claims, s.accessKey, audAdminAccess); err != nil {
@@ -246,7 +246,7 @@ func (s *JWTService) ValidateAdminToken(tokenStr string) (*AdminClaims, error) {
 	return claims, nil
 }
 
-// ValidateAdminRefreshToken validates a refresh token issued by GenerateAdminTokens and returns AdminClaims.
+// ValidateAdminRefreshToken validates a refresh token issued by GenerateAdminTokenPair and returns AdminClaims.
 func (s *JWTService) ValidateAdminRefreshToken(tokenStr string) (*AdminClaims, error) {
 	claims := &AdminClaims{}
 	if err := parse(tokenStr, claims, s.refreshKey, audAdminRefresh); err != nil {

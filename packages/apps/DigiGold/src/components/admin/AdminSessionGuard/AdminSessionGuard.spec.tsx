@@ -30,11 +30,11 @@ jest.mock('@/features/admin-auth/admin-auth.service', () => ({
 
 const mockRefresh = jest.mocked(adminAuthService.refresh);
 
-function accessToken(exp = 4102444800) {
+function accessToken(exp = 4102444800, adminUuid = 'admin-123') {
   const header = btoa('{"alg":"HS256","typ":"JWT"}');
   const payload = btoa(
     JSON.stringify({
-      admin_uuid: 'admin-123',
+      admin_uuid: adminUuid,
       role: 'manager',
       aud: ['digigold:admin:access'],
       exp,
@@ -224,4 +224,77 @@ it('does not restore a session from a late refresh after logout', async () => {
   expect(mounted).not.toHaveBeenCalled();
   expect(store.getState().session.admin).toBeNull();
   expect(getAdminAccessToken()).toBeNull();
+});
+
+// Another tab changing the shared session: the browser fires `storage` in this tab only.
+function otherTabChangesSession(change: () => void) {
+  act(() => {
+    change();
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'admin_session_id',
+        newValue: window.localStorage.getItem('admin_session_id'),
+      }),
+    );
+  });
+}
+
+it('leaves the panel at once when another tab signs out', () => {
+  storeAdminTokens(tokens);
+  const { store, queryClient } = renderGuard();
+  expect(screen.getByText('Protected admin panel')).toBeTruthy();
+
+  otherTabChangesSession(() => {
+    window.localStorage.removeItem('admin_access_token');
+    window.localStorage.removeItem('admin_refresh_token');
+    window.localStorage.removeItem('admin_session_id');
+  });
+
+  expect(screen.queryByText('Protected admin panel')).toBeNull();
+  expect(mockReplace).toHaveBeenCalledWith(ROUTES.adminLogin);
+  expect(store.getState().session.admin).toBeNull();
+  expect(queryClient.getQueryData(['admin', 'profile'])).toBeUndefined();
+  expect(queryClient.getQueryData(['customer', 'wallet'])).toEqual({
+    balance: 10,
+  });
+});
+
+it('switches to the admin who signed in from another tab', async () => {
+  storeAdminTokens(tokens);
+  const { store, queryClient } = renderGuard();
+
+  otherTabChangesSession(() => {
+    window.localStorage.setItem('admin_session_id', 'another-session');
+    window.localStorage.setItem(
+      'admin_access_token',
+      accessToken(4102444800, 'admin-456'),
+    );
+    window.localStorage.setItem('admin_refresh_token', 'another-refresh');
+  });
+
+  await waitFor(() =>
+    expect(store.getState().session.admin?.userId).toBe('admin-456'),
+  );
+  expect(screen.getByText('Protected admin panel')).toBeTruthy();
+  expect(queryClient.getQueryData(['admin', 'profile'])).toBeUndefined();
+  expect(mockReplace).not.toHaveBeenCalled();
+});
+
+it('ignores storage changes that are not the admin session', () => {
+  storeAdminTokens(tokens);
+  const { store } = renderGuard();
+
+  act(() => {
+    window.localStorage.setItem('access_token', 'customer-access');
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'access_token',
+        newValue: 'customer-access',
+      }),
+    );
+  });
+
+  expect(screen.getByText('Protected admin panel')).toBeTruthy();
+  expect(store.getState().session.admin?.userId).toBe('admin-123');
+  expect(mockReplace).not.toHaveBeenCalled();
 });

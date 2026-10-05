@@ -5,7 +5,7 @@ import type { SessionUser } from '@/store/session/session.types';
 // signature, role permissions, and tenant scope on every protected request.
 export function adminSessionUser(accessToken: string): SessionUser {
   const claims = decodeJwtPayload<Record<string, unknown>>(accessToken);
-  const { admin_uuid, role, aud, exp } = claims ?? {};
+  const { admin_uuid, role, aud, exp, username } = claims ?? {};
   const audiences = Array.isArray(aud) ? aud : [aud];
 
   if (
@@ -26,6 +26,10 @@ export function adminSessionUser(accessToken: string): SessionUser {
   return {
     userId: admin_uuid,
     role: 'admin',
+    // Display only: shown in the admin menu. Older tokens don't carry it.
+    ...(typeof username === 'string' && username.trim()
+      ? { name: username }
+      : {}),
     isNewUser: false,
     kycStatus: 'not_started',
   };

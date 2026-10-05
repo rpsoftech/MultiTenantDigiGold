@@ -7,6 +7,9 @@ export type AdminLoginPayload = {
 
 export type AdminLoginResult = {
   temp_token: string;
+  // true: the admin already has an authenticator, so skip setup and ask for a code.
+  // Absent on older servers; the client then asks setup, which answers 409 if enrolled.
+  totp_enabled?: boolean;
 };
 
 export type AdminTotpSetupPayload = {

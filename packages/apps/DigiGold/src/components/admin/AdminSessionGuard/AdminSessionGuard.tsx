@@ -11,6 +11,7 @@ import {
   clearAdminTokens,
   getAdminAccessToken,
   getAdminRefreshToken,
+  getAdminSessionId,
   getAdminTokenRevision,
 } from '@/lib/api/admin-tokens';
 import { ROUTES } from '@/lib/constants/routes';
@@ -36,6 +37,7 @@ export function AdminSessionGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     let expired = false;
+    const sessionId = getAdminSessionId();
 
     function expire() {
       if (!active || expired) return;
@@ -103,11 +105,31 @@ export function AdminSessionGuard({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Tabs share the admin session through localStorage, but each tab's UI only learns
+    // of a change from the browser's storage event. Signed out elsewhere: leave the panel
+    // now instead of showing cached data until the next request fails. Another admin
+    // signed in elsewhere: restore again, as that admin.
+    function onStorage(event: StorageEvent) {
+      if (event.key !== null && event.key !== 'admin_session_id') return;
+      const currentSessionId = getAdminSessionId();
+      if (currentSessionId === sessionId) return;
+      if (!currentSessionId) {
+        expire();
+        return;
+      }
+      void queryClient.cancelQueries({ queryKey: ['admin'] });
+      queryClient.removeQueries({ queryKey: ['admin'] });
+      setStatus('checking');
+      setAttempt((value) => value + 1);
+    }
+
     window.addEventListener('admin-session-expired', expire);
+    window.addEventListener('storage', onStorage);
     void restore();
     return () => {
       active = false;
       window.removeEventListener('admin-session-expired', expire);
+      window.removeEventListener('storage', onStorage);
     };
   }, [attempt, queryClient, router, store]);
 

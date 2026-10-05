@@ -382,6 +382,79 @@ describe('admin API authentication', () => {
     expect(getAdminRefreshToken()).toBe(rotatedTokens.refresh_token);
   });
 
+  describe('two tabs of one session refreshing at the same moment', () => {
+    // A fake MainServer with single-use refresh tokens. A replayed token is rejected at
+    // once, while a successful exchange takes a moment: the loser's 401 comes back first,
+    // as it does against the real server (GETDEL miss vs. DB read + signing + Redis write).
+    function singleUseServer() {
+      const live = new Set([initialTokens.refresh_token]);
+      const server = {
+        exchanges: 0,
+        adapter: async (config: InternalAxiosRequestConfig) => {
+          if (config.url !== '/admin/auth/refresh') return response(config, {});
+          server.exchanges += 1;
+          const sent = (
+            JSON.parse(config.data as string) as { refresh_token: string }
+          ).refresh_token;
+          if (!live.delete(sent)) {
+            throw httpError(config, 401, {
+              message: 'Your admin session has expired. Please sign in again.',
+              name: 'ADMIN_REFRESH_TOKEN_INVALID',
+            });
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          live.add(rotatedTokens.refresh_token);
+          return response(config, rotatedTokens);
+        },
+      };
+      return server;
+    }
+
+    // Each tab has its own copy of the client modules (its own in-memory state) but shares
+    // localStorage, exactly like two browser tabs.
+    function openSecondTab(): typeof import('./client') {
+      let tab!: typeof import('./client');
+      jest.isolateModules(() => {
+        tab = require('./client') as typeof import('./client');
+      });
+      return tab;
+    }
+
+    afterEach(() => {
+      delete (window.navigator as { locks?: unknown }).locks;
+    });
+
+    it('exchanges the token once and both tabs keep the session (Web Locks)', async () => {
+      // Minimal LockManager: requests for a lock run one after another, across tabs.
+      let tail: Promise<unknown> = Promise.resolve();
+      Object.defineProperty(window.navigator, 'locks', {
+        configurable: true,
+        value: {
+          request: (_name: string, task: () => Promise<unknown>) => {
+            const run = tail.then(task);
+            tail = run.catch(() => undefined);
+            return run;
+          },
+        },
+      });
+      const server = singleUseServer();
+      const secondTab = openSecondTab();
+      apiClient.defaults.adapter = server.adapter;
+      secondTab.apiClient.defaults.adapter = server.adapter;
+
+      const [first, second] = await Promise.all([
+        refreshAdminTokens(),
+        secondTab.refreshAdminTokens(),
+      ]);
+
+      expect(server.exchanges).toBe(1);
+      expect(first).toEqual(rotatedTokens);
+      expect(second).toEqual(rotatedTokens);
+      expect(getAdminAccessToken()).toBe(rotatedTokens.access_token);
+      expect(getAdminRefreshToken()).toBe(rotatedTokens.refresh_token);
+    });
+  });
+
   it('does not clear a newer session when an older refresh fails', async () => {
     const refreshStarted = deferred<void>();
     const completeRefresh = deferred<void>();
