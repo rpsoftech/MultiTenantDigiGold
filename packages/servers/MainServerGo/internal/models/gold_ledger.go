@@ -24,4 +24,7 @@ type GoldTransactionLedger struct {
 	MetadataJSON            json.RawMessage `json:"metadata_json,omitempty"`
 	CreatedAt               time.Time       `json:"created_at"`
 	ModifiedAt              time.Time       `json:"modified_at"`
+	// IsReversed is computed, not stored: true when a SYSTEM_REVERSAL entry references this one.
+	// Only the store ledger fills it in.
+	IsReversed bool `json:"is_reversed,omitempty"`
 }

@@ -1,14 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminService } from '../admin.service';
-import { ADMIN_USERS_QUERY_KEY } from './useAdminUsers';
+import { adminQueryKeys } from '../admin.queryKeys';
 
 export function useUpdateKycStatus() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: adminService.updateKycStatus,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ADMIN_USERS_QUERY_KEY });
-    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.customers }),
   });
 }

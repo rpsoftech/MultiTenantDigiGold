@@ -51,7 +51,7 @@ const (
 	ledgerEventPurchase     = "GOLD_PURCHASE"
 	ledgerEventRedemption   = "PHYSICAL_REDEMPTION"
 	ledgerEventReversal     = "SYSTEM_REVERSAL"
-	reversalReferencePrefix = "REVERSAL_"
+	reversalReferencePrefix = repository.ReversalReferencePrefix
 
 	// quoteValidity is how long a priced online order may wait for its payment.
 	quoteValidity = 15 * time.Minute

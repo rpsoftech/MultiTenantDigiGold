@@ -26,6 +26,7 @@ export function adminSessionUser(accessToken: string): SessionUser {
   return {
     userId: admin_uuid,
     role: 'admin',
+    adminRole: role,
     // Display only: shown in the admin menu. Older tokens don't carry it.
     ...(typeof username === 'string' && username.trim()
       ? { name: username }

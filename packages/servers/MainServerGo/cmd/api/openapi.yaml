@@ -235,6 +235,11 @@ components:
         reference_id: { type: string }
         metadata_json: {}
         created_at: { type: string, format: date-time }
+        is_reversed:
+          {
+            type: boolean,
+            description: 'Store ledger only: true when a SYSTEM_REVERSAL entry reverses this one. Omitted when false.',
+          }
 
     MarginConfig:
       type: object
@@ -1056,6 +1061,7 @@ paths:
       operationId: getAdminStoreAnalytics
       tags: [Admin Store]
       summary: Tenant trading totals
+      description: Totals over purchases and redemptions. Entries that were reversed are left out.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       responses:

@@ -18,6 +18,8 @@ export const ROUTES = {
   contactSupport: '/contact-support',
   adminLogin: '/admin/login',
   adminDashboard: '/admin/dashboard',
+  adminCustomers: '/admin/customers',
+  adminLedger: '/admin/ledger',
   adminProfile: '/admin/profile',
   adminUpdatePassword: '/admin/update-password',
 } as const;
