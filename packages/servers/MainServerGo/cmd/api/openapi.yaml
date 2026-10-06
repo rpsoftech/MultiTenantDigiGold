@@ -181,6 +181,10 @@ components:
         full_name: { type: string, nullable: true }
         phone_number: { type: string }
         email_id: { type: string, nullable: true }
+        city:
+          type: string
+          nullable: true
+          description: City entered at registration; null for customers who registered earlier.
         kyc_status: { type: string, enum: [pending, verified, rejected] }
         document_json: { description: KYC document payload (JSON). }
         erp_unique_id: { type: string, nullable: true }
@@ -515,8 +519,12 @@ paths:
               required: [registration_token, full_name, location]
               properties:
                 registration_token: { type: string }
-                full_name: { type: string }
-                location: { type: string }
+                full_name: { type: string, maxLength: 255 }
+                location:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                  description: The customer's city (stored as the user's `city`). Trimmed.
                 email_id: { type: string, format: email }
       responses:
         '200':
@@ -529,6 +537,7 @@ paths:
                   - type: object
                     properties:
                       success: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 

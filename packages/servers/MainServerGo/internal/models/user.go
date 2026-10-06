@@ -12,6 +12,7 @@ type User struct {
 	FullName         *string         `json:"full_name"`
 	PhoneNumber      string          `json:"phone_number"`
 	EmailID          *string         `json:"email_id"`
+	City             *string         `json:"city"` // entered at registration; nil for older customers
 	KYCStatus        string          `json:"kyc_status"`
 	StatusApprovedBy *int64          `json:"status_approved_by"`
 	DocumentJSON     json.RawMessage `json:"document_json"` // JSONB

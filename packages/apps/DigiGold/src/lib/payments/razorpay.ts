@@ -30,7 +30,7 @@ export type RazorpayInstance = {
   on: (event: 'payment.failed', handler: (response: RazorpayFailureResponse) => void) => void;
 };
 
-type RazorpayConstructor = new (options: RazorpayCheckoutOptions) => RazorpayInstance;
+export type RazorpayConstructor = new (options: RazorpayCheckoutOptions) => RazorpayInstance;
 
 declare global {
   interface Window {

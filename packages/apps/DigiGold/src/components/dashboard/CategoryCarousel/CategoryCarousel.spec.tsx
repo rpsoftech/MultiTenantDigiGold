@@ -89,8 +89,14 @@ describe('CategoryCarousel', () => {
       configurable: true,
       get: () => clientWidth,
     });
-    HTMLElement.prototype.scrollBy = scrollBy as never;
-    HTMLElement.prototype.scrollTo = scrollTo as never;
+    Object.defineProperty(HTMLElement.prototype, 'scrollBy', {
+      configurable: true,
+      value: scrollBy,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: scrollTo,
+    });
   });
 
   beforeEach(() => {

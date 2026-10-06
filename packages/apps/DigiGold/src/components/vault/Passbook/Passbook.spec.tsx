@@ -77,9 +77,7 @@ describe('Passbook', () => {
   });
 
   it('shows a loader while the history loads', () => {
-    mockedTrade.getHistory.mockReturnValue(
-      new Promise(() => undefined) as never,
-    );
+    mockedTrade.getHistory.mockReturnValue(new Promise<never>(() => undefined));
     renderWithProviders(<Passbook />);
 
     expect(screen.getByRole('heading', { name: 'Passbook' })).toBeTruthy();

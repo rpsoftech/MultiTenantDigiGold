@@ -7,7 +7,10 @@ import {
 } from '@/test-utils/renderWithProviders';
 import { tradeService } from '@/features/trade/trade.service';
 import { openRazorpayCheckout, loadRazorpayScript } from '@/lib/payments/razorpay';
-import type { RazorpayCheckoutOptions } from '@/lib/payments/razorpay';
+import type {
+  RazorpayCheckoutOptions,
+  RazorpayConstructor,
+} from '@/lib/payments/razorpay';
 import type { TradeHistoryEntry } from '@/features/trade/trade.types';
 import { PORTFOLIO_QUERY_KEY } from '@/features/portfolio/hooks/usePortfolio';
 import { BuyGold } from './BuyGold';
@@ -106,7 +109,7 @@ describe('BuyGold', () => {
     settlement = { status: 'polling' };
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = 'rzp_test_key';
     mockedTrade.initiateBuy.mockResolvedValue(quote());
-    mockedLoad.mockResolvedValue(jest.fn() as never);
+    mockedLoad.mockResolvedValue(jest.fn() as unknown as RazorpayConstructor);
   });
 
   afterEach(() => {

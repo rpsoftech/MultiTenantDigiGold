@@ -37,7 +37,7 @@ describe('RedemptionList', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('shows a loader while the list loads', () => {
-    mockedService.list.mockReturnValue(new Promise(() => undefined) as never);
+    mockedService.list.mockReturnValue(new Promise<never>(() => undefined));
     renderWithProviders(<RedemptionList />);
 
     expect(

@@ -138,9 +138,10 @@ describe('RedeemFlow', () => {
   });
 
   it('sends the request once even if Confirm is pressed repeatedly', async () => {
-    let resolveCreate: (value: unknown) => void = () => undefined;
+    type CreateResult = Awaited<ReturnType<typeof redemptionService.create>>;
+    let resolveCreate: (value: CreateResult) => void = () => undefined;
     mockedService.create.mockImplementation(
-      () => new Promise((resolve) => (resolveCreate = resolve)) as never,
+      () => new Promise<CreateResult>((resolve) => (resolveCreate = resolve)),
     );
     renderWithProviders(<RedeemFlow balanceGrams={5} />);
     type('2');

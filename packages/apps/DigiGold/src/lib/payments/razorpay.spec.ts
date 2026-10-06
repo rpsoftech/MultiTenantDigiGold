@@ -1,5 +1,4 @@
-// Marks this file as a module so its helpers do not leak into other specs.
-export {};
+import type { RazorpayConstructor } from './razorpay';
 
 type RazorpayModule = typeof import('./razorpay');
 
@@ -101,7 +100,10 @@ describe('openRazorpayCheckout', () => {
       handler: jest.fn(),
     };
 
-    const instance = openRazorpayCheckout(Ctor as never, options);
+    const instance = openRazorpayCheckout(
+      Ctor as unknown as RazorpayConstructor,
+      options,
+    );
 
     expect(Ctor).toHaveBeenCalledWith(options);
     expect(open).toHaveBeenCalledTimes(1);

@@ -217,7 +217,7 @@ describe('KYC form', () => {
   });
 
   it('shows a loader instead of the form while the request is in flight', async () => {
-    jest.mocked(kycService.submitKyc).mockReturnValue(new Promise(() => undefined) as never);
+    jest.mocked(kycService.submitKyc).mockReturnValue(new Promise<never>(() => undefined));
     renderKyc();
     fill('PAN Number', 'ABCDE1234F');
     fill('Aadhaar (last 4 digits)', '1234');

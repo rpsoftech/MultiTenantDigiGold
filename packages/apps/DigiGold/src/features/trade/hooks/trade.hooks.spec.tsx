@@ -116,7 +116,7 @@ describe('useTradeHistory', () => {
 
   it('returns no entries before the first response', () => {
     mockedService.getHistory.mockReturnValue(
-      new Promise(() => undefined) as never,
+      new Promise<never>(() => undefined),
     );
     const { result } = renderHookWithProviders(() => useTradeHistory());
 
