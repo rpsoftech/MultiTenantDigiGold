@@ -15,7 +15,9 @@ export function useFooterConfig(): FooterConfig {
         .map((column) => ({
           ...column,
           links: column.links.filter((link) => link.enabled).sort((a, b) => a.order - b.order),
-        })),
+        }))
+        // A column whose links are all switched off would be a bare heading.
+        .filter((column) => column.links.length > 0),
     }),
     []
   );

@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { AuthService, TenantConfigService } from '@dg/services';
+import { AuthService, TenantConfigService, apiErrorBody } from '@dg/services';
 
 @Component({
   selector: 'dg-login-modal',
@@ -208,8 +208,8 @@ export class LoginModalComponent {
     try {
       await this.auth.requestOtp(this.phone());
       this.step.set('OTP');
-    } catch (e: any) {
-      this.errorMsg.set(e?.error?.message || 'Failed to request OTP');
+    } catch (e: unknown) {
+      this.errorMsg.set(apiErrorBody(e)?.message || 'Failed to request OTP');
     }
     this.isLoading.set(false);
   }
@@ -228,8 +228,8 @@ export class LoginModalComponent {
         this.registrationToken = res.registration_token || '';
         this.step.set('REGISTER');
       }
-    } catch (e: any) {
-      this.errorMsg.set(e?.error?.message || 'Invalid OTP');
+    } catch (e: unknown) {
+      this.errorMsg.set(apiErrorBody(e)?.message || 'Invalid OTP');
     }
     this.isLoading.set(false);
   }
@@ -245,8 +245,8 @@ export class LoginModalComponent {
       );
       this.auth.isLoginModalOpen.set(false);
       this.reset();
-    } catch (e: any) {
-      this.errorMsg.set(e?.error?.message || 'Registration failed');
+    } catch (e: unknown) {
+      this.errorMsg.set(apiErrorBody(e)?.message || 'Registration failed');
     }
     this.isLoading.set(false);
   }

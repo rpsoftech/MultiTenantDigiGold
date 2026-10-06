@@ -41,8 +41,11 @@ describe('Header', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(nav.textContent).toContain('Home');
-    expect(nav.textContent).toContain('Marketplace');
     expect(nav.textContent).toContain('Vault');
+    // Switched off in header.config.json until their pages exist.
+    for (const hidden of ['Marketplace', 'Invest', 'About']) {
+      expect(nav.textContent).not.toContain(hidden);
+    }
   });
 
   describe('signed out', () => {

@@ -5,6 +5,7 @@ import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { Badge } from '@/components/common/Badge/Badge';
 import { ShieldIcon } from '@/components/common/icons/Icons';
 import { AdminProfileMenu } from '@/components/admin/AdminProfileMenu/AdminProfileMenu';
+import { isAdminDataSample } from '@/features/admin/admin.service';
 import styles from './AdminShell.module.scss';
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -34,6 +35,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+
+      {isAdminDataSample() && (
+        <p className={styles.sampleNotice} role="note">
+          <strong>Sample data.</strong> The figures and customers on these pages
+          are examples, not {tenantName}&apos;s records: the store data
+          isn&apos;t connected yet.
+        </p>
+      )}
 
       <main className={styles.content}>{children}</main>
     </div>

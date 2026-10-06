@@ -1,7 +1,7 @@
 import { Injectable, Type } from '@angular/core';
 import { SDUI_MANIFEST } from './sdui-manifest';
 
-export type ComponentLoader = () => Promise<Type<any>>;
+export type ComponentLoader = () => Promise<Type<unknown>>;
 
 @Injectable({
   providedIn: 'root',

@@ -3,6 +3,7 @@ import { RouterModule } from '@angular/router';
 import { LoginModalComponent, TradeModalComponent } from '@dg/ui';
 import { SduiRendererComponent } from '@dg/ui';
 import { TenantConfigService } from '@dg/services';
+import type { SDUIComponentConfig } from '@dg/angular-core';
 
 @Component({
   standalone: true,
@@ -35,7 +36,7 @@ export class App {
   public tenantService = inject(TenantConfigService);
 
   // Helper to inject the global tenant branding into the header component
-  injectBranding(comp: any) {
+  injectBranding(comp: SDUIComponentConfig): SDUIComponentConfig {
     const config = this.tenantService.config();
     if (!config) return comp;
 

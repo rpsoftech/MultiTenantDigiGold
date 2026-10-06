@@ -1,7 +1,78 @@
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test-utils/renderWithProviders';
 import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+import type { FooterConfig } from './Footer.types';
+import { useFooterConfig } from './useFooterConfig';
 import { Footer } from './Footer';
+
+// Rendering is tested against a fixture: which footer pages are live is site config
+// (footer.config.json), checked separately by the navigation routes spec.
+jest.mock('./useFooterConfig', () => ({ useFooterConfig: jest.fn() }));
+const fixture: FooterConfig = {
+  columns: [
+    {
+      id: 'company',
+      label: 'Company',
+      enabled: true,
+      order: 1,
+      links: [
+        {
+          id: 'about-us',
+          label: 'About Us',
+          url: '/about-us',
+          enabled: true,
+          order: 1,
+        },
+        {
+          id: 'vault-security',
+          label: 'Vault Security',
+          url: '/vault/security',
+          enabled: true,
+          order: 2,
+          icon: 'shield',
+        },
+      ],
+    },
+    {
+      id: 'legal',
+      label: 'Legal',
+      enabled: true,
+      order: 2,
+      links: [
+        {
+          id: 'privacy-policy',
+          label: 'Privacy Policy',
+          url: '/privacy-policy',
+          enabled: true,
+          order: 1,
+        },
+        {
+          id: 'terms-of-service',
+          label: 'Terms of Service',
+          url: '/terms-of-service',
+          enabled: true,
+          order: 2,
+        },
+      ],
+    },
+    {
+      id: 'support',
+      label: 'Support',
+      enabled: true,
+      order: 3,
+      links: [
+        {
+          id: 'help-center',
+          label: 'Help Center',
+          url: '/help-center',
+          enabled: true,
+          order: 1,
+        },
+      ],
+    },
+  ],
+};
+beforeEach(() => jest.mocked(useFooterConfig).mockReturnValue(fixture));
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -68,5 +139,13 @@ describe('Footer', () => {
     expect(
       screen.getByRole('link', { name: 'About Us' }).querySelector('svg'),
     ).toBeNull();
+  });
+
+  it('still shows the copyright when no footer page is live yet', () => {
+    jest.mocked(useFooterConfig).mockReturnValue({ columns: [] });
+    renderWithProviders(<Footer />);
+
+    expect(screen.queryByRole('navigation')).toBeNull();
+    expect(screen.getByText(/All rights reserved\./)).toBeTruthy();
   });
 });

@@ -14,7 +14,7 @@ import { TenantConfigService, API_BASE_URL } from '@dg/services';
 
 // Factory function to initialize the app state before rendering
 export function initializeApp(tenantConfig: TenantConfigService) {
-  return (): Promise<any> => {
+  return (): Promise<void> => {
     return tenantConfig.loadTenantConfig();
   };
 }

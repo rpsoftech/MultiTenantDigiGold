@@ -28,7 +28,7 @@ export class LiveRateService {
   }
   private platformId = inject(PLATFORM_ID);
   private destroyRef = inject(DestroyRef);
-  private retryTimeout: any;
+  private retryTimeout: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
     // ONLY connect to SSE in the Browser to prevent NodeJS SSR errors (EventSource is not defined on server)
@@ -57,7 +57,7 @@ export class LiveRateService {
       }
     };
 
-    this.eventSource.onerror = (err: any) => {
+    this.eventSource.onerror = (err: Event) => {
       console.error('[LiveRateService] SSE connection error. Retrying...', err);
       this.eventSource?.close();
       this.retryTimeout = setTimeout(() => this.connectToSse(), 5000);
