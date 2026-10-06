@@ -39,6 +39,23 @@ describe('ProfileMenu', () => {
     await waitFor(() => expect(screen.queryByText('KYC Verification')).toBeNull());
   });
 
+  // The popover closes by unmounting: signing out removes the menu from the header.
+  it('logs out from the popover', () => {
+    logoutMock.mockClear();
+    const onNavigate = jest.fn();
+    render(
+      <Provider store={makeStore()}>
+        <ProfileMenu onNavigate={onNavigate} />
+      </Provider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+    // Hidden popper again: find the entry by text.
+    fireEvent.click(screen.getByText('Logout').closest('button') as HTMLButtonElement);
+
+    expect(logoutMock).toHaveBeenCalledTimes(1);
+  });
+
   // Inside the mobile nav (a modal dialog) a popover would render behind it, so the entries
   // are shown directly, without needing a trigger click.
   it('inline: shows KYC and Logout without a trigger and runs their handlers', () => {

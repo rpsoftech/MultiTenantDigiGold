@@ -183,3 +183,72 @@ describe('KYC submission', () => {
     );
   });
 });
+
+describe('KYC form', () => {
+  const fill = (label: string, value: string) =>
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const submitButton = () =>
+    screen.getByRole<HTMLButtonElement>('button', { name: 'Submit for Verification' });
+
+  beforeEach(() => {
+    signIn();
+    setKyc('not_started');
+  });
+
+  it('keeps submit disabled until PAN and Aadhaar are valid', async () => {
+    renderKyc();
+    expect(submitButton().disabled).toBe(true);
+
+    fill('PAN Number', 'ABCDE1234F');
+    expect(submitButton().disabled).toBe(true);
+
+    fill('Aadhaar (last 4 digits)', '1234');
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+  });
+
+  it('shows field errors for invalid values', async () => {
+    renderKyc();
+
+    fill('PAN Number', 'BAD');
+    fill('Aadhaar (last 4 digits)', '12');
+
+    expect(await screen.findByText(/valid PAN/i)).toBeTruthy();
+    expect(await screen.findByText('Enter the last 4 digits of your Aadhaar')).toBeTruthy();
+  });
+
+  it('shows a loader instead of the form while the request is in flight', async () => {
+    jest.mocked(kycService.submitKyc).mockReturnValue(new Promise<never>(() => undefined));
+    renderKyc();
+    fill('PAN Number', 'ABCDE1234F');
+    fill('Aadhaar (last 4 digits)', '1234');
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+
+    fireEvent.click(submitButton());
+
+    expect(await screen.findByRole('status', { name: 'Submitting your KYC' })).toBeTruthy();
+    // The form stays mounted but hidden so typed values survive a failed request.
+    expect(screen.getByLabelText('PAN Number').closest('[hidden]')).not.toBeNull();
+  });
+
+  it('reports a failure and keeps the typed values on the form', async () => {
+    jest.mocked(kycService.submitKyc).mockRejectedValue({
+      message: 'Server exploded',
+      code: 'ERR_BAD_RESPONSE',
+      status: 500,
+    });
+    renderKyc();
+    fill('PAN Number', 'ABCDE1234F');
+    fill('Aadhaar (last 4 digits)', '1234');
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+
+    fireEvent.click(submitButton());
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'danger', title: 'Could not submit KYC' }),
+      ),
+    );
+    expect((screen.getByLabelText('PAN Number') as HTMLInputElement).value).toBe('ABCDE1234F');
+    expect(screen.getByLabelText('PAN Number').closest('[hidden]')).toBeNull();
+  });
+});

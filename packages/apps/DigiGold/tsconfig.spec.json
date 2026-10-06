@@ -7,7 +7,13 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "ignoreDeprecations": "6.0",
-    "rootDir": "."
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": [
     "jest.config.ts",
@@ -20,7 +26,8 @@
     "src/**/*.spec.js",
     "src/**/*.test.jsx",
     "src/**/*.spec.jsx",
-    "src/**/*.d.ts"
+    "src/**/*.d.ts",
+    "next-env.d.ts"
   ],
   "references": [
     {
