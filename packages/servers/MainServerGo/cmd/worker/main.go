@@ -50,7 +50,7 @@ func main() {
 
 			runCheck := func() {
 				// Notice we target "worker" instead of "api"
-				updated, err := updater.CheckAndUpdate(string(env.Env.APP_ENV), "https://keyvalue.rpso.in/public/", "worker", currentVersion)
+				updated, err := updater.CheckAndUpdate(string(env.Env.APP_ENV), updater.KVBaseURL, "worker", currentVersion)
 				if err != nil {
 					log.Printf("⚠️ OTA Updater: %v\n", err)
 					return

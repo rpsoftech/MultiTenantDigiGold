@@ -59,7 +59,7 @@ func main() {
 			currentVersion, _ := strconv.Atoi(versionStr)
 
 			runCheck := func() {
-				updated, err := updater.CheckAndUpdate(string(env.Env.APP_ENV), "https://keyvalue.rpso.in/public/", "api", currentVersion)
+				updated, err := updater.CheckAndUpdate(string(env.Env.APP_ENV), updater.KVBaseURL, "api", currentVersion)
 				if err != nil {
 					log.Printf("⚠️ OTA Updater: %v\n", err)
 					return
