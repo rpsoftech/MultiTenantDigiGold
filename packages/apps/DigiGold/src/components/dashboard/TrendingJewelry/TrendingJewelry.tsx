@@ -5,6 +5,8 @@ import { Loader } from '@/components/common/Loader/Loader';
 import { Button } from '@/components/common/Button/Button';
 import { describeApiError } from '@/lib/api/client';
 import { useTrendingProducts } from '@/features/marketplace/hooks/useTrendingProducts';
+import { isMarketplaceSample } from '@/features/marketplace/marketplace.sample';
+import { SampleCatalogueNotice } from '@/components/jewellery/SampleCatalogueNotice/SampleCatalogueNotice';
 import { useTrendingJewelryConfig } from './useTrendingJewelryConfig';
 import { ProductCard } from './ProductCard';
 import styles from './TrendingJewelry.module.scss';
@@ -32,6 +34,8 @@ export function TrendingJewelry() {
           {config.viewAllLabel}
         </Link>
       </div>
+
+      {isMarketplaceSample() && <SampleCatalogueNotice />}
 
       {isLoading && (
         <div className={styles.loaderWrap}>

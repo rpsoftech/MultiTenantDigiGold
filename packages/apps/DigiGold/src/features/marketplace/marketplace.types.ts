@@ -9,7 +9,10 @@ export type Product = {
   weight: number;
   carat: '18KT Gold' | '22KT Gold' | '9KT Gold';
   color: 'Rose' | 'Yellow';
+  // Display label, e.g. "Chain Pendant".
   category: string;
+  // Catalogue id used in URLs (JEWELLERY_CATEGORIES), e.g. "chain-pendant".
+  categoryId: string;
   designType: string;
   gender: 'Ladies';
   collection: string;

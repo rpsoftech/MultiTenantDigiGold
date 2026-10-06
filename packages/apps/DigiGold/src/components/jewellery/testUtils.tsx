@@ -5,13 +5,18 @@ import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
 import type { Product } from '@/features/marketplace/marketplace.types';
 import { makeStore } from '@/store';
 
-export function renderable(ui: ReactNode, { ecommerce = true } = {}) {
+// resolved: false simulates the tenant config still loading (build-time default in place).
+export function renderable(
+  ui: ReactNode,
+  { ecommerce = true, resolved = true } = {},
+) {
   const store = makeStore({
     tenant: {
       config: {
         ...DEFAULT_TENANT_CONFIG,
         activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, ecommerce },
       },
+      resolved,
     },
   });
   const queryClient = new QueryClient({
@@ -37,6 +42,7 @@ export function product(overrides: Partial<Product> = {}): Product {
     carat: '22KT Gold',
     color: 'Yellow',
     category: 'Bangles',
+    categoryId: 'bangles',
     designType: 'Dailywear Collection',
     gender: 'Ladies',
     collection: 'Festive',

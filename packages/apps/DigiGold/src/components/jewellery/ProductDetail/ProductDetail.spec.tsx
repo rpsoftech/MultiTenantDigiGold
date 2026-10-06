@@ -49,6 +49,41 @@ describe('ProductDetail', () => {
     ).toBe('/jewellery/category/bangles');
   });
 
+  it('links the breadcrumb by categoryId, whatever the label says', async () => {
+    visit('pendant-1');
+    getProduct.mockResolvedValue(
+      product({
+        id: 'pendant-1',
+        title: 'Lotus Pendant',
+        category: 'Chain & Pendant',
+        categoryId: 'chain-pendant',
+      }),
+    );
+    render(renderable(<ProductDetail />));
+
+    expect(
+      (
+        await screen.findByRole('link', { name: 'Chain & Pendant' })
+      ).getAttribute('href'),
+    ).toBe('/jewellery/category/chain-pendant');
+  });
+
+  it('leaves out the category link for a category without a page', async () => {
+    visit('mystery-1');
+    getProduct.mockResolvedValue(
+      product({
+        id: 'mystery-1',
+        title: 'Mystery Brooch',
+        category: 'Brooch',
+        categoryId: 'brooch',
+      }),
+    );
+    render(renderable(<ProductDetail />));
+
+    await screen.findByRole('heading', { name: 'Mystery Brooch' });
+    expect(screen.queryByRole('link', { name: 'Brooch' })).toBeNull();
+  });
+
   it('offers no purchase controls that do nothing', async () => {
     visit('bangles-design-1');
     getProduct.mockResolvedValue(product());

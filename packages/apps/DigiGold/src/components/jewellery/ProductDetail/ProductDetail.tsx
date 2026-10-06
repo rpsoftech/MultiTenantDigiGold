@@ -8,35 +8,34 @@ import { Button } from '@/components/common/Button/Button';
 import { ShieldCheckIcon } from '@/components/common/icons/Icons';
 import { Loader } from '@/components/common/Loader/Loader';
 import { JewelleryUnavailable } from '@/components/jewellery/JewelleryUnavailable/JewelleryUnavailable';
+import { SampleCatalogueNotice } from '@/components/jewellery/SampleCatalogueNotice/SampleCatalogueNotice';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useTenantResolved } from '@/features/tenant/hooks/useTenantResolved';
 import {
   jewelleryCategoryHref,
   jewelleryCategoryLabel,
 } from '@/features/marketplace/marketplace.catalogue';
 import { marketplaceService } from '@/features/marketplace/marketplace.service';
+import { isJewellerySample } from '@/features/marketplace/marketplace.sample';
 import type { Product } from '@/features/marketplace/marketplace.types';
 import { describeApiError } from '@/lib/api/client';
 import { ROUTES } from '@/lib/constants/routes';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import styles from './ProductDetail.module.scss';
 
-// Product.category is the display label ("Chain Pendant"); category routes use the id.
-function categoryIdFromLabel(label: string): string | null {
-  const id = label.trim().toLowerCase().replace(/\s+/g, '-');
-  return jewelleryCategoryLabel(id) ? id : null;
-}
-
 function StatePanel({ children }: { children: React.ReactNode }) {
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
       <div className={styles.state}>{children}</div>
-    </main>
+    </div>
   );
 }
 
 export function ProductDetail() {
   const tenantConfig = useTenantConfig();
   const productId = useSearchParams().get('id') ?? '';
+  // Wait for the host's tenant config: until then the store holds the build-time default.
+  const tenantResolved = useTenantResolved();
   const ecommerceEnabled = tenantConfig?.activeModules.ecommerce ?? true;
 
   const {
@@ -49,12 +48,12 @@ export function ProductDetail() {
   } = useQuery({
     queryKey: ['marketplace', 'product', productId],
     queryFn: () => marketplaceService.getProduct(productId),
-    enabled: ecommerceEnabled && productId !== '',
+    enabled: tenantResolved && ecommerceEnabled && productId !== '',
   });
 
-  if (!ecommerceEnabled) return <JewelleryUnavailable />;
+  if (tenantResolved && !ecommerceEnabled) return <JewelleryUnavailable />;
 
-  if (isLoading) {
+  if (!tenantResolved || isLoading) {
     return (
       <StatePanel>
         <Loader label="Loading design" />
@@ -91,10 +90,14 @@ export function ProductDetail() {
 }
 
 function ProductView({ product }: { product: Product }) {
-  const categoryId = categoryIdFromLabel(product.category);
+  // Only link categories the catalogue knows; anything else has no page.
+  const categoryId = jewelleryCategoryLabel(product.categoryId)
+    ? product.categoryId
+    : null;
 
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
+      {isJewellerySample() && <SampleCatalogueNotice />}
       <nav className={styles.breadcrumbs} aria-label="Breadcrumb">
         <Link href={ROUTES.home}>Home</Link>
         <span>/</span>
@@ -173,6 +176,6 @@ function ProductView({ product }: { product: Product }) {
           </p>
         </section>
       </div>
-    </main>
+    </div>
   );
 }

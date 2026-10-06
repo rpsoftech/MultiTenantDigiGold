@@ -9,9 +9,19 @@ import { onSessionExpired } from '@/lib/auth/sessionEvents';
 import { ROUTES } from '@/lib/constants/routes';
 import type { AppStore } from '@/store';
 import { makeStore } from '@/store';
-import { sessionCleared, sessionEstablished } from '@/store/session/session.slice';
-import { tenantConfigReceived } from '@/store/tenant/tenant.slice';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import {
+  sessionCleared,
+  sessionEstablished,
+} from '@/store/session/session.slice';
+import {
+  tenantConfigReceived,
+  tenantConfigUnavailable,
+} from '@/store/tenant/tenant.slice';
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
@@ -75,7 +85,7 @@ function SessionLifecycle({ store }: { store: AppStore }) {
 export function Providers({ children, initialTenantConfig }: ProvidersProps) {
   // Start with the static default, then replace it after the browser resolves the host.
   const [store] = useState(() =>
-    makeStore({ tenant: { config: initialTenantConfig } })
+    makeStore({ tenant: { config: initialTenantConfig, resolved: false } }),
   );
   const [queryClient] = useState(() => new QueryClient());
   const [tenantConfig, setTenantConfig] = useState(initialTenantConfig);
@@ -91,6 +101,7 @@ export function Providers({ children, initialTenantConfig }: ProvidersProps) {
       })
       .catch(() => {
         // Keep the build-time default theme when the tenant API is unavailable.
+        if (!cancelled) store.dispatch(tenantConfigUnavailable());
       });
 
     return () => {

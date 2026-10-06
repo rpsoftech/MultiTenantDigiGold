@@ -2,13 +2,21 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/common/Button/Button';
 import { ChevronDownIcon } from '@/components/common/icons/Icons';
 import { Loader } from '@/components/common/Loader/Loader';
 import { JewelleryUnavailable } from '@/components/jewellery/JewelleryUnavailable/JewelleryUnavailable';
+import { SampleCatalogueNotice } from '@/components/jewellery/SampleCatalogueNotice/SampleCatalogueNotice';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useTenantResolved } from '@/features/tenant/hooks/useTenantResolved';
 import {
   JEWELLERY_CATEGORIES,
   jewelleryCategoryHref,
@@ -16,6 +24,7 @@ import {
   jewelleryProductHref,
 } from '@/features/marketplace/marketplace.catalogue';
 import { marketplaceService } from '@/features/marketplace/marketplace.service';
+import { isJewellerySample } from '@/features/marketplace/marketplace.sample';
 import type { Product } from '@/features/marketplace/marketplace.types';
 import { describeApiError } from '@/lib/api/client';
 import { ROUTES } from '@/lib/constants/routes';
@@ -62,6 +71,11 @@ const FILTER_GROUPS: FilterGroup[] = [
     label: 'Weight',
     options: [
       {
+        label: 'Under 10 gm',
+        value: '0-10',
+        test: (p) => p.weight < 10,
+      },
+      {
         label: '10-20 gm',
         value: '10-20',
         test: (p) => p.weight >= 10 && p.weight <= 20,
@@ -77,9 +91,9 @@ const FILTER_GROUPS: FilterGroup[] = [
         test: (p) => p.weight > 35 && p.weight <= 50,
       },
       {
-        label: '50-155 gm',
-        value: '50-155',
-        test: (p) => p.weight > 50 && p.weight <= 155,
+        label: 'Above 50 gm',
+        value: '50-plus',
+        test: (p) => p.weight > 50,
       },
     ],
   },
@@ -172,7 +186,8 @@ const FILTER_GROUPS: FilterGroup[] = [
 ];
 
 const SORT_OPTIONS = [
-  { value: 'relevance', label: 'Relevance' },
+  // Keeps the catalogue's own order.
+  { value: 'featured', label: 'Featured' },
   { value: 'newest', label: 'Newest' },
   { value: 'price-low', label: 'Price: Low to high' },
   { value: 'price-high', label: 'Price: High to low' },
@@ -184,10 +199,15 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
   const [selected, setSelected] = useState<
     Partial<Record<FilterKey, string[]>>
   >({});
-  const [sort, setSort] = useState('relevance');
+  const [sort, setSort] = useState('featured');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const sortTriggerRef = useRef<HTMLButtonElement>(null);
+  const sortOptionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Until the host's tenant config arrives, the store holds the build-time default, so
+  // don't show (or fetch) the catalogue for a tenant that may have ecommerce switched off.
+  const tenantResolved = useTenantResolved();
   const ecommerceEnabled = tenantConfig?.activeModules.ecommerce ?? true;
 
   useEffect(() => {
@@ -198,8 +218,16 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
         setIsSortOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsSortOpen(false);
+      if (event.key === 'Escape') {
+        setIsSortOpen(false);
+        sortTriggerRef.current?.focus();
+      }
     };
+
+    const selectedIndex = SORT_OPTIONS.findIndex(
+      (option) => option.value === sort,
+    );
+    sortOptionRefs.current[Math.max(selectedIndex, 0)]?.focus();
 
     document.addEventListener('mousedown', closeSortMenu);
     document.addEventListener('keydown', closeOnEscape);
@@ -207,7 +235,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
       document.removeEventListener('mousedown', closeSortMenu);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [isSortOpen]);
+  }, [isSortOpen, sort]);
 
   const {
     data: products = [],
@@ -219,7 +247,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
   } = useQuery({
     queryKey: ['marketplace', 'category-products', categoryId],
     queryFn: () => marketplaceService.getCategoryProducts(categoryId),
-    enabled: ecommerceEnabled,
+    enabled: tenantResolved && ecommerceEnabled,
   });
 
   const filteredProducts = useMemo(() => {
@@ -237,11 +265,35 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
       if (sort === 'price-low') return first.price - second.price;
       if (sort === 'price-high') return second.price - first.price;
       if (sort === 'newest') return Number(second.isNew) - Number(first.isNew);
-      return first.id.localeCompare(second.id);
+      return 0;
     });
   }, [products, selected, sort]);
 
+  if (!tenantResolved) {
+    return (
+      <div className={styles.loading}>
+        <Loader label="Loading designs" />
+      </div>
+    );
+  }
   if (!ecommerceEnabled) return <JewelleryUnavailable />;
+
+  const moveSortFocus = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const options = sortOptionRefs.current;
+    const current = options.findIndex(
+      (option) => option === document.activeElement,
+    );
+    const last = SORT_OPTIONS.length - 1;
+    const next: Record<string, number> = {
+      ArrowDown: current >= last ? 0 : current + 1,
+      ArrowUp: current <= 0 ? last : current - 1,
+      Home: 0,
+      End: last,
+    };
+    if (!(event.key in next)) return;
+    event.preventDefault();
+    options[next[event.key]]?.focus();
+  };
 
   const toggleFilter = (key: FilterKey, value: string) => {
     setSelected((current) => {
@@ -317,7 +369,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
   };
 
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
       <header className={styles.hero}>
         <div>
           <nav className={styles.heroKicker} aria-label="Breadcrumb">
@@ -328,10 +380,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
           <div className={styles.titleRow}>
             <div>
               <h1>{categoryTitle}</h1>
-              <p>
-                Explore our {categoryTitle.toLowerCase()} designs in 18KT and
-                22KT gold.
-              </p>
+              <p>Explore our {categoryTitle.toLowerCase()} designs.</p>
             </div>
             {!isLoading && !isError && (
               <span className={styles.heroBadge}>
@@ -342,6 +391,12 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
           </div>
         </div>
       </header>
+
+      {isJewellerySample() && (
+        <div className={styles.sampleNotice}>
+          <SampleCatalogueNotice />
+        </div>
+      )}
 
       <div className={styles.content}>
         <aside className={styles.filters}>
@@ -380,21 +435,23 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
               !group.collapsible || expandedGroups.includes(group.key);
             return (
               <section className={styles.filterGroup} key={group.key}>
-                <button
-                  type="button"
-                  className={styles.groupTitle}
-                  onClick={() => group.collapsible && toggleGroup(group.key)}
-                  aria-expanded={isExpanded}
-                >
-                  {group.label}
-                  {group.collapsible && (
+                {group.collapsible ? (
+                  <button
+                    type="button"
+                    className={styles.groupTitle}
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={isExpanded}
+                  >
+                    {group.label}
                     <ChevronDownIcon
                       className={isExpanded ? styles.chevronOpen : ''}
                       width={16}
                       height={16}
                     />
-                  )}
-                </button>
+                  </button>
+                ) : (
+                  <span className={styles.groupTitle}>{group.label}</span>
+                )}
                 {isExpanded && (
                   <div className={styles.options}>
                     {group.options.map((option) => (
@@ -434,6 +491,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
               <span>Sort By:</span>
               <div className={styles.sortMenu} ref={sortMenuRef}>
                 <button
+                  ref={sortTriggerRef}
                   type="button"
                   className={styles.sortTrigger}
                   aria-haspopup="listbox"
@@ -452,9 +510,13 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
                     className={styles.sortOptions}
                     role="listbox"
                     aria-label="Sort products"
+                    onKeyDown={moveSortFocus}
                   >
-                    {SORT_OPTIONS.map((option) => (
+                    {SORT_OPTIONS.map((option, index) => (
                       <button
+                        ref={(element) => {
+                          sortOptionRefs.current[index] = element;
+                        }}
                         type="button"
                         role="option"
                         aria-selected={sort === option.value}
@@ -463,6 +525,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
                         onClick={() => {
                           setSort(option.value);
                           setIsSortOpen(false);
+                          sortTriggerRef.current?.focus();
                         }}
                       >
                         <span>{option.label}</span>
@@ -480,7 +543,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
           {renderResults()}
         </section>
       </div>
-    </main>
+    </div>
   );
 }
 

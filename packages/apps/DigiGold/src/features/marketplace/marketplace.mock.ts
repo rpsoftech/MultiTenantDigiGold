@@ -21,6 +21,7 @@ const PRODUCT_DEFAULTS = {
   carat: '22KT Gold' as const,
   color: 'Yellow' as const,
   category: 'Bangles',
+  categoryId: 'bangles',
   designType: 'Dailywear Collection',
   gender: 'Ladies' as const,
   collection: 'Daily Wear Jewellery',
@@ -46,8 +47,9 @@ const createProduct = (
   category: category
     .replace('-', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase()),
+  categoryId: category,
   isNew: index % 3 === 1,
-  isBisHallmarked: true,
+  // Sample products make no certification claim (isBisHallmarked stays unset).
   ...overrides,
 });
 
@@ -62,19 +64,18 @@ const MOCK_TRENDING_PRODUCTS: Product[] = [
     currency: 'INR',
     ...PRODUCT_DEFAULTS,
     category: 'Necklace',
-    isBisHallmarked: true,
+    categoryId: 'necklace',
     isNew: true,
   },
   {
-    id: 'minimalist-bangle-24k',
+    id: 'minimalist-bangle-22k',
     code: 'BNR00001',
-    title: '24K Gold Minimalist Bangle',
+    title: '22K Gold Minimalist Bangle',
     imageUrl: '/marketplace/minimalist-bengal1-24k.jpg',
-    imageAlt: '24K Gold Minimalist Bangle',
+    imageAlt: '22K Gold Minimalist Bangle',
     price: 85500,
     currency: 'INR',
     ...PRODUCT_DEFAULTS,
-    isBisHallmarked: true,
     isNew: false,
   },
 ];
@@ -150,8 +151,7 @@ export async function mockGetCategoryProducts(
   // An unknown category is empty, not "everything" — showing every product under the
   // wrong heading was the old fallback.
   return MOCK_CATEGORY_PRODUCTS.filter(
-    (product) =>
-      product.category.toLowerCase().replace(' ', '-') === categoryId,
+    (product) => product.categoryId === categoryId,
   );
 }
 
