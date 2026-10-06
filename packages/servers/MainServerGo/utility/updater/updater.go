@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,10 +16,53 @@ import (
 	utility_functions_gzip "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions/gzip"
 )
 
+// KVBaseURL is where the deploy script publishes release records and servers poll for them.
+const KVBaseURL = "https://keyvalue.rpso.in/public/"
+
+// BrowserUserAgent gets requests past the anti-bot filter in front of the KV and file servers.
+const BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+// ErrKVNotFound means the KV store has no record for the key yet.
+var ErrKVNotFound = errors.New("KV key not found")
+
 type KVResponse struct {
 	Version int    `json:"version"`
 	URL     string `json:"url"`
 	SHA256  string `json:"sha256"`
+}
+
+// SetBrowserHeaders sets the browser-like headers the KV and file servers expect.
+func SetBrowserHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", BrowserUserAgent)
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+}
+
+// FetchKV reads the release record stored under key. It returns ErrKVNotFound on a 404.
+func FetchKV(client *http.Client, kvBaseURL, key string) (KVResponse, error) {
+	var kvData KVResponse
+	req, err := http.NewRequest("GET", kvBaseURL+key, nil)
+	if err != nil {
+		return kvData, fmt.Errorf("failed to create request: %w", err)
+	}
+	SetBrowserHeaders(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		return kvData, fmt.Errorf("failed to reach KV server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return kvData, ErrKVNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return kvData, fmt.Errorf("KV server returned status: %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&kvData); err != nil {
+		return kvData, fmt.Errorf("invalid KV response: %w", err)
+	}
+	return kvData, nil
 }
 
 // HashFile is a great utility function for general use, but we will skip it
@@ -45,32 +89,14 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 	osName := runtime.GOOS
 	archName := runtime.GOARCH
 	kvKey := GetFileKey(envName, componentName, osName, archName)
-	kvServerURL := kvBaseURL + kvKey
 
 	log.Printf("🔍 Checking for updates at KV Key: %s", kvKey)
 
 	// 1. Fetch latest version info from KV Server
 	client := &http.Client{Timeout: 10 * time.Minute}
-	req, err := http.NewRequest("GET", kvServerURL, nil)
+	kvData, err := FetchKV(client, kvBaseURL, kvKey)
 	if err != nil {
-		log.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("failed to reach KV server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("KV server returned status: %d", resp.StatusCode)
-	}
-
-	var kvData KVResponse
-	if err := json.NewDecoder(resp.Body).Decode(&kvData); err != nil {
-		return false, fmt.Errorf("invalid KV response: %w", err)
+		return false, err
 	}
 
 	// 2. Compare Integer Versions
@@ -101,7 +127,7 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 	}
 
 	// 1. Mirror the anti-bot headers so your file server doesn't block the download
-	downReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	downReq.Header.Set("User-Agent", BrowserUserAgent)
 	downReq.Header.Set("Accept", "*/*")
 
 	// 2. Prevent Go and the server from auto-decompressing the .gz file in transit

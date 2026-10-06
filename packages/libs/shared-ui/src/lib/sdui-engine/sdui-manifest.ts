@@ -1,6 +1,6 @@
 import { Type } from '@angular/core';
 
-export const SDUI_MANIFEST: Record<string, () => Promise<Type<any>>> = {
+export const SDUI_MANIFEST: Record<string, () => Promise<Type<unknown>>> = {
   Hero_1: () =>
     import('../components/hero/hero-1.component').then((m) => m.Hero1Component),
   LiveRate_1: () =>

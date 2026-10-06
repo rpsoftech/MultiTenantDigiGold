@@ -4,8 +4,7 @@
 
 .content {
   z-index: 50;
-  width: 350px;
-  max-width: 90vw;
+  width: min(350px, calc(100vw - 2 * var(--space-4)));
   animation: fadeIn 120ms ease-out;
 }
 

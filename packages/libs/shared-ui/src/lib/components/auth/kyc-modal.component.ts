@@ -65,10 +65,13 @@ import { AuthService } from '@dg/services';
 
           <div class="p-6 sm:p-8 space-y-5">
             <div>
-              <label class="block text-sm font-bold text-slate-700 mb-1"
+              <label
+                for="kyc-pan-number"
+                class="block text-sm font-bold text-slate-700 mb-1"
                 >PAN Number</label
               >
               <input
+                id="kyc-pan-number"
                 type="text"
                 [(ngModel)]="panNumber"
                 maxlength="10"
@@ -78,8 +81,8 @@ import { AuthService } from '@dg/services';
             </div>
 
             <div>
-              <label class="block text-sm font-bold text-slate-700 mb-1"
-                >Upload Document (Optional for instant API)</label
+              <span class="block text-sm font-bold text-slate-700 mb-1"
+                >Upload Document (Optional for instant API)</span
               >
               <div
                 class="w-full border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-slate-50 transition-colors cursor-pointer"

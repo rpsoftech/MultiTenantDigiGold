@@ -4,14 +4,21 @@ on:
   pull_request:
     paths:
       - 'packages/servers/MainServerGo/**'
+      - 'go.work'
+      - 'go.work.sum'
       - '.github/workflows/backend-tests.yml'
   push:
     branches: [staging, main]
     paths:
       - 'packages/servers/MainServerGo/**'
+      - 'go.work'
+      - 'go.work.sum'
 
 jobs:
   test:
+    # Every push to staging also updates the open staging -> main PR. The push run
+    # already tested that exact commit, so skip the duplicate PR run.
+    if: github.event_name != 'pull_request' || github.head_ref != 'staging'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,6 +52,12 @@ jobs:
 
       - name: Vet
         run: go vet ./... && go vet -tags=integration ./internal/integration/...
+
+      # Builds every release binary exactly as the deploy does (from the repo root, through
+      # go.work), so a build that only breaks in deploy.go fails here, before merge.
+      - name: Deploy dry run
+        working-directory: ${{ github.workspace }}
+        run: go run packages/servers/MainServerGo/scripts/deploy.go -dry-run
 
       - name: Unit tests
         run: go test -count=1 ./...

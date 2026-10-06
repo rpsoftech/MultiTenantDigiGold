@@ -101,3 +101,44 @@ describe('live market rate', () => {
     },
   );
 });
+
+describe('live market rate failures', () => {
+  // The caller (useLiveRate) decides how to show an outage; the service must not swallow it.
+  it('lets a request failure reach the caller', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKET = 'false';
+    let service!: typeof marketService;
+    let client!: typeof apiClient;
+    jest.isolateModules(() => {
+      service = (
+        require('./market.service') as { marketService: typeof marketService }
+      ).marketService;
+      client = (require('@/lib/api/client') as { apiClient: typeof apiClient })
+        .apiClient;
+    });
+    jest
+      .spyOn(client, 'get')
+      .mockRejectedValue({
+        status: 500,
+        code: 'ERR_BAD_RESPONSE',
+        message: 'down',
+      });
+
+    await expect(service.getLastRate()).rejects.toMatchObject({ status: 500 });
+  });
+
+  it('returns null when the server has no rate yet', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKET = 'false';
+    let service!: typeof marketService;
+    let client!: typeof apiClient;
+    jest.isolateModules(() => {
+      service = (
+        require('./market.service') as { marketService: typeof marketService }
+      ).marketService;
+      client = (require('@/lib/api/client') as { apiClient: typeof apiClient })
+        .apiClient;
+    });
+    jest.spyOn(client, 'get').mockResolvedValue({ data: { latest_rate: '' } });
+
+    await expect(service.getLastRate()).resolves.toBeNull();
+  });
+});

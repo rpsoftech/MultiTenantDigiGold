@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { AuthService, TenantConfigService } from '@dg/services';
+import { AuthService, TenantConfigService, apiErrorBody } from '@dg/services';
 
 @Component({
   selector: 'dg-login-modal',
@@ -56,7 +56,9 @@ import { AuthService, TenantConfigService } from '@dg/services';
           <div class="p-6 sm:p-8">
             @if (step() === 'PHONE') {
               <div class="space-y-4">
-                <label class="block text-sm font-bold text-slate-700"
+                <label
+                  for="login-mobile-number"
+                  class="block text-sm font-bold text-slate-700"
                   >Mobile Number</label
                 >
                 <div class="flex relative">
@@ -64,6 +66,7 @@ import { AuthService, TenantConfigService } from '@dg/services';
                     >+91</span
                   >
                   <input
+                    id="login-mobile-number"
                     type="tel"
                     [(ngModel)]="phone"
                     maxlength="10"
@@ -90,7 +93,9 @@ import { AuthService, TenantConfigService } from '@dg/services';
             @if (step() === 'OTP') {
               <div class="space-y-4">
                 <div class="flex justify-between items-center mb-2">
-                  <label class="block text-sm font-bold text-slate-700"
+                  <label
+                    for="login-otp"
+                    class="block text-sm font-bold text-slate-700"
                     >Enter OTP</label
                   >
                   <button
@@ -105,6 +110,7 @@ import { AuthService, TenantConfigService } from '@dg/services';
                 </p>
 
                 <input
+                  id="login-otp"
                   type="tel"
                   [(ngModel)]="otp"
                   maxlength="6"
@@ -129,11 +135,15 @@ import { AuthService, TenantConfigService } from '@dg/services';
 
             @if (step() === 'REGISTER') {
               <div class="space-y-4">
-                <label class="block text-sm font-bold text-slate-700"
+                <label
+                  for="login-full-name"
+                  class="block text-sm font-bold text-slate-700"
                   >Full Name</label
                 >
                 <input
-                  type="tel"
+                  id="login-full-name"
+                  type="text"
+                  autocomplete="name"
                   [(ngModel)]="fullName"
                   placeholder="As per PAN Card"
                   class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all font-semibold text-slate-800"
@@ -198,8 +208,8 @@ export class LoginModalComponent {
     try {
       await this.auth.requestOtp(this.phone());
       this.step.set('OTP');
-    } catch (e: any) {
-      this.errorMsg.set(e?.error?.message || 'Failed to request OTP');
+    } catch (e: unknown) {
+      this.errorMsg.set(apiErrorBody(e)?.message || 'Failed to request OTP');
     }
     this.isLoading.set(false);
   }
@@ -218,8 +228,8 @@ export class LoginModalComponent {
         this.registrationToken = res.registration_token || '';
         this.step.set('REGISTER');
       }
-    } catch (e: any) {
-      this.errorMsg.set(e?.error?.message || 'Invalid OTP');
+    } catch (e: unknown) {
+      this.errorMsg.set(apiErrorBody(e)?.message || 'Invalid OTP');
     }
     this.isLoading.set(false);
   }
@@ -235,8 +245,8 @@ export class LoginModalComponent {
       );
       this.auth.isLoginModalOpen.set(false);
       this.reset();
-    } catch (e: any) {
-      this.errorMsg.set(e?.error?.message || 'Registration failed');
+    } catch (e: unknown) {
+      this.errorMsg.set(apiErrorBody(e)?.message || 'Registration failed');
     }
     this.isLoading.set(false);
   }

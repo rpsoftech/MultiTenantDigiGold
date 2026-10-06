@@ -2,6 +2,7 @@ import {
   Injectable,
   inject,
   PLATFORM_ID,
+  REQUEST,
   makeStateKey,
   TransferState,
   signal,
@@ -30,6 +31,9 @@ export class TenantConfigService {
   private transferState = inject(TransferState);
   private platformId = inject(PLATFORM_ID);
   private apiBase = inject(API_BASE_URL);
+  // The incoming page request during SSR; null in the browser and when the build boots the
+  // app to discover its routes.
+  private request = inject(REQUEST, { optional: true });
 
   // A reactive signal holding the hydrated config
   readonly config = signal<TenantInfo | null>(null);
@@ -47,7 +51,14 @@ export class TenantConfigService {
       }
     }
 
-    // 2. Fetch from the Go API
+    // 2. On the server with no incoming request this is the build discovering routes: there
+    //    is no tenant to resolve and no API to call, and nothing rendered here is served.
+    if (isPlatformServer(this.platformId) && !this.request) {
+      this.config.set(this.getFallbackConfig());
+      return;
+    }
+
+    // 3. Fetch from the Go API
     // In SSR, this must be an absolute URL. In a real environment, you'd pull the URL from an env variable.
     const apiUrl = `${this.apiBase}/api/v1/tenant/info`;
 
@@ -64,7 +75,7 @@ export class TenantConfigService {
 
       this.config.set(response);
 
-      // 3. If running on the Node server, serialize this response into the HTML for the browser
+      // 4. If running on the Node server, serialize this response into the HTML for the browser
       if (isPlatformServer(this.platformId)) {
         this.transferState.set(TENANT_STATE_KEY, response);
       }

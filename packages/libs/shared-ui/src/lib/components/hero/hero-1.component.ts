@@ -29,8 +29,8 @@ import { CommonModule } from '@angular/common';
   `,
 })
 export class Hero1Component {
-  @Input() title: string = 'Invest in 24K Digital Gold';
-  @Input() subtitle: string = 'Secure, transparent, and instantly redeemable.';
-  @Input() ctaText: string = 'Start Trading';
+  @Input() title = 'Invest in 24K Digital Gold';
+  @Input() subtitle = 'Secure, transparent, and instantly redeemable.';
+  @Input() ctaText = 'Start Trading';
   @Input() backgroundColor?: string;
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useRouter } from 'next/navigation';
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
 import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
@@ -37,6 +37,22 @@ function setPortfolio(isMock: boolean) {
   } as unknown as ReturnType<typeof usePortfolio>);
 }
 
+// A portfolio request that is still loading, or that failed, as usePortfolio reports it.
+function setPortfolioState(state: { isLoading?: boolean; isError?: boolean }) {
+  const refetch = jest.fn();
+  jest.mocked(usePortfolio).mockReturnValue({
+    portfolio: null,
+    isLoading: state.isLoading ?? false,
+    isFetching: false,
+    isError: state.isError ?? false,
+    error: state.isError ? { message: 'down', code: 'ERR_BAD_RESPONSE', status: 503 } : null,
+    isAuthenticated: true,
+    isMock: false,
+    refetch,
+  } as unknown as ReturnType<typeof usePortfolio>);
+  return refetch;
+}
+
 function signIn() {
   store.dispatch(
     sessionEstablished({
@@ -72,6 +88,12 @@ describe('Redemptions page', () => {
     expect(screen.getByLabelText('Weight to redeem (grams)')).toBeTruthy();
   });
 
+  it('keeps a page-level heading', () => {
+    signIn();
+    render(withProviders(<Redemptions />, store));
+    expect(screen.getByRole('heading', { level: 1, name: 'Redeem gold' })).toBeTruthy();
+  });
+
   it('withholds the form while the vault shows demo data', () => {
     signIn();
     setPortfolio(true);
@@ -97,6 +119,30 @@ describe('Redemptions page', () => {
 
   it('sends a half-registered visitor (no access token) to login', () => {
     store.dispatch(registrationStarted({ token: 'registration-token', phone: '9999900001' }));
+    render(withProviders(<Redemptions />, store));
+    expect(replace).toHaveBeenCalledWith('/login');
+    expect(screen.queryByLabelText('Weight to redeem (grams)')).toBeNull();
+  });
+
+  it('shows a loader, not the form, while the vault balance loads', () => {
+    signIn();
+    setPortfolioState({ isLoading: true });
+    render(withProviders(<Redemptions />, store));
+    expect(screen.getByRole('status', { name: 'Loading your vault' })).toBeTruthy();
+    expect(screen.queryByLabelText('Weight to redeem (grams)')).toBeNull();
+  });
+
+  it('offers a retry when the balance fails to load', () => {
+    signIn();
+    const refetch = setPortfolioState({ isError: true });
+    render(withProviders(<Redemptions />, store));
+    expect(screen.getByText("Couldn't load your vault balance.")).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Weight to redeem (grams)')).toBeNull();
+  });
+
+  it('sends a signed-out visitor to login without showing the form', () => {
     render(withProviders(<Redemptions />, store));
     expect(replace).toHaveBeenCalledWith('/login');
     expect(screen.queryByLabelText('Weight to redeem (grams)')).toBeNull();

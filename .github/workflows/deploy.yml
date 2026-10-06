@@ -5,9 +5,26 @@ on:
     branches:
       - main
       - staging
+    # Every deploy bumps the version and restarts every server, so only deploy when
+    # something that goes into the binaries changed.
+    paths:
+      - 'packages/servers/MainServerGo/**'
+      - '!packages/servers/MainServerGo/**/*_test.go'
+      - '!packages/servers/MainServerGo/**/*.md'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/workflows/deploy.yml'
 
+# Deploy runs read the current version and publish a higher one, so they must not overlap.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+# Each target has its own GitHub environment, so production can have its own secrets and
+# protection rules (required reviewers) instead of borrowing staging's.
 jobs:
-  build-and-deploy:
+  deploy-staging:
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     environment: Staging
     steps:
@@ -18,17 +35,33 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+          cache-dependency-path: packages/servers/MainServerGo/go.sum
 
       - name: Deploy Staging
-        if: github.ref == 'refs/heads/staging'
         env:
           FILE_SERVER_TOKEN: ${{ secrets.FILE_SERVER_TOKEN }}
           KV_TOKEN: ${{ secrets.KV_TOKEN }}
           DEPLOY_ENV: STAGING
         run: go run packages/servers/MainServerGo/scripts/deploy.go
 
+  # Needs a "Production" environment in the repository settings with FILE_SERVER_TOKEN and
+  # KV_TOKEN set (and, ideally, required reviewers). Without those secrets the deploy script
+  # stops before uploading anything.
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: packages/servers/MainServerGo/go.sum
+
       - name: Deploy Production
-        if: github.ref == 'refs/heads/main'
         env:
           FILE_SERVER_TOKEN: ${{ secrets.FILE_SERVER_TOKEN }}
           KV_TOKEN: ${{ secrets.KV_TOKEN }}

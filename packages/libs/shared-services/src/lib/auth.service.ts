@@ -92,7 +92,7 @@ export class AuthService {
     registration_token: string,
     full_name: string,
     phone: string,
-    location: string = 'India',
+    location = 'India',
   ) {
     const res = await firstValueFrom(
       this.http.post<{ success: boolean; access_token: string }>(

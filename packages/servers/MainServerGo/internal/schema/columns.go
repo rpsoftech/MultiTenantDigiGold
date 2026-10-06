@@ -50,6 +50,7 @@ const (
 	ColUserFullName         = "user_full_name"
 	ColUserPhoneNumber      = "user_phone_number"
 	ColUserEmailID          = "user_email_id"
+	ColUserCity             = "user_city"
 	ColUserKYCStatus        = "user_kyc_status"
 	ColUserStatusApprovedBy = "user_status_approved_by"
 	ColUserDocumentJSON     = "user_document_json"

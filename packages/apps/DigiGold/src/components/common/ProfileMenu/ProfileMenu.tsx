@@ -14,10 +14,42 @@ import styles from './ProfileMenu.module.scss';
 // in phase 1 (see CLAUDE.md build order), so the dropdown offers KYC and Logout for now.
 // `onNavigate` lets a container close itself too — the mobile nav dialog stays open after
 // a client-side route change otherwise.
-export function ProfileMenu({ onNavigate }: { onNavigate?: () => void }) {
+//
+// `inline` renders the same entries as a flat list instead of a popover. The mobile nav is a
+// modal dialog: a portalled popover would sit behind it and be non-interactive, so inside the
+// drawer the entries are shown directly.
+export function ProfileMenu({ onNavigate, inline = false }: { onNavigate?: () => void; inline?: boolean }) {
   const { user } = useSession();
   const logout = useLogout();
   const label = user?.name ?? (user?.mobileNumber ? formatMobileNumber(user.mobileNumber) : 'Account');
+
+  if (inline) {
+    return (
+      <div className={styles.inline}>
+        <div className={styles.inlineUser}>
+          <span className={styles.avatar}>
+            <UserIcon width={16} height={16} />
+          </span>
+          <span className={styles.inlineName}>{label}</span>
+        </div>
+        <Link href={ROUTES.kyc} className={styles.item} onClick={onNavigate}>
+          <ShieldCheckIcon width={16} height={16} />
+          KYC Verification
+        </Link>
+        <button
+          type="button"
+          className={cn(styles.item, styles.logoutItem)}
+          onClick={() => {
+            onNavigate?.();
+            logout();
+          }}
+        >
+          <LogOutIcon width={16} height={16} />
+          Logout
+        </button>
+      </div>
+    );
+  }
 
   return (
     <Popover.Root>

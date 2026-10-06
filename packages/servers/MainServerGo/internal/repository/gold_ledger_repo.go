@@ -194,21 +194,35 @@ func (r *GoldLedgerRepository) GetTransactionHistory(ctx context.Context, tenant
 	return history, nil
 }
 
+// ReversalReferencePrefix starts the reference ID of a SYSTEM_REVERSAL entry, followed by
+// the gl_uuid of the entry it reverses.
+const ReversalReferencePrefix = "REVERSAL_"
+
+// reversedCondition is true when a reversal entry references the row aliased gl.
+// Its parameter is ReversalReferencePrefix.
+func reversedCondition(param string) string {
+	return fmt.Sprintf(`EXISTS (SELECT 1 FROM %s rev WHERE rev.%s = gl.%s AND rev.%s = %s || gl.%s::text)`,
+		schema.TableGoldTransactionLedger, schema.ColGLTenantID, schema.ColGLTenantID,
+		schema.ColGLReferenceID, param, schema.ColGLUUID)
+}
+
 func (r *GoldLedgerRepository) GetLedgerByTenant(ctx context.Context, tenantID int64, limit int, offset int) ([]*models.GoldTransactionLedger, error) {
 	query := fmt.Sprintf(`
-		SELECT 
-			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-		FROM %s 
-		WHERE %s = $1
-		ORDER BY %s DESC
+		SELECT
+			gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s,
+			%s
+		FROM %s gl
+		WHERE gl.%s = $1
+		ORDER BY gl.%s DESC
 		LIMIT $2 OFFSET $3
 	`, schema.ColGLUUID, schema.ColGLEventType, schema.ColGLPaymentMode, schema.ColGLWeightGrams,
 		schema.ColGLTotalAmountINR, schema.ColGLRunningGoldBalanceGrams, schema.ColGLMCXBaseRate,
 		schema.ColGLTenantMarginApplied, schema.ColGLGSTApplied, schema.ColGLFinalRatePerGram,
 		schema.ColGLReferenceID, schema.ColGLMetadataJSON, schema.ColGLCreatedAt,
+		reversedCondition("$4"),
 		schema.TableGoldTransactionLedger, schema.ColGLTenantID, schema.ColGLCreatedAt)
 
-	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset)
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset, ReversalReferencePrefix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant ledger: %w", err)
 	}
@@ -224,7 +238,7 @@ func (r *GoldLedgerRepository) GetLedgerByTenant(ctx context.Context, tenantID i
 			&entry.UUID, &entry.EventType, &entry.PaymentMode, &entry.WeightGrams,
 			&entry.TotalAmountINR, &entry.RunningGoldBalanceGrams, &entry.MCXBaseRate,
 			&entry.TenantMarginApplied, &entry.GSTApplied, &entry.FinalRatePerGram,
-			&refID, &metaJSON, &entry.CreatedAt,
+			&refID, &metaJSON, &entry.CreatedAt, &entry.IsReversed,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan ledger row: %w", err)
@@ -235,10 +249,15 @@ func (r *GoldLedgerRepository) GetLedgerByTenant(ctx context.Context, tenantID i
 		entry.MetadataJSON = metaJSON
 		history = append(history, &entry)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read tenant ledger: %w", err)
+	}
 
 	return history, nil
 }
 
+// TenantAnalytics totals the store's purchases and redemptions. Reversed entries are left
+// out, so a reversed purchase no longer counts towards volume, revenue or margin.
 type TenantAnalytics struct {
 	TotalVolumeGrams  float64 `json:"total_volume_grams"`
 	TotalRevenueINR   float64 `json:"total_revenue_inr"`
@@ -248,16 +267,16 @@ type TenantAnalytics struct {
 
 func (r *GoldLedgerRepository) GetTenantAnalytics(ctx context.Context, tenantID int64) (*TenantAnalytics, error) {
 	query := `
-		SELECT 
-			COALESCE(SUM(ABS(gl_weight_grams)), 0) as total_volume_grams,
-			COALESCE(SUM(ABS(gl_total_amount_inr)), 0) as total_revenue_inr,
-			COALESCE(SUM(gl_tenant_margin_applied), 0) as total_margin_earned,
-			COUNT(gl_id) as total_transactions
-		FROM gold_transaction_ledger
-		WHERE gl_tenant_id = $1 AND gl_event_type IN ('GOLD_PURCHASE', 'PHYSICAL_REDEMPTION')
-	`
+		SELECT
+			COALESCE(SUM(ABS(gl.gl_weight_grams)), 0) as total_volume_grams,
+			COALESCE(SUM(ABS(gl.gl_total_amount_inr)), 0) as total_revenue_inr,
+			COALESCE(SUM(gl.gl_tenant_margin_applied), 0) as total_margin_earned,
+			COUNT(gl.gl_id) as total_transactions
+		FROM gold_transaction_ledger gl
+		WHERE gl.gl_tenant_id = $1 AND gl.gl_event_type IN ('GOLD_PURCHASE', 'PHYSICAL_REDEMPTION')
+			AND NOT ` + reversedCondition("$2")
 	var analytics TenantAnalytics
-	err := r.DB.Db.QueryRowContext(ctx, query, tenantID).Scan(
+	err := r.DB.Db.QueryRowContext(ctx, query, tenantID, ReversalReferencePrefix).Scan(
 		&analytics.TotalVolumeGrams,
 		&analytics.TotalRevenueINR,
 		&analytics.TotalMarginEarned,

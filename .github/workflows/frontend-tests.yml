@@ -1,0 +1,59 @@
+name: Frontend Tests
+
+on:
+  pull_request:
+    paths:
+      - 'packages/apps/**'
+      - 'packages/libs/**'
+      - 'package.json'
+      - 'yarn.lock'
+      - '.yarnrc.yml'
+      - 'nx.json'
+      - 'tsconfig.base.json'
+      - '.github/workflows/frontend-tests.yml'
+  push:
+    branches: [staging, main]
+    paths:
+      - 'packages/apps/**'
+      - 'packages/libs/**'
+      - 'package.json'
+      - 'yarn.lock'
+
+jobs:
+  test:
+    # Every push to staging also updates the open staging -> main PR. The push run
+    # already tested that exact commit, so skip the duplicate PR run.
+    if: github.event_name != 'pull_request' || github.head_ref != 'staging'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # yarnPath in .yarnrc.yml points at the committed Yarn 4 release; corepack only
+      # provides the `yarn` entry point.
+      - name: Enable Yarn
+        run: corepack enable
+
+      # --immutable fails if yarn.lock doesn't match package.json (or was written with
+      # different machine settings), instead of silently rewriting it.
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Lint
+        run: yarn nx run-many -t lint --outputStyle=static
+
+      - name: Unit tests
+        run: yarn nx run-many -t test -p DigiGold core --outputStyle=static
+
+      # Also generates next-env.d.ts, which the typecheck below needs.
+      - name: Build
+        run: yarn nx run-many -t build -p DigiGold Consumer AdminApp --outputStyle=static
+
+      - name: Typecheck DigiGold (app and specs)
+        run: >-
+          yarn tsc -p packages/apps/DigiGold/tsconfig.json --noEmit
+          --composite false --declaration false --declarationMap false

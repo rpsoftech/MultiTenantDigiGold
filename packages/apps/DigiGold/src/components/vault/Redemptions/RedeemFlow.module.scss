@@ -1,3 +1,5 @@
+@use '@/styles/mixins' as *;
+
 .card {
   display: flex;
   flex-direction: column;
@@ -67,6 +69,68 @@
   flex-direction: column;
   gap: var(--space-4);
   width: 100%;
+
+  @include lg {
+    flex: 1;
+  }
+}
+
+// Shown at every size. On desktop the card stretches to the list pane's height, so the
+// panel is pushed to the bottom, just above the submit button.
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-secondary);
+
+  @include lg {
+    margin-top: auto;
+  }
+}
+
+.stepsTitle {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+}
+
+.stepNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-on-brand);
+  background: var(--brand-primary);
 }
 
 .chips {
@@ -120,9 +184,13 @@
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--space-3);
   margin-top: var(--space-4);
+
+  @include sm {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .loaderRow {

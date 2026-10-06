@@ -15,11 +15,6 @@ import { getRegistrationToken, clearRegistrationToken } from '@/lib/auth/tokenSt
 import { ROUTES } from '@/lib/constants/routes';
 import styles from './ProfileSetupForm.module.scss';
 
-// MainServer requires `location` on /auth/register but phase 1 collects no location input
-// (no address/geolocation step in the profile-setup screen yet).
-// TODO: confirm with backend/product whether this needs real user input later.
-const DEFAULT_REGISTRATION_LOCATION = 'India';
-
 const profileSetupSchema = z.object({
   fullName: z.string().trim().min(2, 'Enter your full name').max(50, 'Full name must be 50 characters or fewer'),
   // MainServer's /auth/register marks `location` as required (auth_controller.go).
@@ -50,11 +45,8 @@ export function ProfileSetupForm() {
       if (!user?.isNewUser) return;
       const registrationToken = getRegistrationToken();
       if (!registrationToken) throw new Error('Registration session expired');
-      await completeProfile.mutateAsync({
-        ...values,
-        registrationToken,
-        location: DEFAULT_REGISTRATION_LOCATION,
-      });
+      // `location` is the City the customer entered (required by /auth/register).
+      await completeProfile.mutateAsync({ ...values, registrationToken });
       clearRegistrationToken();
       router.push(ROUTES.home);
     } catch {

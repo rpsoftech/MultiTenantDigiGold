@@ -12,6 +12,7 @@ import (
 
 func TestReversal_ReturnsGoldOnceOnly(t *testing.T) {
 	before := balance(t, database.SeedVerifiedCustomerUUID)
+	analyticsBefore := storeAnalytics(t)
 	trade := counterBuy(t, database.SeedVerifiedCustomerUUID, 1.5)
 	ledgerUUID := str(trade["gl_uuid"])
 
@@ -23,6 +24,39 @@ func TestReversal_ReturnsGoldOnceOnly(t *testing.T) {
 	again := call(t, "POST", "/admin/store/ledger/reverse", demoManager(t), database.SeedDemoTenantUUID,
 		map[string]string{"ledger_uuid": ledgerUUID})
 	expectError(t, again, http.StatusConflict, "ERROR_LEDGER_REVERSAL")
+
+	t.Run("store ledger marks the original entry as reversed", func(t *testing.T) {
+		ledger := call(t, "GET", "/admin/store/ledger?limit=100", demoManager(t), database.SeedDemoTenantUUID, nil)
+		expectStatus(t, ledger, http.StatusOK)
+		entries, _ := ledger.Body["data"].([]any)
+		for _, e := range entries {
+			entry, _ := e.(map[string]any)
+			if str(entry["gl_uuid"]) == ledgerUUID {
+				if entry["is_reversed"] != true {
+					t.Fatalf("is_reversed = %v, want true", entry["is_reversed"])
+				}
+				return
+			}
+		}
+		t.Fatalf("reversed entry %s not in the first ledger page", ledgerUUID)
+	})
+
+	t.Run("store analytics leaves the reversed purchase out", func(t *testing.T) {
+		after := storeAnalytics(t)
+		for _, field := range []string{"total_volume_grams", "total_revenue_inr", "total_transactions"} {
+			if num(after[field]) != num(analyticsBefore[field]) {
+				t.Errorf("%s = %v, want %v", field, after[field], analyticsBefore[field])
+			}
+		}
+	})
+}
+
+func storeAnalytics(t *testing.T) map[string]any {
+	t.Helper()
+	r := call(t, "GET", "/admin/store/analytics", demoManager(t), database.SeedDemoTenantUUID, nil)
+	expectStatus(t, r, http.StatusOK)
+	data, _ := r.Body["data"].(map[string]any)
+	return data
 }
 
 func TestTenantIsolation(t *testing.T) {

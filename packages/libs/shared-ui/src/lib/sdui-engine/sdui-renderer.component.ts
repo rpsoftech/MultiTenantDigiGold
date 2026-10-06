@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, inject } from '@angular/core';
+import { Component, Input, OnInit, Type, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SDUIComponentConfig } from '@dg/angular-core';
 import { SduiRegistryService } from './sdui-registry.service';
@@ -17,9 +17,9 @@ import { SduiRegistryService } from './sdui-registry.service';
     }
 
     <!-- Render children recursively if they exist -->
-    @if (config?.children && config!.children!.length > 0) {
+    @if (config.children?.length) {
       <div class="sdui-children-container">
-        @for (child of config!.children; track child.id) {
+        @for (child of config.children!; track child.id) {
           <dg-sdui-renderer [config]="child"></dg-sdui-renderer>
         }
       </div>
@@ -31,7 +31,7 @@ export class SduiRendererComponent implements OnInit {
 
   private registry = inject(SduiRegistryService);
 
-  resolvedComponent: any = null;
+  resolvedComponent: Type<unknown> | null = null;
   componentInputs: Record<string, unknown> = {};
 
   async ngOnInit() {
