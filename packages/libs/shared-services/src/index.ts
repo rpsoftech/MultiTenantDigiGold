@@ -4,3 +4,4 @@ export * from './lib/tenant-config.service';
 export * from './lib/auth.service';
 export * from './lib/trade.service';
 export * from './lib/tokens';
+export * from './lib/http-error';

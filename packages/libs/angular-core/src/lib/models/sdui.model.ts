@@ -2,7 +2,7 @@ export interface SDUIComponentConfig {
   id: string;
   type: string;
   variant: string;
-  props: Record<string, any>;
+  props: Record<string, unknown>;
   children?: SDUIComponentConfig[];
 }
 

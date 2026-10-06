@@ -19,6 +19,13 @@ import {
 
 const USE_MOCK_ADMIN = process.env.NEXT_PUBLIC_USE_MOCK_ADMIN === 'true';
 
+// The dashboard's data endpoints (/admin/stats, /admin/users, ...) don't exist on MainServer
+// yet, so the panel runs on sample data. AdminShell says so on every admin page, so nobody
+// mistakes the sample figures for their store's numbers.
+export function isAdminDataSample(): boolean {
+  return USE_MOCK_ADMIN;
+}
+
 export const adminService = {
   getAdminStats: async (): Promise<AdminStats> => {
     if (USE_MOCK_ADMIN) return mockGetAdminStats();

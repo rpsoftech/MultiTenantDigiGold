@@ -1,7 +1,12 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TradeService, LiveRateService, AuthService } from '@dg/services';
+import {
+  TradeService,
+  LiveRateService,
+  AuthService,
+  apiErrorBody,
+} from '@dg/services';
 
 @Component({
   selector: 'dg-trade-modal',
@@ -270,15 +275,17 @@ export class TradeModalComponent {
         );
       }
       this.displayValue.set(0);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const body = apiErrorBody(e);
       if (
-        e?.error?.code === 'KYC_REQUIRED' ||
-        e?.error?.message?.includes('KYC')
+        body?.code === 'KYC_REQUIRED' ||
+        body?.name === 'KYC_REQUIRED' ||
+        body?.message?.includes('KYC')
       ) {
         this.isOpen.set(false);
         this.auth.isKycModalOpen.set(true);
       } else {
-        this.errorMsg.set(e?.error?.message || 'Trade Execution Failed');
+        this.errorMsg.set(body?.message || 'Trade Execution Failed');
       }
     }
 

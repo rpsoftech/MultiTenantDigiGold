@@ -17,7 +17,7 @@
       "id": "marketplace",
       "label": "Marketplace",
       "url": "/marketplace",
-      "enabled": true,
+      "enabled": false,
       "order": 2
     },
     {
@@ -62,14 +62,14 @@
       "id": "invest",
       "label": "Invest",
       "url": "/invest",
-      "enabled": true,
+      "enabled": false,
       "order": 4
     },
     {
       "id": "about",
       "label": "About",
       "url": "#",
-      "enabled": true,
+      "enabled": false,
       "order": 5,
       "children": [
         {

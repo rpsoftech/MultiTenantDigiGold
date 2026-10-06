@@ -22,6 +22,21 @@ jest.mock('./footer.config.json', () => ({
     },
     { id: 'off', label: 'Off', enabled: false, order: 0, links: [] },
     {
+      id: 'empty',
+      label: 'Empty',
+      enabled: true,
+      order: 3,
+      links: [
+        {
+          id: 'later',
+          label: 'Later',
+          url: '/later',
+          enabled: false,
+          order: 1,
+        },
+      ],
+    },
+    {
       id: 'company',
       label: 'Company',
       enabled: true,
@@ -34,7 +49,7 @@ jest.mock('./footer.config.json', () => ({
 }));
 
 describe('useFooterConfig', () => {
-  it('drops disabled columns and sorts the rest by order', () => {
+  it('drops disabled columns, and columns with no enabled link, and sorts the rest', () => {
     const { result } = renderHook(() => useFooterConfig());
 
     expect(result.current.columns.map((column) => column.id)).toEqual([

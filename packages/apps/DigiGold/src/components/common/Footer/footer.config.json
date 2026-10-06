@@ -6,8 +6,8 @@
       "enabled": true,
       "order": 1,
       "links": [
-        { "id": "about-us", "label": "About Us", "url": "/about-us", "enabled": true, "order": 1 },
-        { "id": "vault-security", "label": "Vault Security", "url": "/vault/security", "enabled": true, "order": 2, "icon": "shield" }
+        { "id": "about-us", "label": "About Us", "url": "/about-us", "enabled": false, "order": 1 },
+        { "id": "vault-security", "label": "Vault Security", "url": "/vault/security", "enabled": false, "order": 2, "icon": "shield" }
       ]
     },
     {
@@ -16,8 +16,8 @@
       "enabled": true,
       "order": 2,
       "links": [
-        { "id": "privacy-policy", "label": "Privacy Policy", "url": "/privacy-policy", "enabled": true, "order": 1 },
-        { "id": "terms-of-service", "label": "Terms of Service", "url": "/terms-of-service", "enabled": true, "order": 2 }
+        { "id": "privacy-policy", "label": "Privacy Policy", "url": "/privacy-policy", "enabled": false, "order": 1 },
+        { "id": "terms-of-service", "label": "Terms of Service", "url": "/terms-of-service", "enabled": false, "order": 2 }
       ]
     },
     {
@@ -26,8 +26,8 @@
       "enabled": true,
       "order": 3,
       "links": [
-        { "id": "help-center", "label": "Help Center", "url": "/help-center", "enabled": true, "order": 1 },
-        { "id": "contact-support", "label": "Contact Support", "url": "/contact-support", "enabled": true, "order": 2 }
+        { "id": "help-center", "label": "Help Center", "url": "/help-center", "enabled": false, "order": 1 },
+        { "id": "contact-support", "label": "Contact Support", "url": "/contact-support", "enabled": false, "order": 2 }
       ]
     }
   ]
