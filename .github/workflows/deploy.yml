@@ -6,6 +6,11 @@ on:
       - main
       - staging
 
+# Deploy runs read the current version and publish version + 1, so they must not overlap.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 # Each target has its own GitHub environment, so production can have its own secrets and
 # protection rules (required reviewers) instead of borrowing staging's.
 jobs:
@@ -21,6 +26,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+          cache-dependency-path: packages/servers/MainServerGo/go.sum
 
       - name: Deploy Staging
         env:
@@ -44,6 +50,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+          cache-dependency-path: packages/servers/MainServerGo/go.sum
 
       - name: Deploy Production
         env:

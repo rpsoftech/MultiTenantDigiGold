@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/env"
@@ -20,8 +22,9 @@ import (
 )
 
 const (
-	FileServerURL = "https://files.rpso.in/upload/"
-	KeyValueURL   = "https://keyvalue.rpso.in/public/"
+	FileServerBase = "https://files.rpso.in"
+	FileServerURL  = FileServerBase + "/upload/"
+	KeyValueURL    = updater.KVBaseURL
 )
 
 // 1. THE BUILD MATRIX: Define every OS and Arch combination you want to support
@@ -48,36 +51,26 @@ var (
 	}
 )
 
-type VersionInfo struct {
-	Version int    `json:"version"`
-	URL     string `json:"url"`
-	SHA256  string `json:"sha256"`
+// artifact is one built, compressed and hashed binary waiting to be published.
+type artifact struct {
+	kvKey      string
+	gzName     string
+	gzPath     string
+	uploadPath string
+	info       updater.KVResponse
 }
 
-func getNextVersion(envName, component, os, arch string) int {
-	targetKey := updater.GetFileKey(envName, component, os, arch)
+func getNextVersion(targetKey string) int {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", KeyValueURL+targetKey, nil)
+	current, err := updater.FetchKV(client, KeyValueURL, targetKey)
+	// Only a missing key means a first deploy. Any other failure must stop the deploy:
+	// publishing Version 1 over a higher version would make every server skip the update.
+	if errors.Is(err, updater.ErrKVNotFound) {
+		log.Printf("⚠️ No version found for %s. Starting at Version 1.", targetKey)
+		return 1
+	}
 	if err != nil {
-		log.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		log.Printf("⚠️ Could not fetch current version from KV store (Status: %d). Defaulting to Version 1.", resp.StatusCode)
-		if resp != nil {
-			resp.Body.Close()
-		}
-		return 1
-	}
-	defer resp.Body.Close()
-
-	var current VersionInfo
-	if err := json.NewDecoder(resp.Body).Decode(&current); err != nil {
-		log.Println("⚠️ Could not parse current version JSON. Defaulting to Version 1.")
-		return 1
+		log.Fatalf("Could not fetch current version from KV store: %v", err)
 	}
 
 	return current.Version + 1
@@ -87,45 +80,65 @@ func main() {
 	if fileServerToken == "" || kvToken == "" {
 		log.Fatal("FATAL: FILE_SERVER_TOKEN and KV_TOKEN environment variables are required.")
 	}
-	deployEnv := os.Getenv("DEPLOY_ENV")
+	// Servers only poll keys for their exact APP_ENV, so reject anything they would never read.
+	deployEnv := strings.ToUpper(os.Getenv("DEPLOY_ENV"))
 	if deployEnv == "" {
 		deployEnv = string(env.APP_ENV_STAGING) // Fail-safe default
-		log.Println("⚠️ DEPLOY_ENV not set. Defaulting to 'staging'.")
+		log.Printf("⚠️ DEPLOY_ENV not set. Defaulting to '%s'.", deployEnv)
 	}
-	// Loop through both microservices (API and Worker)
+	if deployEnv != string(env.APP_ENV_STAGING) && deployEnv != string(env.APP_ENV_PRODUCTION) {
+		log.Fatalf("FATAL: DEPLOY_ENV must be %s or %s, got %q.", env.APP_ENV_STAGING, env.APP_ENV_PRODUCTION, deployEnv)
+	}
+
+	// Manual Override: `go run deploy.go <version>` forces the version for every build
+	overrideVersion := 0
+	if len(os.Args) > 1 {
+		v, err := strconv.Atoi(os.Args[1])
+		if err != nil || v < 1 {
+			log.Fatalf("FATAL: Version override must be a positive integer, got %q.", os.Args[1])
+		}
+		overrideVersion = v
+		log.Printf("⚠️ Manual Override: Forcing Version %d", overrideVersion)
+	}
+
+	if err := os.MkdirAll("build", 0755); err != nil {
+		log.Fatalf("Failed to create build directory: %v", err)
+	}
+
+	// PHASE 1: Build, compress and hash everything before publishing anything,
+	// so a failed build can't leave one component released and the other not.
+	var artifacts []artifact
+	// Loop through the entire Build Matrix
 	for _, target := range targets {
-		// Loop through the entire Build Matrix
+		// Loop through both microservices (API and Worker)
 		for compName, compPath := range components {
-			versionInt := getNextVersion(deployEnv, compName, target.OS, target.Arch)
-			if len(os.Args) > 1 {
-				if v, err := strconv.Atoi(os.Args[1]); err == nil {
-					versionInt = v
-					log.Printf("⚠️ Manual Override: Forcing Version %d", versionInt)
-				}
+			// Outputs exactly like: STAGING_digigold_api_linux_amd64
+			kvKey := updater.GetFileKey(deployEnv, compName, target.OS, target.Arch)
+			versionInt := overrideVersion
+			if versionInt == 0 {
+				versionInt = getNextVersion(kvKey)
 			}
 
-			log.Printf("🚀 Starting Multi-OS Deployment for Digi Gold v%d", versionInt)
-
-			if err := os.MkdirAll("build", 0755); err != nil {
-				log.Fatalf("Failed to create build directory: %v", err)
-			}
 			log.Printf("\n========================================")
-			log.Printf("🔨 Building %s [%s/%s]", compName, target.OS, target.Arch)
+			log.Printf("🔨 Building %s v%d [%s/%s]", compName, versionInt, target.OS, target.Arch)
 
 			// 2. DYNAMIC NAMING: Handle the Windows .exe extension
-			binaryName := updater.GetFileKey(deployEnv, compName, target.OS, target.Arch)
+			binaryName := kvKey
 			if target.OS == "windows" {
 				binaryName += ".exe"
 			}
 
 			binaryPath := filepath.Join("build", binaryName)
 
-			// 3. COMPILE: Inject the dynamic OS and ARCH tags into the environment
+			// 3. COMPILE: Inject the dynamic OS and ARCH tags into the environment.
+			// GOENV=off and the pinned/empty variables keep the deployer's own Go settings out of the release binary.
 			cmd := exec.Command("go", "build",
+				"-buildvcs=false",
 				"-ldflags", fmt.Sprintf("-s -w -X main.version=%d", versionInt),
 				"-o", binaryPath, compPath,
 			)
-			cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+target.OS, "GOARCH="+target.Arch)
+			cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+target.OS, "GOARCH="+target.Arch,
+				"GOAMD64=v1", "GOENV=off", "GOFLAGS=", "GOEXPERIMENT=")
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 
@@ -133,8 +146,9 @@ func main() {
 				log.Fatalf("Build failed for %s: %v", binaryName, err)
 			}
 
-			// 4. COMPRESS: Gzip the binary
-			gzBinaryName := binaryName + ".gz"
+			// 4. COMPRESS: Gzip the binary. The version is in the file name, so every
+			// release gets its own URL and never overwrites the one the KV store points at.
+			gzBinaryName := fmt.Sprintf("%s_v%d.gz", kvKey, versionInt)
 			gzBinaryPath := filepath.Join("build", gzBinaryName)
 			log.Printf("📦 Compressing to %s...", gzBinaryName)
 			if err := utility_functions_gzip.GzipCompressFile(binaryPath, gzBinaryPath); err != nil {
@@ -148,34 +162,39 @@ func main() {
 			}
 			log.Printf("🔐 SHA256: %s", hash)
 
-			// 6. UPLOAD: Push to File Server
-			uploadPath := fmt.Sprintf("digiGold/%s", compName)
-			log.Printf("☁️ Uploading to File Server...")
-			if err := UploadFile(gzBinaryPath, gzBinaryName, uploadPath, FileServerURL, fileServerToken); err != nil {
-				log.Fatalf("Upload failed: %v", err)
-			}
-
-			// 7. KV UPDATE: Create the dynamic Key-Value store string
-			// Outputs exactly like: digigold_api_darwin_arm64 or digigold_worker_windows_amd64
-			kvKey := updater.GetFileKey(deployEnv, compName, target.OS, target.Arch)
-			fileURL := fmt.Sprintf("https://files.rpso.in/static/%s/%s", uploadPath, gzBinaryName)
-
-			vInfo := VersionInfo{
-				Version: versionInt,
-				URL:     fileURL,
-				SHA256:  hash,
-			}
-			vInfoBytes, _ := json.MarshalIndent(vInfo, "", "  ")
-
-			log.Printf("📝 Updating KV Store Key: %s", kvKey)
-			if err := updateKeyValue(kvKey, vInfoBytes); err != nil {
-				log.Fatalf("KV Update failed: %v", err)
-			}
-
-			log.Printf("✅ %s deployed successfully!", kvKey)
+			artifacts = append(artifacts, artifact{
+				kvKey:      kvKey,
+				gzName:     gzBinaryName,
+				gzPath:     gzBinaryPath,
+				uploadPath: fmt.Sprintf("digiGold/%s", compName),
+				info:       updater.KVResponse{Version: versionInt, SHA256: hash},
+			})
 		}
 	}
-	log.Println("\n🎉 All 10 builds (5 OS/Arch pairs x 2 Services) compressed, hashed, and deployed successfully!")
+
+	// PHASE 2 (6. UPLOAD): Push every file to the File Server. New versioned URLs only,
+	// so nothing the servers download changes yet.
+	for i := range artifacts {
+		a := &artifacts[i]
+		log.Printf("☁️ Uploading %s to File Server...", a.gzName)
+		if err := UploadFile(a.gzPath, a.gzName, a.uploadPath, FileServerURL, fileServerToken); err != nil {
+			log.Fatalf("Upload failed: %v", err)
+		}
+		a.info.URL = fmt.Sprintf("%s/static/%s/%s", FileServerBase, a.uploadPath, a.gzName)
+	}
+
+	// PHASE 3 (7. KV UPDATE): Point the KV store at the new files, only after every upload succeeded.
+	for _, a := range artifacts {
+		vInfoBytes, _ := json.MarshalIndent(a.info, "", "  ")
+
+		log.Printf("📝 Updating KV Store Key: %s", a.kvKey)
+		if err := updateKeyValue(a.kvKey, vInfoBytes); err != nil {
+			log.Fatalf("KV Update failed: %v", err)
+		}
+
+		log.Printf("✅ %s v%d deployed successfully!", a.kvKey, a.info.Version)
+	}
+	log.Printf("\n🎉 All %d builds (%d OS/Arch pairs x %d Services) compressed, hashed, and deployed successfully!", len(artifacts), len(targets), len(components))
 }
 
 // ==========================================
@@ -198,9 +217,13 @@ func UploadFile(path, filename, uploadPath, fileServerURL, fileServerToken strin
 	client := &http.Client{
 		Timeout: time.Second * 540,
 	}
-	io.Copy(part, file)
+	if _, err := io.Copy(part, file); err != nil {
+		return err
+	}
 
-	writer.WriteField("path", uploadPath)
+	if err := writer.WriteField("path", uploadPath); err != nil {
+		return err
+	}
 
 	err = writer.Close()
 	if err != nil {
@@ -220,9 +243,7 @@ func UploadFile(path, filename, uploadPath, fileServerURL, fileServerToken strin
 
 	req.Header.Set("Authorization", "Bearer "+fileServerToken)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	updater.SetBrowserHeaders(req)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -252,9 +273,7 @@ func updateKeyValue(key string, data []byte) error {
 
 	req.Header.Set("Authorization", "Bearer "+kvToken)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	updater.SetBrowserHeaders(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
