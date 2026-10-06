@@ -14,11 +14,12 @@
       "icon": "home"
     },
     {
-      "id": "marketplace",
-      "label": "Marketplace",
-      "url": "/marketplace",
-      "enabled": false,
-      "order": 2
+      "id": "jewellery",
+      "label": "Jewellery",
+      "url": "/jewellery",
+      "enabled": true,
+      "order": 2,
+      "module": "ecommerce"
     },
     {
       "id": "vault",

@@ -25,7 +25,7 @@
       "id": "jewelry",
       "title": "Explore Jewelry",
       "description": "Browse our latest physical collections.",
-      "url": "/marketplace/jewelry",
+      "url": "/jewellery",
       "icon": "gem",
       "module": "ecommerce",
       "enabled": true,

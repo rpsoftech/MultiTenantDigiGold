@@ -57,7 +57,15 @@ const products: Product[] = [
     price: 125000,
     currency: 'INR',
     isNew: true,
-    url: '/marketplace/p1',
+    code: 'HN-1',
+    weight: 12.5,
+    carat: '22KT Gold',
+    color: 'Yellow',
+    category: 'necklace',
+    designType: 'Classic',
+    gender: 'Ladies',
+    collection: 'Heritage',
+    gifts: 'For Her',
   },
   {
     id: 'p2',
@@ -67,7 +75,15 @@ const products: Product[] = [
     price: 42000,
     currency: 'INR',
     isNew: false,
-    url: '/marketplace/p2',
+    code: 'CR-2',
+    weight: 4.2,
+    carat: '22KT Gold',
+    color: 'Yellow',
+    category: 'ring',
+    designType: 'Classic',
+    gender: 'Ladies',
+    collection: 'Heritage',
+    gifts: 'For Her',
   },
 ];
 
@@ -162,7 +178,7 @@ describe('ProductCard', () => {
 
     expect(
       screen.getByRole('link', { name: 'View details' }).getAttribute('href'),
-    ).toBe('/marketplace/p1');
+    ).toBe('/jewellery/product?id=p1');
   });
 
   it('shows the New badge only for new products', () => {

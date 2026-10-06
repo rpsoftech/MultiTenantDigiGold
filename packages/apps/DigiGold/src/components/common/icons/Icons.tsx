@@ -49,6 +49,26 @@ export function ShieldCheckIcon(props: IconProps) {
   );
 }
 
+export function TruckIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M3 6h11v10H3z" />
+      <path d="M14 10h4l3 3v3h-7z" />
+      <circle cx="7" cy="18" r="2" />
+      <circle cx="17" cy="18" r="2" />
+    </svg>
+  );
+}
+
+export function ShoppingBagIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M5 8h14l1 13H4L5 8Z" />
+      <path d="M8 8V6a4 4 0 0 1 8 0v2" />
+    </svg>
+  );
+}
+
 export function PencilIcon(props: IconProps) {
   return (
     <svg {...DEFAULT_PROPS} {...props}>
@@ -91,6 +111,14 @@ export function ChevronDownIcon(props: IconProps) {
   return (
     <svg {...DEFAULT_PROPS} {...props}>
       <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+export function HeartIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M20.8 8.8c0 5.1-8.8 10.2-8.8 10.2S3.2 13.9 3.2 8.8A4.8 4.8 0 0 1 12 6.4a4.8 4.8 0 0 1 8.8 2.4Z" />
     </svg>
   );
 }

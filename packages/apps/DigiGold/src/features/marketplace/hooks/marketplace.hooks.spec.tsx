@@ -59,7 +59,15 @@ describe('useTrendingProducts', () => {
         price: 50000,
         currency: 'INR',
         isNew: false,
-        url: '/p1',
+        code: 'N-1',
+        weight: 10,
+        carat: '22KT Gold' as const,
+        color: 'Yellow' as const,
+        category: 'necklace',
+        designType: 'Classic',
+        gender: 'Ladies' as const,
+        collection: 'Heritage',
+        gifts: 'For Her' as const,
       },
     ];
     mockedService.getTrendingProducts.mockResolvedValue(products);

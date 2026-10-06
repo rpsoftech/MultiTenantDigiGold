@@ -4,6 +4,7 @@ import { Card } from '@/components/common/Card/Card';
 import { Badge } from '@/components/common/Badge/Badge';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import type { Product } from '@/features/marketplace/marketplace.types';
+import { jewelleryProductHref } from '@/features/marketplace/marketplace.catalogue';
 import type { TrendingJewelryConfig } from './TrendingJewelry.types';
 import styles from './TrendingJewelry.module.scss';
 
@@ -36,7 +37,10 @@ export function ProductCard({
         {formatCurrency(product.price, product.currency)}
       </span>
 
-      <Link href={product.url} className={styles.viewDetailsLink}>
+      <Link
+        href={jewelleryProductHref(product.id)}
+        className={styles.viewDetailsLink}
+      >
         {config.viewDetailsLabel}
       </Link>
     </Card>

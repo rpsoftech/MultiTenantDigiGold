@@ -88,13 +88,11 @@ describe('marketplace service failures', () => {
   // The dashboard sections show their own error and retry; the service must not hide it.
   it('lets a request failure reach the caller', async () => {
     const { service, client } = loadService(false);
-    jest
-      .spyOn(client, 'get')
-      .mockRejectedValue({
-        status: 500,
-        code: 'ERR_BAD_RESPONSE',
-        message: 'down',
-      });
+    jest.spyOn(client, 'get').mockRejectedValue({
+      status: 500,
+      code: 'ERR_BAD_RESPONSE',
+      message: 'down',
+    });
 
     await expect(service.getCategories()).rejects.toMatchObject({
       status: 500,
@@ -103,9 +101,16 @@ describe('marketplace service failures', () => {
 });
 
 describe('mock marketplace service', () => {
-  it.each(['getCategories', 'getTrendingProducts'] as const)(
-    '%s serves sample data without calling the server',
-    async (method) => {
+  // Categories carry their own link; products don't (the frontend builds product URLs).
+  it.each([
+    { method: 'getCategories' as const, fields: { url: expect.any(String) } },
+    {
+      method: 'getTrendingProducts' as const,
+      fields: { code: expect.any(String) },
+    },
+  ])(
+    '$method serves sample data without calling the server',
+    async ({ method, fields }) => {
       const { service, client } = loadService(true);
       const request = jest
         .spyOn(client, 'get')
@@ -118,10 +123,7 @@ describe('mock marketplace service', () => {
       expect(request).not.toHaveBeenCalled();
       expect(items.length).toBeGreaterThan(0);
       expect(items[0]).toEqual(
-        expect.objectContaining({
-          id: expect.any(String),
-          url: expect.any(String),
-        }),
+        expect.objectContaining({ id: expect.any(String), ...fields }),
       );
     },
   );

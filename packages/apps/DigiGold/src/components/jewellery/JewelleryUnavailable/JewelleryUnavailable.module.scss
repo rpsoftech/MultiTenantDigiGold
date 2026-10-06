@@ -1,0 +1,23 @@
+.card {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  max-width: 480px;
+  margin: var(--space-8) auto;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.body {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.link {
+  color: var(--brand-primary);
+  font-weight: 600;
+}
