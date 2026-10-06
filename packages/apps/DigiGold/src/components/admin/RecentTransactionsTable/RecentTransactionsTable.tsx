@@ -1,63 +1,73 @@
 'use client';
 
+import Link from 'next/link';
 import { Card } from '@/components/common/Card/Card';
-import { Badge } from '@/components/common/Badge/Badge';
+import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
+import { StoreLedgerTable } from '@/components/admin/StoreLedgerTable/StoreLedgerTable';
 import { useRecentTransactions } from '@/features/admin/hooks/useRecentTransactions';
-import { formatCurrency } from '@/lib/utils/formatCurrency';
-import {
-  TRANSACTION_STATUS_BADGE_VARIANT,
-  TRANSACTION_STATUS_LABEL,
-} from '@/components/admin/adminStatusBadge';
 import styles from './RecentTransactionsTable.module.scss';
 
 export function RecentTransactionsTable() {
-  const { data: transactions, isLoading } = useRecentTransactions();
+  const {
+    data: transactions,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useRecentTransactions();
 
   return (
-    <section>
-      <h2 className={styles.sectionTitle}>Recent Transactions</h2>
+    <section
+      className={styles.section}
+      aria-labelledby="recent-transactions-title"
+    >
+      <div className={styles.header}>
+        <div>
+          <h2 className={styles.sectionTitle} id="recent-transactions-title">
+            Recent transactions
+          </h2>
+          <p className={styles.description}>
+            Latest activity across your store’s gold vaults.
+          </p>
+        </div>
+        <Link className={styles.viewAll} href="/admin/ledger">
+          View full ledger <span aria-hidden>→</span>
+        </Link>
+      </div>
 
       <Card className={styles.tableCard}>
-        {isLoading || !transactions ? (
-          <Loader />
+        {isLoading ? (
+          <div className={styles.state}>
+            <Loader label="Loading recent transactions" />
+          </div>
+        ) : isError ? (
+          <div className={styles.state} role="alert">
+            <p>Couldn’t load recent transactions.</p>
+            <Button
+              variant="secondary"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              Try again
+            </Button>
+          </div>
+        ) : !transactions?.length ? (
+          <div className={styles.state}>
+            <strong>No transactions yet</strong>
+            <p>New store transactions will appear here.</p>
+          </div>
         ) : (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Amount / Weight</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Timestamp</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((txn) => (
-                <tr key={txn.id}>
-                  <td data-label="User">
-                    <div>
-                      <span className={styles.userName}>{txn.userName}</span>
-                      <span className={styles.userId}>{txn.userId}</span>
-                    </div>
-                  </td>
-                  <td data-label="Amount / Weight">
-                    <div>
-                      <span className={styles.amount}>{formatCurrency(txn.amountInr, 'INR')}</span>
-                      <span className={styles.grams}>{txn.deltaGrams.toFixed(4)} g</span>
-                    </div>
-                  </td>
-                  <td className={styles.typeCell} data-label="Type">{txn.type}</td>
-                  <td data-label="Status">
-                    <Badge variant={TRANSACTION_STATUS_BADGE_VARIANT[txn.status]}>
-                      {TRANSACTION_STATUS_LABEL[txn.status]}
-                    </Badge>
-                  </td>
-                  <td data-label="Timestamp">{new Date(txn.timestamp).toLocaleString('en-IN')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <StoreLedgerTable
+              entries={transactions}
+              caption="Recent store transactions"
+            />
+            <p className={styles.balanceNote}>
+              Vault balances reflect each customer’s gold balance after the
+              entry.
+            </p>
+          </>
         )}
       </Card>
     </section>

@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { adminService } from '../admin.service';
+import { adminQueryKeys } from '../admin.queryKeys';
 
-export const ADMIN_USERS_QUERY_KEY = ['admin', 'users'];
+export const ADMIN_USERS_QUERY_KEY = adminQueryKeys.customers;
 
-export function useAdminUsers() {
+export function useAdminUsers(page = 1, limit = 20) {
   return useQuery({
-    queryKey: ADMIN_USERS_QUERY_KEY,
-    queryFn: adminService.getAdminUsers,
+    queryKey: adminQueryKeys.customerPage(page, limit),
+    queryFn: () => adminService.getAdminUsers(page, limit),
   });
 }

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from '@jest/globals';
 import { cleanup, render } from '@testing-library/react';
-import type { AdminTransaction, AdminUserSummary } from '@/features/admin/admin.types';
+import type {
+  AdminLedgerEntry,
+  AdminUserSummary,
+} from '@/features/admin/admin.types';
 import { RecentTransactionsTable } from './RecentTransactionsTable/RecentTransactionsTable';
 import { RecentUsersTable } from './RecentUsersTable/RecentUsersTable';
 import { UserApprovalsTable } from './UserApprovalsTable/UserApprovalsTable';
@@ -10,34 +13,40 @@ const user: AdminUserSummary = {
   name: 'Asha Rao',
   mobileNumber: '9876543210',
   email: 'asha@example.com',
-  city: 'Pune',
   goldBalanceGrams: 1.5,
   kycStatus: 'pending',
   joinedAt: '2026-01-01T00:00:00.000Z',
 };
 
-const transaction: AdminTransaction = {
+const transaction: AdminLedgerEntry = {
   id: 'T1',
-  userId: 'U1',
-  userName: 'Asha Rao',
-  type: 'buy',
+  eventType: 'GOLD_PURCHASE',
+  paymentMode: 'COUNTER_CASH',
   timestamp: '2026-01-02T00:00:00.000Z',
-  deltaGrams: 0.5,
+  weightGrams: 0.5,
   amountInr: 3000,
-  status: 'success',
+  runningGoldBalanceGrams: 1.5,
+  isReversed: false,
 };
 
 jest.mock('@/features/admin/hooks/useRecentUsers', () => ({
   useRecentUsers: () => ({ data: [user], isLoading: false }),
 }));
 jest.mock('@/features/admin/hooks/useAdminUsers', () => ({
-  useAdminUsers: () => ({ data: [user], isLoading: false }),
+  useAdminUsers: () => ({
+    data: { items: [user], page: 1, limit: 20, hasNextPage: false },
+    isLoading: false,
+  }),
 }));
 jest.mock('@/features/admin/hooks/useRecentTransactions', () => ({
   useRecentTransactions: () => ({ data: [transaction], isLoading: false }),
 }));
 jest.mock('@/features/admin/hooks/useUpdateKycStatus', () => ({
-  useUpdateKycStatus: () => ({ mutate: jest.fn(), isPending: false, variables: undefined }),
+  useUpdateKycStatus: () => ({
+    mutate: jest.fn(),
+    isPending: false,
+    variables: undefined,
+  }),
 }));
 
 afterEach(cleanup);
@@ -61,25 +70,36 @@ function cellsWithLooseParts(container: HTMLElement) {
 describe('admin tables (mobile stacked layout)', () => {
   it('labels every Recent Users cell', () => {
     const { container } = render(<RecentUsersTable />);
-    expect(dataLabels(container)).toEqual(['Name', 'Email / Phone', 'Joined Date', 'Status']);
+    expect(dataLabels(container)).toEqual([
+      'Customer',
+      'Contact',
+      'Vault balance',
+      'KYC status',
+      'Joined',
+    ]);
   });
 
   it('labels every Recent Transactions cell', () => {
     const { container } = render(<RecentTransactionsTable />);
     expect(dataLabels(container)).toEqual([
-      'User',
+      'Transaction',
       'Amount / Weight',
-      'Type',
+      'Payment mode',
+      'Vault after entry',
       'Status',
-      'Timestamp',
+      'Date & time (IST)',
     ]);
   });
 
   it('labels the User Approvals data cells and leaves the actions cell unlabelled', () => {
-    const { container } = render(
-      <UserApprovalsTable selectedUserId={null} onViewLogs={jest.fn()} />,
-    );
-    expect(dataLabels(container)).toEqual(['User', 'Mobile', 'City', 'Gold Balance', 'KYC Status']);
+    const { container } = render(<UserApprovalsTable />);
+    expect(dataLabels(container)).toEqual([
+      'Customer',
+      'Contact',
+      'Vault balance',
+      'KYC status',
+      'Joined',
+    ]);
     expect(container.querySelectorAll('tbody td')).toHaveLength(6);
   });
 
@@ -88,7 +108,7 @@ describe('admin tables (mobile stacked layout)', () => {
       <>
         <RecentUsersTable />
         <RecentTransactionsTable />
-        <UserApprovalsTable selectedUserId={null} onViewLogs={jest.fn()} />
+        <UserApprovalsTable />
       </>,
     );
     expect(cellsWithLooseParts(container)).toEqual([]);

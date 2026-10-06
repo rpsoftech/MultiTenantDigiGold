@@ -1,20 +1,27 @@
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test-utils/renderWithProviders';
-import { isAdminDataSample } from '@/features/admin/admin.service';
 import { AdminShell } from './AdminShell';
 
-jest.mock('@/features/admin/admin.service', () => ({
-  isAdminDataSample: jest.fn(),
+jest.mock('next/navigation', () => ({
+  usePathname: () => '/admin/dashboard',
 }));
 jest.mock('@/components/admin/AdminProfileMenu/AdminProfileMenu', () => ({
   AdminProfileMenu: () => null,
 }));
 
-const mockedSample = jest.mocked(isAdminDataSample);
-
 describe('AdminShell', () => {
-  it('says the dashboard figures are samples while the store data is not connected', () => {
-    mockedSample.mockReturnValue(true);
+  const originalMockSetting = process.env.NEXT_PUBLIC_USE_MOCK_ADMIN;
+
+  afterEach(() => {
+    if (originalMockSetting === undefined) {
+      delete process.env.NEXT_PUBLIC_USE_MOCK_ADMIN;
+    } else {
+      process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = originalMockSetting;
+    }
+  });
+
+  it('labels dashboard figures as samples when demo mode is enabled', () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
     renderWithProviders(
       <AdminShell>
         <p>panel</p>
@@ -24,11 +31,12 @@ describe('AdminShell', () => {
     const notice = screen.getByRole('note');
     expect(notice.textContent).toContain('Sample data.');
     expect(notice.textContent).toContain("not DigiGold's records");
+    expect(notice.textContent).toContain('Demo mode is enabled.');
     expect(screen.getByText('panel')).toBeTruthy();
   });
 
   it('shows no notice once real store data is used', () => {
-    mockedSample.mockReturnValue(false);
+    process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'false';
     renderWithProviders(
       <AdminShell>
         <p>panel</p>
