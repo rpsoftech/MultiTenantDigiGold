@@ -21,6 +21,9 @@ on:
 
 jobs:
   test:
+    # Every push to staging also updates the open staging -> main PR. The push run
+    # already tested that exact commit, so skip the duplicate PR run.
+    if: github.event_name != 'pull_request' || github.head_ref != 'staging'
     runs-on: ubuntu-latest
 
     steps:
