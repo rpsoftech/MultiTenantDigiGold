@@ -14,11 +14,53 @@ jest.mock('@/features/marketplace/hooks/useCategories', () => ({
 }));
 
 const mockedUseCategories = useCategories as jest.Mock;
+// A complete React Query result for the hook mock: the component reads isSuccess/isError
+// (an empty list is only "empty" after a successful load) and refetch for its Retry button.
+const refetch = jest.fn();
+function queryState({
+  data,
+  isLoading = false,
+  isError = false,
+}: {
+  data: unknown;
+  isLoading?: boolean;
+  isError?: boolean;
+}) {
+  return {
+    data,
+    isLoading,
+    isError,
+    isSuccess: !isLoading && !isError,
+    error: isError
+      ? { message: 'down', code: 'ERR_BAD_RESPONSE', status: 503 }
+      : null,
+    isFetching: false,
+    refetch,
+  };
+}
 
 const categories: Category[] = [
-  { id: 'rings', label: 'Rings', imageUrl: '/rings.png', imageAlt: 'Rings', url: '/marketplace/rings' },
-  { id: 'chains', label: 'Chains', imageUrl: '/chains.png', imageAlt: 'Chains', url: '/marketplace/chains' },
-  { id: 'coins', label: 'Coins', imageUrl: '/coins.png', imageAlt: 'Coins', url: '/marketplace/coins' },
+  {
+    id: 'rings',
+    label: 'Rings',
+    imageUrl: '/rings.png',
+    imageAlt: 'Rings',
+    url: '/marketplace/rings',
+  },
+  {
+    id: 'chains',
+    label: 'Chains',
+    imageUrl: '/chains.png',
+    imageAlt: 'Chains',
+    url: '/marketplace/chains',
+  },
+  {
+    id: 'coins',
+    label: 'Coins',
+    imageUrl: '/coins.png',
+    imageAlt: 'Coins',
+    url: '/marketplace/coins',
+  },
 ];
 
 // jsdom does no layout, so scroll geometry is faked on the track element.
@@ -29,7 +71,8 @@ const scrollBy = jest.fn();
 const scrollTo = jest.fn();
 
 function track(): HTMLElement {
-  return screen.getByRole('link', { name: /Rings/ }).parentElement as HTMLElement;
+  return screen.getByRole('link', { name: /Rings/ })
+    .parentElement as HTMLElement;
 }
 
 describe('CategoryCarousel', () => {
@@ -55,7 +98,9 @@ describe('CategoryCarousel', () => {
     scrollLeft = 0;
     scrollWidth = 1000;
     clientWidth = 300;
-    mockedUseCategories.mockReturnValue({ data: categories, isLoading: false });
+    mockedUseCategories.mockReturnValue(
+      queryState({ data: categories, isLoading: false }),
+    );
   });
 
   it('shows the section title from the site config', () => {
@@ -65,45 +110,68 @@ describe('CategoryCarousel', () => {
   });
 
   it('shows a loader while categories load', () => {
-    mockedUseCategories.mockReturnValue({ data: undefined, isLoading: true });
+    mockedUseCategories.mockReturnValue(
+      queryState({ data: undefined, isLoading: true }),
+    );
     render(<CategoryCarousel />);
 
-    expect(screen.getByRole('status', { name: 'Loading categories' })).toBeTruthy();
+    expect(
+      screen.getByRole('status', { name: 'Loading categories' }),
+    ).toBeTruthy();
     expect(screen.queryByRole('link', { name: /Rings/ })).toBeNull();
   });
 
   it('shows an empty message when there are no categories', () => {
-    mockedUseCategories.mockReturnValue({ data: [], isLoading: false });
+    mockedUseCategories.mockReturnValue(
+      queryState({ data: [], isLoading: false }),
+    );
     render(<CategoryCarousel />);
 
     expect(screen.getByText('No categories available right now.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Scroll categories/ })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /Scroll categories/ }),
+    ).toBeNull();
   });
 
-  it('shows nothing extra when the request failed', () => {
-    mockedUseCategories.mockReturnValue({ data: undefined, isLoading: false });
+  it('explains a failed request and retries it, without claiming the list is empty', () => {
+    mockedUseCategories.mockReturnValue(
+      queryState({ data: undefined, isError: true }),
+    );
     render(<CategoryCarousel />);
 
+    expect(screen.getByRole('alert').textContent).toContain(
+      "We couldn't load categories.",
+    );
     expect(screen.queryByText('No categories available right now.')).toBeNull();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Retry loading categories' }),
+    );
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   it('links each category to its page', () => {
     render(<CategoryCarousel />);
 
-    expect(screen.getByRole('link', { name: /Rings/ }).getAttribute('href')).toBe('/marketplace/rings');
-    expect(screen.getByRole('link', { name: /Coins/ }).getAttribute('href')).toBe('/marketplace/coins');
+    expect(
+      screen.getByRole('link', { name: /Rings/ }).getAttribute('href'),
+    ).toBe('/marketplace/rings');
+    expect(
+      screen.getByRole('link', { name: /Coins/ }).getAttribute('href'),
+    ).toBe('/marketplace/coins');
   });
 
   describe('arrow buttons', () => {
     it('hides the left arrow at the start and shows the right one', () => {
       render(<CategoryCarousel />);
 
-      expect(screen.getByRole('button', { name: 'Scroll categories left' }).className).toContain(
-        'navButtonHidden',
-      );
-      expect(screen.getByRole('button', { name: 'Scroll categories right' }).className).not.toContain(
-        'navButtonHidden',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Scroll categories left' })
+          .className,
+      ).toContain('navButtonHidden');
+      expect(
+        screen.getByRole('button', { name: 'Scroll categories right' })
+          .className,
+      ).not.toContain('navButtonHidden');
     });
 
     it('shows the left arrow and hides the right one after scrolling to the end', () => {
@@ -112,34 +180,48 @@ describe('CategoryCarousel', () => {
       scrollLeft = 700;
       fireEvent.scroll(track());
 
-      expect(screen.getByRole('button', { name: 'Scroll categories left' }).className).not.toContain(
-        'navButtonHidden',
-      );
-      expect(screen.getByRole('button', { name: 'Scroll categories right' }).className).toContain(
-        'navButtonHidden',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Scroll categories left' })
+          .className,
+      ).not.toContain('navButtonHidden');
+      expect(
+        screen.getByRole('button', { name: 'Scroll categories right' })
+          .className,
+      ).toContain('navButtonHidden');
     });
 
     it('hides both arrows when everything already fits', () => {
       scrollWidth = 300;
       render(<CategoryCarousel />);
 
-      expect(screen.getByRole('button', { name: 'Scroll categories left' }).className).toContain(
-        'navButtonHidden',
-      );
-      expect(screen.getByRole('button', { name: 'Scroll categories right' }).className).toContain(
-        'navButtonHidden',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Scroll categories left' })
+          .className,
+      ).toContain('navButtonHidden');
+      expect(
+        screen.getByRole('button', { name: 'Scroll categories right' })
+          .className,
+      ).toContain('navButtonHidden');
     });
 
     it('scrolls the track by one step in the chosen direction', () => {
       render(<CategoryCarousel />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Scroll categories right' }));
-      expect(scrollBy).toHaveBeenLastCalledWith({ left: 240, behavior: 'smooth' });
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Scroll categories right' }),
+      );
+      expect(scrollBy).toHaveBeenLastCalledWith({
+        left: 240,
+        behavior: 'smooth',
+      });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Scroll categories left' }));
-      expect(scrollBy).toHaveBeenLastCalledWith({ left: -240, behavior: 'smooth' });
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Scroll categories left' }),
+      );
+      expect(scrollBy).toHaveBeenLastCalledWith({
+        left: -240,
+        behavior: 'smooth',
+      });
     });
   });
 
@@ -187,7 +269,9 @@ describe('CategoryCarousel', () => {
     });
 
     it('does not autoplay a single category', () => {
-      mockedUseCategories.mockReturnValue({ data: [categories[0]], isLoading: false });
+      mockedUseCategories.mockReturnValue(
+        queryState({ data: [categories[0]], isLoading: false }),
+      );
       render(<CategoryCarousel />);
 
       act(() => {

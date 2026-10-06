@@ -2,17 +2,29 @@ import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { OtpInputCells } from './OtpInputCells';
 
-function Harness({ onSubmit, error }: { onSubmit?: () => void; error?: boolean }) {
+function Harness({
+  onSubmit,
+  error,
+}: {
+  onSubmit?: () => void;
+  error?: boolean;
+}) {
   const [value, setValue] = useState('');
   return (
     <>
-      <OtpInputCells value={value} onChange={setValue} onSubmit={onSubmit} error={error} />
+      <OtpInputCells
+        value={value}
+        onChange={setValue}
+        onSubmit={onSubmit}
+        error={error}
+      />
       <output data-testid="value">{value}</output>
     </>
   );
 }
 
-const cell = (index: number) => screen.getByLabelText(`Digit ${index}`) as HTMLInputElement;
+const cell = (index: number) =>
+  screen.getByLabelText(`Digit ${index}`) as HTMLInputElement;
 const value = () => screen.getByTestId('value').textContent;
 
 describe('OtpInputCells', () => {
@@ -88,7 +100,9 @@ describe('OtpInputCells', () => {
   it('trims a pasted code that is too long', () => {
     render(<Harness />);
 
-    fireEvent.paste(cell(1), { clipboardData: { getData: () => '1234567890' } });
+    fireEvent.paste(cell(1), {
+      clipboardData: { getData: () => '1234567890' },
+    });
 
     expect(value()).toBe('123456');
   });
@@ -141,6 +155,8 @@ describe('OtpInputCells', () => {
   it('is exposed as one labelled group for assistive tech', () => {
     render(<Harness />);
 
-    expect(screen.getByRole('group', { name: 'One-time password' })).toBeTruthy();
+    expect(
+      screen.getByRole('group', { name: 'One-time password' }),
+    ).toBeTruthy();
   });
 });

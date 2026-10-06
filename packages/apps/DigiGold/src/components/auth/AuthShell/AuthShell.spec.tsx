@@ -28,9 +28,9 @@ describe('AuthShell', () => {
       </AuthShell>,
     );
 
-    const order = Array.from(screen.getByTestId('header').parentElement?.children ?? []).map(
-      (element) => element.tagName,
-    );
+    const order = Array.from(
+      screen.getByTestId('header').parentElement?.children ?? [],
+    ).map((element) => element.tagName);
     expect(order).toEqual(['HEADER', 'MAIN', 'FOOTER']);
   });
 });

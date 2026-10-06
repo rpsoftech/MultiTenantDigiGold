@@ -29,8 +29,9 @@ type TenantUserLoginRepository struct {
 }
 
 var (
-	adminRepoInstance *TenantUserLoginRepository
-	adminRepoOnce     sync.Once
+	adminRepoInstance     *TenantUserLoginRepository
+	adminRepoOnce         sync.Once
+	ErrTOTPAlreadyEnabled = errors.New("TOTP is already enabled for this admin")
 )
 
 // Admin reads are not cached: they carry the password hash and TOTP secret,
@@ -48,7 +49,7 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		// ==========================================
 		queryFullSelect := fmt.Sprintf(`
 			SELECT 
-				%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s 
+				%s, %s, %s, %s, %s, %s, COALESCE(%s, ''), %s, %s, %s, %s, %s, %s
 			FROM %s`,
 			schema.ColTUID, schema.ColTUUID, schema.ColTUTenantID, schema.ColTUUsername,
 			schema.ColTUPhoneNumber, schema.ColTUPasswordHash, schema.ColTUTOTPSecret, schema.ColTUTOTPEnabled, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
@@ -242,6 +243,43 @@ func (r *TenantUserLoginRepository) UpdateFullAdmin(ctx context.Context, a *mode
 	// CRITICAL: Bust the cache instantly so revoked permissions take immediate effect
 	go r.invalidateAdminCaches(context.Background(), a)
 	return nil
+}
+
+// InitializeTOTPSecret preserves an unfinished enrollment across password logins,
+// retries, and concurrent setup requests. PostgreSQL evaluates the secret after
+// acquiring the row lock, so only the first request can choose the enrollment key.
+func (r *TenantUserLoginRepository) InitializeTOTPSecret(ctx context.Context, tenantID int64, uuid, candidateSecret string) (string, error) {
+	query := fmt.Sprintf(`
+		UPDATE %s SET
+			%s = COALESCE(NULLIF(%s, ''), $3),
+			%s = CURRENT_TIMESTAMP
+		WHERE %s = $1 AND %s = $2 AND %s = true AND %s = false
+		RETURNING %s`,
+		schema.TableTenantUserLogins,
+		schema.ColTUTOTPSecret, schema.ColTUTOTPSecret,
+		schema.ColTUModifiedAt,
+		schema.ColTUTenantID, schema.ColTUUID, schema.ColTUIsActive, schema.ColTUTOTPEnabled,
+		schema.ColTUTOTPSecret,
+	)
+
+	var secret string
+	err := r.DB.Db.QueryRowContext(ctx, query, tenantID, uuid, candidateSecret).Scan(&secret)
+	if err == nil {
+		return secret, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+
+	// Verification may have enabled TOTP while setup waited for the row lock.
+	admin, err := r.GetFullAdminByUUID(ctx, tenantID, uuid)
+	if err != nil {
+		return "", err
+	}
+	if admin.IsTOTPEnabled {
+		return "", ErrTOTPAlreadyEnabled
+	}
+	return "", interfaces.ErrUserNotFound
 }
 
 // ==========================================

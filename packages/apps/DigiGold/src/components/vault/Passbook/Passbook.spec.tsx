@@ -1,16 +1,27 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test-utils/renderWithProviders';
 import { tradeService } from '@/features/trade/trade.service';
-import type { TradeEventType, TradeHistoryEntry } from '@/features/trade/trade.types';
+import type {
+  TradeEventType,
+  TradeHistoryEntry,
+} from '@/features/trade/trade.types';
 import { Passbook } from './Passbook';
 
+// Passbook is gated on a signed-in session (useSessionGate), which redirects with the router.
+const replace = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn(), replace }),
+}));
 jest.mock('@/features/trade/trade.service', () => ({
   tradeService: { initiateBuy: jest.fn(), getHistory: jest.fn() },
 }));
 
 const mockedTrade = tradeService as jest.Mocked<typeof tradeService>;
 
-function makeEntry(index: number, type: TradeEventType = 'GOLD_PURCHASE'): TradeHistoryEntry {
+function makeEntry(
+  index: number,
+  type: TradeEventType = 'GOLD_PURCHASE',
+): TradeHistoryEntry {
   return {
     gl_uuid: `gl-${index}`,
     event_type: type,
@@ -58,31 +69,50 @@ describe('Passbook', () => {
     observerCallback = null;
   });
 
+  it('sends a visitor without a session to login and never loads the history', async () => {
+    renderWithProviders(<Passbook />, { user: null });
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
+    expect(mockedTrade.getHistory).not.toHaveBeenCalled();
+  });
+
   it('shows a loader while the history loads', () => {
-    mockedTrade.getHistory.mockReturnValue(new Promise(() => undefined) as never);
+    mockedTrade.getHistory.mockReturnValue(
+      new Promise(() => undefined) as never,
+    );
     renderWithProviders(<Passbook />);
 
     expect(screen.getByRole('heading', { name: 'Passbook' })).toBeTruthy();
-    expect(screen.getByRole('status', { name: 'Loading passbook' })).toBeTruthy();
+    expect(
+      screen.getByRole('status', { name: 'Loading passbook' }),
+    ).toBeTruthy();
   });
 
   it('shows an empty state when nothing has been recorded', async () => {
     mockedTrade.getHistory.mockResolvedValue(page([]));
     renderWithProviders(<Passbook />);
 
-    expect(await screen.findByText('No transactions recorded yet.')).toBeTruthy();
+    expect(
+      await screen.findByText('No transactions recorded yet.'),
+    ).toBeTruthy();
   });
 
   it('shows an error when the history cannot be loaded', async () => {
     mockedTrade.getHistory.mockRejectedValue({ status: 500, message: 'down' });
     renderWithProviders(<Passbook />);
 
-    expect(await screen.findByText(/couldn.t load your passbook/i)).toBeTruthy();
+    expect(
+      await screen.findByText(/couldn.t load your passbook/i),
+    ).toBeTruthy();
   });
 
   it('lists every transaction', async () => {
     mockedTrade.getHistory.mockResolvedValue(
-      page([makeEntry(1), makeEntry(2, 'PHYSICAL_REDEMPTION'), makeEntry(3, 'SYSTEM_REVERSAL')]),
+      page([
+        makeEntry(1),
+        makeEntry(2, 'PHYSICAL_REDEMPTION'),
+        makeEntry(3, 'SYSTEM_REVERSAL'),
+      ]),
     );
     renderWithProviders(<Passbook />);
 
@@ -103,7 +133,13 @@ describe('Passbook', () => {
       renderWithProviders(<Passbook />);
       await screen.findByText('Gold Purchase');
 
-      for (const label of ['All', 'Purchases', 'Redemptions', 'Reversals', 'Adjustments']) {
+      for (const label of [
+        'All',
+        'Purchases',
+        'Redemptions',
+        'Reversals',
+        'Adjustments',
+      ]) {
         expect(screen.getByRole('button', { name: label })).toBeTruthy();
       }
     });
@@ -144,18 +180,24 @@ describe('Passbook', () => {
   });
 
   describe('paging', () => {
-    const fullPage = () => Array.from({ length: 20 }, (_, index) => makeEntry(index + 1));
+    const fullPage = () =>
+      Array.from({ length: 20 }, (_, index) => makeEntry(index + 1));
 
     it('offers Load more while pages are full and loads the next one', async () => {
       mockedTrade.getHistory.mockResolvedValueOnce(page(fullPage()));
       renderWithProviders(<Passbook />);
       const loadMore = await screen.findByRole('button', { name: 'Load more' });
 
-      mockedTrade.getHistory.mockResolvedValueOnce(page([makeEntry(99, 'SYSTEM_REVERSAL')], 2));
+      mockedTrade.getHistory.mockResolvedValueOnce(
+        page([makeEntry(99, 'SYSTEM_REVERSAL')], 2),
+      );
       fireEvent.click(loadMore);
 
       expect(await screen.findByText('System Reversal')).toBeTruthy();
-      expect(mockedTrade.getHistory.mock.calls[1][0]).toEqual({ page: 2, limit: 20 });
+      expect(mockedTrade.getHistory.mock.calls[1][0]).toEqual({
+        page: 2,
+        limit: 20,
+      });
       expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
     });
 
@@ -178,7 +220,9 @@ describe('Passbook', () => {
         observerCallback?.([{ isIntersecting: true }]);
       });
 
-      await waitFor(() => expect(mockedTrade.getHistory).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(mockedTrade.getHistory).toHaveBeenCalledTimes(2),
+      );
     });
 
     it('does not load more when the end of the list is not in view', async () => {

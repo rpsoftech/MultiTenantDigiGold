@@ -8,8 +8,21 @@ jest.mock('next/navigation', () => ({
 }));
 
 const items: MenuItem[] = [
-  { id: 'home', label: 'Home', url: '/home', enabled: true, order: 1, icon: 'home' },
-  { id: 'market', label: 'Marketplace', url: '/marketplace', enabled: true, order: 2 },
+  {
+    id: 'home',
+    label: 'Home',
+    url: '/home',
+    enabled: true,
+    order: 1,
+    icon: 'home',
+  },
+  {
+    id: 'market',
+    label: 'Marketplace',
+    url: '/marketplace',
+    enabled: true,
+    order: 2,
+  },
   {
     id: 'vault',
     label: 'Vault',
@@ -17,8 +30,20 @@ const items: MenuItem[] = [
     enabled: true,
     order: 3,
     children: [
-      { id: 'passbook', label: 'Passbook', url: '/vault/passbook', enabled: true, order: 1 },
-      { id: 'redeem', label: 'Redeem Gold', url: '/vault/redemptions', enabled: true, order: 2 },
+      {
+        id: 'passbook',
+        label: 'Passbook',
+        url: '/vault/passbook',
+        enabled: true,
+        order: 1,
+      },
+      {
+        id: 'redeem',
+        label: 'Redeem Gold',
+        url: '/vault/redemptions',
+        enabled: true,
+        order: 2,
+      },
     ],
   },
   {
@@ -35,7 +60,15 @@ const items: MenuItem[] = [
     url: '#',
     enabled: true,
     order: 5,
-    children: [{ id: 'about-us', label: 'About Us', url: '/about-us', enabled: true, order: 1 }],
+    children: [
+      {
+        id: 'about-us',
+        label: 'About Us',
+        url: '/about-us',
+        enabled: true,
+        order: 1,
+      },
+    ],
   },
 ];
 
@@ -60,15 +93,23 @@ describe('NavMenu', () => {
     render(<NavMenu items={items} />);
 
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/home');
-    expect(screen.getByRole('link', { name: 'Marketplace' }).getAttribute('href')).toBe('/marketplace');
+    expect(
+      screen.getByRole('link', { name: 'Home' }).getAttribute('href'),
+    ).toBe('/home');
+    expect(
+      screen.getByRole('link', { name: 'Marketplace' }).getAttribute('href'),
+    ).toBe('/marketplace');
   });
 
   it('marks the link of the current page as active', () => {
     render(<NavMenu items={items} />);
 
-    expect(screen.getByRole('link', { name: 'Home' }).className).toContain('navLinkActive');
-    expect(screen.getByRole('link', { name: 'Marketplace' }).className).not.toContain('navLinkActive');
+    expect(screen.getByRole('link', { name: 'Home' }).className).toContain(
+      'navLinkActive',
+    );
+    expect(
+      screen.getByRole('link', { name: 'Marketplace' }).className,
+    ).not.toContain('navLinkActive');
   });
 
   it('opens external links in a new tab with a safe rel', () => {
@@ -82,8 +123,12 @@ describe('NavMenu', () => {
   it('shows an icon when the item has one', () => {
     render(<NavMenu items={items} />);
 
-    expect(screen.getByRole('link', { name: 'Home' }).querySelector('svg')).not.toBeNull();
-    expect(screen.getByRole('link', { name: 'Marketplace' }).querySelector('svg')).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Home' }).querySelector('svg'),
+    ).not.toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Marketplace' }).querySelector('svg'),
+    ).toBeNull();
   });
 
   describe('items with children', () => {
@@ -98,30 +143,38 @@ describe('NavMenu', () => {
 
       openMenu('Vault');
 
-      expect(screen.getByRole('link', { name: 'Passbook' }).getAttribute('href')).toBe('/vault/passbook');
-      expect(screen.getByRole('link', { name: 'Redeem Gold' }).getAttribute('href')).toBe(
-        '/vault/redemptions',
-      );
+      expect(
+        screen.getByRole('link', { name: 'Passbook' }).getAttribute('href'),
+      ).toBe('/vault/passbook');
+      expect(
+        screen.getByRole('link', { name: 'Redeem Gold' }).getAttribute('href'),
+      ).toBe('/vault/redemptions');
     });
 
     it('marks the parent active when one of its children is the current page', () => {
       pathname = '/vault/redemptions';
       render(<NavMenu items={items} />);
 
-      expect(screen.getByRole('button', { name: 'Vault' }).className).toContain('navLinkActive');
+      expect(screen.getByRole('button', { name: 'Vault' }).className).toContain(
+        'navLinkActive',
+      );
     });
 
     it('does not mark the parent active on an unrelated page', () => {
       render(<NavMenu items={items} />);
 
-      expect(screen.getByRole('button', { name: 'Vault' }).className).not.toContain('navLinkActive');
+      expect(
+        screen.getByRole('button', { name: 'Vault' }).className,
+      ).not.toContain('navLinkActive');
     });
 
     it('never treats a placeholder # url as the current page', () => {
       pathname = '#';
       render(<NavMenu items={items} />);
 
-      expect(screen.getByRole('button', { name: 'About' }).className).not.toContain('navLinkActive');
+      expect(
+        screen.getByRole('button', { name: 'About' }).className,
+      ).not.toContain('navLinkActive');
     });
   });
 });

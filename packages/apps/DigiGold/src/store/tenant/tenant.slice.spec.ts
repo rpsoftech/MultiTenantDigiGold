@@ -16,7 +16,9 @@ describe('tenant slice', () => {
   it('replaces the tenant when a new config arrives', () => {
     const store = makeStore({ tenant: { config: DEFAULT_TENANT_CONFIG } });
 
-    store.dispatch(tenantConfigReceived({ ...DEFAULT_TENANT_CONFIG, displayName: 'Acme' }));
+    store.dispatch(
+      tenantConfigReceived({ ...DEFAULT_TENANT_CONFIG, displayName: 'Acme' }),
+    );
 
     expect(selectTenantConfig(store.getState())?.displayName).toBe('Acme');
   });

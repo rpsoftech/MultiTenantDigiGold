@@ -10,7 +10,9 @@ async function freshModule(): Promise<RazorpayModule> {
 }
 
 function findScript(): HTMLScriptElement | null {
-  return document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+  return document.querySelector(
+    'script[src="https://checkout.razorpay.com/v1/checkout.js"]',
+  );
 }
 
 describe('loadRazorpayScript', () => {
@@ -50,7 +52,9 @@ describe('loadRazorpayScript', () => {
     const second = loadRazorpayScript();
 
     expect(first).toBe(second);
-    expect(document.querySelectorAll('script[src*="razorpay"]')).toHaveLength(1);
+    expect(document.querySelectorAll('script[src*="razorpay"]')).toHaveLength(
+      1,
+    );
     window.Razorpay = jest.fn() as unknown as typeof window.Razorpay;
     findScript()?.onload?.(new Event('load'));
     await first;
@@ -61,7 +65,9 @@ describe('loadRazorpayScript', () => {
 
     const failed = loadRazorpayScript();
     findScript()?.onerror?.(new Event('error'));
-    await expect(failed).rejects.toThrow('Failed to load Razorpay checkout script');
+    await expect(failed).rejects.toThrow(
+      'Failed to load Razorpay checkout script',
+    );
 
     document.body.innerHTML = '';
     const retry = loadRazorpayScript();

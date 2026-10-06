@@ -11,7 +11,9 @@ describe('Loader', () => {
   it('uses a custom label for assistive tech', () => {
     render(<Loader label="Loading passbook" />);
 
-    expect(screen.getByRole('status', { name: 'Loading passbook' })).toBeTruthy();
+    expect(
+      screen.getByRole('status', { name: 'Loading passbook' }),
+    ).toBeTruthy();
   });
 
   it('supports a small size and extra classes', () => {
@@ -33,7 +35,9 @@ describe('Skeleton', () => {
   it('is hidden from assistive tech', () => {
     const { container } = render(<Skeleton />);
 
-    expect((container.firstChild as HTMLElement).getAttribute('aria-hidden')).toBe('true');
+    expect(
+      (container.firstChild as HTMLElement).getAttribute('aria-hidden'),
+    ).toBe('true');
   });
 
   it('fills the width and is one line tall by default', () => {
@@ -45,7 +49,9 @@ describe('Skeleton', () => {
   });
 
   it('takes a custom size and rounded corners', () => {
-    const { container } = render(<Skeleton width={120} height="2rem" rounded className="extra" />);
+    const { container } = render(
+      <Skeleton width={120} height="2rem" rounded className="extra" />,
+    );
 
     const skeleton = container.firstChild as HTMLElement;
     expect(skeleton.style.width).toBe('120px');

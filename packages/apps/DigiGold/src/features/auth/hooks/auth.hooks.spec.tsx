@@ -3,7 +3,6 @@ import {
   makeJwt,
   renderHookWithProviders,
 } from '@/test-utils/renderWithProviders';
-import { setStoredKycStatus } from '@/features/kyc/kyc-status-storage';
 import { getRegistrationToken } from '@/lib/auth/tokenStorage';
 import { authService } from '../auth.service';
 import { useCompleteProfile } from './useCompleteProfile';
@@ -29,23 +28,33 @@ describe('useRequestOtp', () => {
       message: 'sent',
       is_registered: true,
     });
-    const { result } = renderHookWithProviders(() => useRequestOtp(), { user: null });
+    const { result } = renderHookWithProviders(() => useRequestOtp(), {
+      user: null,
+    });
 
     let response: unknown;
     await act(async () => {
-      response = await result.current.mutateAsync({ mobileNumber: '9876543210' });
+      response = await result.current.mutateAsync({
+        mobileNumber: '9876543210',
+      });
     });
 
-    expect(mockedAuth.requestOtp.mock.calls[0][0]).toEqual({ mobileNumber: '9876543210' });
+    expect(mockedAuth.requestOtp.mock.calls[0][0]).toEqual({
+      mobileNumber: '9876543210',
+    });
     expect(response).toMatchObject({ is_registered: true });
   });
 
   it('surfaces a failure to the caller', async () => {
     mockedAuth.requestOtp.mockRejectedValue({ status: 429, message: 'wait' });
-    const { result } = renderHookWithProviders(() => useRequestOtp(), { user: null });
+    const { result } = renderHookWithProviders(() => useRequestOtp(), {
+      user: null,
+    });
 
     await act(async () => {
-      await expect(result.current.mutateAsync({ mobileNumber: '9876543210' })).rejects.toMatchObject({
+      await expect(
+        result.current.mutateAsync({ mobileNumber: '9876543210' }),
+      ).rejects.toMatchObject({
         status: 429,
       });
     });
@@ -66,10 +75,15 @@ describe('useVerifyOtp', () => {
       is_registered: true,
       access_token: makeJwt({ user_uuid: 'u-42' }),
     });
-    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), { user: null });
+    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), {
+      user: null,
+    });
 
     await act(async () => {
-      await result.current.mutateAsync({ mobileNumber: '9876543210', otp: '123456' });
+      await result.current.mutateAsync({
+        mobileNumber: '9876543210',
+        otp: '123456',
+      });
     });
 
     expect(store.getState().session.user).toEqual({
@@ -82,21 +96,28 @@ describe('useVerifyOtp', () => {
     expect(store.getState().session.isAuthenticated).toBe(true);
   });
 
-  it('restores the KYC status remembered for that customer', async () => {
-    setStoredKycStatus('u-42', 'pending');
+  // KYC status is fetched from MainServer (GET /user/kyc). A value an older build left in
+  // localStorage must never be trusted: a client-side "verified" would lift buy limits.
+  it('ignores a KYC status left in browser storage by older builds', async () => {
+    window.localStorage.setItem('kyc_status:u-42', 'verified');
     mockedAuth.verifyOtp.mockResolvedValue({
       success: true,
       message: 'ok',
       is_registered: true,
       access_token: makeJwt({ user_uuid: 'u-42' }),
     });
-    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), { user: null });
-
-    await act(async () => {
-      await result.current.mutateAsync({ mobileNumber: '9876543210', otp: '123456' });
+    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), {
+      user: null,
     });
 
-    expect(store.getState().session.user?.kycStatus).toBe('pending');
+    await act(async () => {
+      await result.current.mutateAsync({
+        mobileNumber: '9876543210',
+        otp: '123456',
+      });
+    });
+
+    expect(store.getState().session.user?.kycStatus).toBe('not_started');
   });
 
   it('starts registration for a new number and keeps the registration token', async () => {
@@ -106,10 +127,15 @@ describe('useVerifyOtp', () => {
       is_registered: false,
       registration_token: 'reg-token',
     });
-    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), { user: null });
+    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), {
+      user: null,
+    });
 
     await act(async () => {
-      await result.current.mutateAsync({ mobileNumber: '9876543210', otp: '123456' });
+      await result.current.mutateAsync({
+        mobileNumber: '9876543210',
+        otp: '123456',
+      });
     });
 
     const session = store.getState().session;
@@ -122,7 +148,9 @@ describe('useVerifyOtp', () => {
 
   it('changes nothing when the code is rejected', async () => {
     mockedAuth.verifyOtp.mockRejectedValue({ status: 400, message: 'bad otp' });
-    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), { user: null });
+    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), {
+      user: null,
+    });
 
     await act(async () => {
       await result.current
@@ -144,15 +172,18 @@ describe('useCompleteProfile', () => {
       message: 'ok',
       is_registered: true,
     });
-    const { result, store } = renderHookWithProviders(() => useCompleteProfile(), {
-      user: {
-        userId: '',
-        role: 'customer',
-        mobileNumber: '9876543210',
-        isNewUser: true,
-        kycStatus: 'not_started',
+    const { result, store } = renderHookWithProviders(
+      () => useCompleteProfile(),
+      {
+        user: {
+          userId: '',
+          role: 'customer',
+          mobileNumber: '9876543210',
+          isNewUser: true,
+          kycStatus: 'not_started',
+        },
       },
-    });
+    );
     const payload = {
       registrationToken: 'reg',
       fullName: 'Jane Doe',
@@ -170,20 +201,30 @@ describe('useCompleteProfile', () => {
   });
 
   it('leaves the registration state alone when the request fails', async () => {
-    mockedAuth.completeProfile.mockRejectedValue({ status: 500, message: 'down' });
-    const { result, store } = renderHookWithProviders(() => useCompleteProfile(), {
-      user: {
-        userId: '',
-        role: 'customer',
-        mobileNumber: '9876543210',
-        isNewUser: true,
-        kycStatus: 'not_started',
-      },
+    mockedAuth.completeProfile.mockRejectedValue({
+      status: 500,
+      message: 'down',
     });
+    const { result, store } = renderHookWithProviders(
+      () => useCompleteProfile(),
+      {
+        user: {
+          userId: '',
+          role: 'customer',
+          mobileNumber: '9876543210',
+          isNewUser: true,
+          kycStatus: 'not_started',
+        },
+      },
+    );
 
     await act(async () => {
       await result.current
-        .mutateAsync({ registrationToken: 'reg', fullName: 'Jane', location: 'India' })
+        .mutateAsync({
+          registrationToken: 'reg',
+          fullName: 'Jane',
+          location: 'India',
+        })
         .catch(() => undefined);
     });
 

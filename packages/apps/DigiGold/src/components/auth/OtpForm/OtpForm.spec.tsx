@@ -1,8 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
-import {
-  makeJwt,
-  renderWithProviders,
-} from '@/test-utils/renderWithProviders';
+import { makeJwt, renderWithProviders } from '@/test-utils/renderWithProviders';
 import { authService } from '@/features/auth/auth.service';
 import { OtpForm } from './OtpForm';
 
@@ -11,7 +8,11 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: jest.fn() }),
 }));
 jest.mock('@/features/auth/auth.service', () => ({
-  authService: { requestOtp: jest.fn(), verifyOtp: jest.fn(), completeProfile: jest.fn() },
+  authService: {
+    requestOtp: jest.fn(),
+    verifyOtp: jest.fn(),
+    completeProfile: jest.fn(),
+  },
 }));
 
 const mockedAuth = authService as jest.Mocked<typeof authService>;
@@ -45,7 +46,9 @@ describe('OtpForm', () => {
   it('shows who the code was sent to', () => {
     renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
 
-    expect(screen.getByRole('heading', { name: 'Verify your identity' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Verify your identity' }),
+    ).toBeTruthy();
     expect(screen.getByText(/\+91/)).toBeTruthy();
   });
 
@@ -68,13 +71,18 @@ describe('OtpForm', () => {
         is_registered: true,
         access_token: makeJwt({ user_uuid: 'u-1' }),
       });
-      const { store } = renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
+      const { store } = renderWithProviders(<OtpForm mobileNumber={MOBILE} />, {
+        user: null,
+      });
       enterOtp('123456');
 
       fireEvent.click(verifyButton());
 
       await waitFor(() => expect(push).toHaveBeenCalledWith('/home'));
-      expect(mockedAuth.verifyOtp.mock.calls[0][0]).toEqual({ mobileNumber: MOBILE, otp: '123456' });
+      expect(mockedAuth.verifyOtp.mock.calls[0][0]).toEqual({
+        mobileNumber: MOBILE,
+        otp: '123456',
+      });
       expect(store.getState().session.user?.userId).toBe('u-1');
     });
 
@@ -100,9 +108,12 @@ describe('OtpForm', () => {
         is_registered: true,
         access_token: makeJwt({ user_uuid: 'u-1' }),
       });
-      renderWithProviders(<OtpForm mobileNumber={MOBILE} successRoute="/vault/passbook" />, {
-        user: null,
-      });
+      renderWithProviders(
+        <OtpForm mobileNumber={MOBILE} successRoute="/vault/passbook" />,
+        {
+          user: null,
+        },
+      );
       enterOtp('123456');
 
       fireEvent.click(verifyButton());
@@ -122,7 +133,9 @@ describe('OtpForm', () => {
 
       fireEvent.keyDown(screen.getByLabelText('Digit 6'), { key: 'Enter' });
 
-      await waitFor(() => expect(mockedAuth.verifyOtp).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(mockedAuth.verifyOtp).toHaveBeenCalledTimes(1),
+      );
     });
 
     it('does not submit an incomplete code with Enter', () => {
@@ -135,7 +148,11 @@ describe('OtpForm', () => {
     });
 
     it('reports an incorrect code and stays on the screen', async () => {
-      mockedAuth.verifyOtp.mockRejectedValue({ status: 400, message: 'bad', code: 'X' });
+      mockedAuth.verifyOtp.mockRejectedValue({
+        status: 400,
+        message: 'bad',
+        code: 'X',
+      });
       renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
       enterOtp('000000');
 
@@ -157,18 +174,25 @@ describe('OtpForm', () => {
       fireEvent.click(verifyButton());
 
       expect(await screen.findByText('Too many attempts')).toBeTruthy();
-      expect(screen.getByText('Too many attempts. Try again in 10 minutes.')).toBeTruthy();
+      expect(
+        screen.getByText('Too many attempts. Try again in 10 minutes.'),
+      ).toBeTruthy();
     });
   });
 
   describe('editing the number', () => {
     it('calls the provided handler', () => {
       const onEditNumber = jest.fn();
-      renderWithProviders(<OtpForm mobileNumber={MOBILE} onEditNumber={onEditNumber} />, {
-        user: null,
-      });
+      renderWithProviders(
+        <OtpForm mobileNumber={MOBILE} onEditNumber={onEditNumber} />,
+        {
+          user: null,
+        },
+      );
 
-      fireEvent.click(screen.getByRole('button', { name: 'Edit mobile number' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Edit mobile number' }),
+      );
 
       expect(onEditNumber).toHaveBeenCalledTimes(1);
       expect(push).not.toHaveBeenCalled();
@@ -177,7 +201,9 @@ describe('OtpForm', () => {
     it('goes back to the login route when there is no handler', () => {
       renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Edit mobile number' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Edit mobile number' }),
+      );
 
       expect(push).toHaveBeenCalledWith('/login');
     });
@@ -215,17 +241,23 @@ describe('OtpForm', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Resend Code' }));
       });
 
-      expect(mockedAuth.requestOtp.mock.calls[0][0]).toEqual({ mobileNumber: MOBILE });
+      expect(mockedAuth.requestOtp.mock.calls[0][0]).toEqual({
+        mobileNumber: MOBILE,
+      });
       expect(screen.getByText('OTP resent')).toBeTruthy();
       expect(screen.getByText('Local code: 654321')).toBeTruthy();
-      expect((screen.getByLabelText('Digit 1') as HTMLInputElement).value).toBe('');
+      expect((screen.getByLabelText('Digit 1') as HTMLInputElement).value).toBe(
+        '',
+      );
       expect(screen.getByText('00:30')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Resend Code' })).toBeNull();
     });
 
     it('explains the cooldown when resending is rate limited', async () => {
+      // apiClient's normalized error: MainServer's name for the 30 s resend cooldown.
       mockedAuth.requestOtp.mockRejectedValue({
         status: 429,
+        code: 'ERROR_RECENT_OTP_REQ_EXIST',
         message: 'Please wait 30 seconds before requesting a new OTP.',
       });
       renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
@@ -236,11 +268,17 @@ describe('OtpForm', () => {
       });
 
       expect(screen.getByText('Please wait')).toBeTruthy();
-      expect(screen.getByText('Please wait 30 seconds before requesting a new OTP.')).toBeTruthy();
+      expect(
+        screen.getByText('Please wait 30 seconds before requesting a new OTP.'),
+      ).toBeTruthy();
     });
 
     it('reports a generic failure when resending fails for another reason', async () => {
-      mockedAuth.requestOtp.mockRejectedValue({ status: 500, message: 'down' });
+      mockedAuth.requestOtp.mockRejectedValue({
+        status: 500,
+        code: 'ERR_BAD_RESPONSE',
+        message: 'down',
+      });
       renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
       tickSeconds(30);
 

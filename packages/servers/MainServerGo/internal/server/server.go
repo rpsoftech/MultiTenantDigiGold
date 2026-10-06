@@ -3,6 +3,8 @@
 package server
 
 import (
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -10,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
 	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
 	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
 	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
@@ -17,6 +20,32 @@ import (
 	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 )
+
+// corsAllowOriginsKey lists the frontend origins allowed to call the API, comma-separated
+// (e.g. "https://shop.example.com,https://admin.example.com"). Unset keeps the wildcard,
+// which is only meant for local development: tokens travel in the X-Api-Token header (not
+// cookies), so "*" is not a CSRF hole, but production should still name its own domains.
+const corsAllowOriginsKey = "CORS_ALLOW_ORIGINS"
+
+func corsAllowedOrigins() []string {
+	var origins []string
+	for _, origin := range strings.Split(os.Getenv(corsAllowOriginsKey), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{"*"}
+	}
+	return origins
+}
+
+func corsMiddleware() fiber.Handler {
+	return cors.New(cors.Config{
+		AllowOrigins: corsAllowedOrigins(),
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-Id", env.XApiToken},
+	})
+}
 
 // NewApp returns the Fiber app with all middleware and routes registered.
 // PostgreSQL, Redis and the env must already be initialised.
@@ -38,10 +67,7 @@ func NewApp(rateHub *rates_api.RateHub) *fiber.App {
 	app.Use(recover.New(recover.Config{
 		EnableStackTrace: true,
 	}))
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"*"}, // Replace with your frontend domains in prod
-		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-Id"},
-	}))
+	app.Use(corsMiddleware())
 
 	app.Use(middleware.OtelInterceptor)
 

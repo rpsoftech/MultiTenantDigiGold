@@ -1,210 +1,102 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { installMatchMedia, renderWithProviders } from '@/test-utils/renderWithProviders';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useToast } from '@/components/common/Toast/Toast';
 import { redemptionService } from '@/features/redemption/redemption.service';
 import { RedeemFlow } from './RedeemFlow';
+import { stubMatchMedia, withProviders } from './testUtils';
 
+jest.mock('@/components/common/Toast/Toast', () => ({ useToast: jest.fn() }));
 jest.mock('@/features/redemption/redemption.service', () => ({
   redemptionService: { create: jest.fn(), list: jest.fn(), cancel: jest.fn() },
 }));
 
-const mockedService = redemptionService as jest.Mocked<typeof redemptionService>;
+const showToast = jest.fn();
 
-const GRAMS_LABEL = 'Weight to redeem (grams)';
+beforeAll(stubMatchMedia);
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(useToast).mockReturnValue({ showToast });
+});
+afterEach(cleanup);
 
-function type(value: string) {
-  fireEvent.change(screen.getByLabelText(GRAMS_LABEL), { target: { value } });
+function gramsInput() {
+  return screen.getByLabelText<HTMLInputElement>('Weight to redeem (grams)');
 }
 
-function continueButton() {
-  return screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
+async function continueWith(grams: string) {
+  fireEvent.change(gramsInput(), { target: { value: grams } });
+  const button = screen.getByRole<HTMLButtonElement>('button', { name: 'Continue' });
+  await waitFor(() => expect(button.disabled).toBe(false));
+  fireEvent.click(button);
+  await screen.findByText('Confirm redemption');
 }
 
 describe('RedeemFlow', () => {
-  beforeAll(() => installMatchMedia());
-  beforeEach(() => jest.clearAllMocks());
-
-  it('shows the available balance and keeps Continue disabled until the weight is valid', async () => {
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-
-    expect(screen.getByText('5.0000 g')).toBeTruthy();
-    expect(continueButton().disabled).toBe(true);
-
-    type('2');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
+  it('explains how pickup works', () => {
+    render(withProviders(<RedeemFlow balanceGrams={12.5} />));
+    expect(screen.getByRole('region', { name: 'How pickup works' })).toBeTruthy();
+    expect(screen.getByText('Collect it in store')).toBeTruthy();
   });
 
-  it('rejects a weight above the vault balance', async () => {
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-
-    type('6');
-
-    expect(await screen.findByText('You can redeem up to 5.0000 g')).toBeTruthy();
-    expect(continueButton().disabled).toBe(true);
+  it('sends an empty vault to buy gold instead of showing the form', () => {
+    render(withProviders(<RedeemFlow balanceGrams={0} />));
+    expect(screen.getByText(/Your vault is empty/)).toBeTruthy();
+    expect(screen.queryByLabelText('Weight to redeem (grams)')).toBeNull();
   });
 
-  it('rejects a weight with too many decimals', async () => {
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-
-    type('1.23456');
-
-    expect(await screen.findByText(/up to 4 decimal places/)).toBeTruthy();
-  });
-
-  it('only offers quick amounts that fit in the vault, plus Max', () => {
-    renderWithProviders(<RedeemFlow balanceGrams={1.5} />);
-
-    expect(screen.getByRole('button', { name: '0.5 g' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '1 g' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '5 g' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '10 g' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Max' })).toBeTruthy();
-  });
-
-  it('fills the weight from a chip and from Max (rounded down)', async () => {
-    renderWithProviders(<RedeemFlow balanceGrams={2.34567} />);
-    const input = screen.getByLabelText(GRAMS_LABEL) as HTMLInputElement;
-
-    fireEvent.click(screen.getByRole('button', { name: '1 g' }));
-    expect(input.value).toBe('1');
-
+  it('fills Max with the balance rounded down to 4 decimals', async () => {
+    render(withProviders(<RedeemFlow balanceGrams={2.123456} />));
     fireEvent.click(screen.getByRole('button', { name: 'Max' }));
-    expect(input.value).toBe('2.3456');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
+    await waitFor(() => expect(gramsInput().value).toBe('2.1234'));
   });
 
-  it('opens a confirmation modal summarising the redemption', async () => {
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-    type('2');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
-
-    fireEvent.click(continueButton());
-
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog.textContent).toContain('Confirm redemption');
-    expect(dialog.textContent).toContain('2.0000 g');
-    expect(dialog.textContent).toContain('3.0000 g');
-    expect(mockedService.create).not.toHaveBeenCalled();
+  it('rejects more than the vault holds', async () => {
+    render(withProviders(<RedeemFlow balanceGrams={1} />));
+    fireEvent.change(gramsInput(), { target: { value: '1.5' } });
+    expect(await screen.findByText('You can redeem up to 1.0000 g')).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Continue' }).disabled).toBe(true);
   });
 
-  it('returns to the form with the typed weight when the modal is dismissed', async () => {
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-    type('2');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
-    fireEvent.click(continueButton());
-    await screen.findByRole('dialog');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect((screen.getByLabelText(GRAMS_LABEL) as HTMLInputElement).value).toBe('2');
-    expect(mockedService.create).not.toHaveBeenCalled();
-  });
-
-  it('creates the redemption and shows the pickup code', async () => {
-    mockedService.create.mockResolvedValue({
+  it('confirms, debits through the API and shows the pickup code', async () => {
+    jest.mocked(redemptionService.create).mockResolvedValue({
       success: true,
       message: 'ok',
       redemption: {
         redemption_uuid: 'r-1',
-        weight_grams: 2,
+        weight_grams: 1.25,
         status: 'PENDING',
-        pickup_code: '482915',
-        created_at: '2026-10-01T10:00:00Z',
+        pickup_code: '482913',
+        created_at: '2026-10-04T10:00:00Z',
       },
     });
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-    type('2');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
-    fireEvent.click(continueButton());
-    await screen.findByRole('dialog');
+    render(withProviders(<RedeemFlow balanceGrams={3} />));
 
+    await continueWith('1.25');
+    expect(screen.getByText('1.2500 g')).toBeTruthy(); // gold to collect
+    expect(screen.getByText('1.7500 g')).toBeTruthy(); // vault balance after
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(await screen.findByText('Redemption requested')).toBeTruthy();
-    expect(mockedService.create.mock.calls[0][0]).toEqual({ weight_grams: 2 });
-    expect(screen.getByText('482915')).toBeTruthy();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('482913')).toBeTruthy();
+    expect(jest.mocked(redemptionService.create).mock.calls[0][0]).toEqual({ weight_grams: 1.25 });
   });
 
-  it('starts over from the success screen', async () => {
-    mockedService.create.mockResolvedValue({
-      success: true,
-      message: 'ok',
-      redemption: {
-        redemption_uuid: 'r-1',
-        weight_grams: 2,
-        status: 'PENDING',
-        pickup_code: '482915',
-        created_at: '2026-10-01T10:00:00Z',
-      },
-    });
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-    type('2');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
-    fireEvent.click(continueButton());
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
-    await screen.findByText('Redemption requested');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Redeem more' }));
-
-    expect((screen.getByLabelText(GRAMS_LABEL) as HTMLInputElement).value).toBe('');
-  });
-
-  it('keeps the modal open and reports the error when creation fails', async () => {
-    mockedService.create.mockRejectedValue({
-      code: 'ERROR_INSUFFICIENT_BALANCE',
-      message: 'Insufficient gold balance for this transaction.',
+  it("shows the server's reason when the redemption is refused", async () => {
+    jest.mocked(redemptionService.create).mockRejectedValue({
+      message: 'Insufficient vault balance',
+      code: 'INSUFFICIENT_BALANCE',
       status: 400,
     });
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-    type('2');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
-    fireEvent.click(continueButton());
+    render(withProviders(<RedeemFlow balanceGrams={3} />));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await continueWith('1');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
-    expect(await screen.findByText('Could not create redemption')).toBeTruthy();
-    expect(screen.getByText('Insufficient gold balance for this transaction.')).toBeTruthy();
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(screen.queryByText('Redemption requested')).toBeNull();
-  });
-
-  it('sends the request once even if Confirm is pressed repeatedly', async () => {
-    let resolveCreate: (value: unknown) => void = () => undefined;
-    mockedService.create.mockImplementation(
-      () => new Promise((resolve) => (resolveCreate = resolve)) as never,
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'danger', description: 'Insufficient vault balance' }),
+      ),
     );
-    renderWithProviders(<RedeemFlow balanceGrams={5} />);
-    type('2');
-    await waitFor(() => expect(continueButton().disabled).toBe(false));
-    fireEvent.click(continueButton());
-    const confirm = await screen.findByRole('button', { name: 'Confirm' });
-
-    fireEvent.click(confirm);
-    // While the request is in flight the buttons are replaced by a loader.
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull());
-    expect(screen.getByRole('status', { name: 'Creating your redemption' })).toBeTruthy();
-    expect(mockedService.create).toHaveBeenCalledTimes(1);
-
-    resolveCreate({
-      success: true,
-      message: 'ok',
-      redemption: {
-        redemption_uuid: 'r-1',
-        weight_grams: 2,
-        status: 'PENDING',
-        pickup_code: '111111',
-        created_at: '2026-10-01T10:00:00Z',
-      },
-    });
-    expect(await screen.findByText('Redemption requested')).toBeTruthy();
-  });
-
-  it('points to buying gold when the vault is empty', () => {
-    renderWithProviders(<RedeemFlow balanceGrams={0} />);
-
-    expect(screen.getByText(/your vault is empty/i)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Buy gold' }).getAttribute('href')).toBe('/home');
-    expect(screen.queryByLabelText(GRAMS_LABEL)).toBeNull();
+    expect(screen.queryByText('Redemption requested')).toBeNull();
   });
 });

@@ -57,7 +57,7 @@ export function useBuySettlement(paymentId: string | null) {
 }
 
 function findEntry(
-  entries: TradeHistoryEntry[] | undefined,
+  entries: TradeHistoryEntry[] | null | undefined,
   paymentId: string | null,
 ): TradeHistoryEntry | undefined {
   if (!entries || !paymentId) return undefined;

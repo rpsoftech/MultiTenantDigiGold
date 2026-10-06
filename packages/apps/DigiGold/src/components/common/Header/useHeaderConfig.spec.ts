@@ -14,16 +14,50 @@ jest.mock('./header.config.json', () => ({
       order: 2,
       children: [
         { id: 'child-b', label: 'B', url: '/b', enabled: true, order: 2 },
-        { id: 'child-off', label: 'Off child', url: '/x', enabled: false, order: 1 },
+        {
+          id: 'child-off',
+          label: 'Off child',
+          url: '/x',
+          enabled: false,
+          order: 1,
+        },
         { id: 'child-a', label: 'A', url: '/a', enabled: true, order: 1 },
       ],
     },
-    { id: 'leaf', label: 'Leaf', url: '/leaf', enabled: true, order: 1, children: [] },
+    {
+      id: 'leaf',
+      label: 'Leaf',
+      url: '/leaf',
+      enabled: true,
+      order: 1,
+      children: [],
+    },
   ],
   actions: [
-    { id: 'second', label: 'Second', url: '/s', type: 'button', enabled: true, order: 2 },
-    { id: 'hidden', label: 'Hidden', url: '/h', type: 'link', enabled: false, order: 0 },
-    { id: 'first', label: 'First', url: '/f', type: 'link', enabled: true, order: 1 },
+    {
+      id: 'second',
+      label: 'Second',
+      url: '/s',
+      type: 'button',
+      enabled: true,
+      order: 2,
+    },
+    {
+      id: 'hidden',
+      label: 'Hidden',
+      url: '/h',
+      type: 'link',
+      enabled: false,
+      order: 0,
+    },
+    {
+      id: 'first',
+      label: 'First',
+      url: '/f',
+      type: 'link',
+      enabled: true,
+      order: 1,
+    },
   ],
 }));
 
@@ -37,14 +71,21 @@ describe('useHeaderConfig', () => {
   it('drops disabled menu items and sorts the rest by order', () => {
     const { result } = renderHook(() => useHeaderConfig());
 
-    expect(result.current.menus.map((item) => item.id)).toEqual(['leaf', 'parent', 'late']);
+    expect(result.current.menus.map((item) => item.id)).toEqual([
+      'leaf',
+      'parent',
+      'late',
+    ]);
   });
 
   it('applies the same rules to nested menu items', () => {
     const { result } = renderHook(() => useHeaderConfig());
     const parent = result.current.menus.find((item) => item.id === 'parent');
 
-    expect(parent?.children?.map((child) => child.id)).toEqual(['child-a', 'child-b']);
+    expect(parent?.children?.map((child) => child.id)).toEqual([
+      'child-a',
+      'child-b',
+    ]);
   });
 
   it('treats an empty children list as no children', () => {
@@ -57,7 +98,10 @@ describe('useHeaderConfig', () => {
   it('drops disabled actions and sorts the rest by order', () => {
     const { result } = renderHook(() => useHeaderConfig());
 
-    expect(result.current.actions.map((action) => action.id)).toEqual(['first', 'second']);
+    expect(result.current.actions.map((action) => action.id)).toEqual([
+      'first',
+      'second',
+    ]);
   });
 
   it('returns the same object across renders', () => {

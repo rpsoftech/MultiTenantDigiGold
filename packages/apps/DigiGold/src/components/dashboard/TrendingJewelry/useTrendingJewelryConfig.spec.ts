@@ -14,7 +14,10 @@ describe('useTrendingJewelryConfig', () => {
   it('returns the section copy from the site config', () => {
     const { result } = renderHook(() => useTrendingJewelryConfig());
 
-    expect(result.current).toMatchObject({ title: 'Trending', viewAllUrl: '/all' });
+    expect(result.current).toMatchObject({
+      title: 'Trending',
+      viewAllUrl: '/all',
+    });
   });
 
   it('returns the same object across renders', () => {

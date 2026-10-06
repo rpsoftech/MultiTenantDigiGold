@@ -6,12 +6,20 @@ import { Logo } from './Logo';
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ src, alt, style }: { src: string; alt: string; style?: React.CSSProperties }) => (
-    <img src={src} alt={alt} style={style} />
-  ),
+  default: ({
+    src,
+    alt,
+    style,
+  }: {
+    src: string;
+    alt: string;
+    style?: React.CSSProperties;
+  }) => <img src={src} alt={alt} style={style} />,
 }));
 
-const withTenant = (config: TenantConfig | null) => ({ preloaded: { tenant: { config } } });
+const withTenant = (config: TenantConfig | null) => ({
+  preloaded: { tenant: { config } },
+});
 
 describe('Logo', () => {
   it('shows the brand name as text before any tenant is known', () => {
@@ -26,7 +34,10 @@ describe('Logo', () => {
       withTenant({
         ...DEFAULT_TENANT_CONFIG,
         displayName: 'Acme',
-        brandLogo: { url: 'https://cdn.example.com/logo.png', alt: 'Acme logo' },
+        brandLogo: {
+          url: 'https://cdn.example.com/logo.png',
+          alt: 'Acme logo',
+        },
       }),
     );
 
@@ -62,7 +73,10 @@ describe('Logo', () => {
   });
 
   it('sizes the image by the requested height', () => {
-    renderWithProviders(<Logo height={40} />, withTenant(DEFAULT_TENANT_CONFIG));
+    renderWithProviders(
+      <Logo height={40} />,
+      withTenant(DEFAULT_TENANT_CONFIG),
+    );
 
     const image = screen.getByRole('img') as HTMLImageElement;
     expect(image.style.height).toBe('40px');

@@ -26,27 +26,35 @@
       "url": "/vault",
       "enabled": true,
       "order": 3,
+      "module": "vault",
       "children": [
+        {
+          "id": "my-vault",
+          "label": "My Vault",
+          "url": "/vault",
+          "enabled": true,
+          "order": 1
+        },
         {
           "id": "passbook",
           "label": "Passbook",
           "url": "/vault/passbook",
           "enabled": true,
-          "order": 1
+          "order": 2
         },
         {
           "id": "redemptions",
           "label": "Redeem Gold",
           "url": "/vault/redemptions",
           "enabled": true,
-          "order": 2
+          "order": 3
         },
         {
           "id": "vault-security",
           "label": "Security",
           "url": "/vault/security",
-          "enabled": true,
-          "order": 3
+          "enabled": false,
+          "order": 4
         }
       ]
     },

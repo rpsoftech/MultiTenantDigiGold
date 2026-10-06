@@ -19,8 +19,12 @@ jest.mock('@/features/tenant/applyTenantTheme', () => ({
   applyTenantTheme: jest.fn(),
 }));
 
-const mockedResolve = resolveTenantConfig as jest.MockedFunction<typeof resolveTenantConfig>;
-const mockedApplyTheme = applyTenantTheme as jest.MockedFunction<typeof applyTenantTheme>;
+const mockedResolve = resolveTenantConfig as jest.MockedFunction<
+  typeof resolveTenantConfig
+>;
+const mockedApplyTheme = applyTenantTheme as jest.MockedFunction<
+  typeof applyTenantTheme
+>;
 
 const FUTURE = Math.floor(Date.now() / 1000) + 3600;
 
@@ -48,7 +52,10 @@ describe('Providers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     window.localStorage.clear();
-    mockedResolve.mockResolvedValue({ ...DEFAULT_TENANT_CONFIG, displayName: 'Acme Jewellers' });
+    mockedResolve.mockResolvedValue({
+      ...DEFAULT_TENANT_CONFIG,
+      displayName: 'Acme Jewellers',
+    });
   });
 
   it('renders its children with the build-time tenant first', () => {
@@ -68,7 +75,9 @@ describe('Providers', () => {
   it('swaps in the tenant resolved from the server and re-applies the theme', async () => {
     renderProviders();
 
-    await waitFor(() => expect(screen.getByTestId('tenant').textContent).toBe('Acme Jewellers'));
+    await waitFor(() =>
+      expect(screen.getByTestId('tenant').textContent).toBe('Acme Jewellers'),
+    );
     expect(mockedApplyTheme).toHaveBeenLastCalledWith(
       expect.objectContaining({ displayName: 'Acme Jewellers' }),
     );
@@ -96,40 +105,66 @@ describe('Providers', () => {
     );
     renderProviders();
 
-    await waitFor(() => expect(screen.getByTestId('user').textContent).toBe('u-7'));
+    await waitFor(() =>
+      expect(screen.getByTestId('user').textContent).toBe('u-7'),
+    );
     expect(screen.getByTestId('auth').textContent).toBe('true');
   });
 
   it('ignores an expired stored token', () => {
     window.localStorage.setItem(
       'access_token',
-      makeJwt({ user_uuid: 'u-7', phone: '9876543210', exp: Math.floor(Date.now() / 1000) - 60 }),
+      makeJwt({
+        user_uuid: 'u-7',
+        phone: '9876543210',
+        exp: Math.floor(Date.now() / 1000) - 60,
+      }),
     );
     renderProviders();
 
     expect(screen.getByTestId('user').textContent).toBe('none');
   });
 
-  it('logs out and returns to login when the session expires', async () => {
+  it('logs out and returns to login when MainServer rejects the session', async () => {
     window.localStorage.setItem(
       'access_token',
       makeJwt({ user_uuid: 'u-7', phone: '9876543210', exp: FUTURE }),
     );
     renderProviders();
-    await waitFor(() => expect(screen.getByTestId('auth').textContent).toBe('true'));
+    await waitFor(() =>
+      expect(screen.getByTestId('auth').textContent).toBe('true'),
+    );
 
-    act(() => emitSessionExpired());
+    act(() => emitSessionExpired('rejected'));
 
     expect(screen.getByTestId('auth').textContent).toBe('false');
     expect(screen.getByTestId('user').textContent).toBe('none');
     expect(push).toHaveBeenCalledWith('/login');
   });
 
+  // A token found expired before a request is sent may be on a public page: sign out
+  // quietly; a protected request's 401 then does the redirect.
+  it('logs out without redirecting when the token expired client-side', async () => {
+    window.localStorage.setItem(
+      'access_token',
+      makeJwt({ user_uuid: 'u-7', phone: '9876543210', exp: FUTURE }),
+    );
+    renderProviders();
+    await waitFor(() =>
+      expect(screen.getByTestId('auth').textContent).toBe('true'),
+    );
+
+    act(() => emitSessionExpired('expired'));
+
+    expect(screen.getByTestId('auth').textContent).toBe('false');
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('stops listening for session expiry once unmounted', () => {
     const { unmount } = renderProviders();
 
     unmount();
-    act(() => emitSessionExpired());
+    act(() => emitSessionExpired('rejected'));
 
     expect(push).not.toHaveBeenCalled();
   });

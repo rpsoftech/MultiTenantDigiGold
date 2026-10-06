@@ -1,5 +1,8 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { installMatchMedia, renderWithProviders } from '@/test-utils/renderWithProviders';
+import {
+  installMatchMedia,
+  renderWithProviders,
+} from '@/test-utils/renderWithProviders';
 import { redemptionService } from '@/features/redemption/redemption.service';
 import type { Redemption } from '@/features/redemption/redemption.types';
 import { RedemptionList } from './RedemptionList';
@@ -8,9 +11,14 @@ jest.mock('@/features/redemption/redemption.service', () => ({
   redemptionService: { create: jest.fn(), list: jest.fn(), cancel: jest.fn() },
 }));
 
-const mockedService = redemptionService as jest.Mocked<typeof redemptionService>;
+const mockedService = redemptionService as jest.Mocked<
+  typeof redemptionService
+>;
 
-function makeRedemption(index: number, status: Redemption['status'] = 'PENDING'): Redemption {
+function makeRedemption(
+  index: number,
+  status: Redemption['status'] = 'PENDING',
+): Redemption {
   return {
     redemption_uuid: `r-${index}`,
     weight_grams: index,
@@ -32,7 +40,9 @@ describe('RedemptionList', () => {
     mockedService.list.mockReturnValue(new Promise(() => undefined) as never);
     renderWithProviders(<RedemptionList />);
 
-    expect(screen.getByRole('status', { name: 'Loading redemptions' })).toBeTruthy();
+    expect(
+      screen.getByRole('status', { name: 'Loading redemptions' }),
+    ).toBeTruthy();
   });
 
   it('shows an empty state when there are no redemptions', async () => {
@@ -44,7 +54,11 @@ describe('RedemptionList', () => {
 
   it('renders each redemption with its status', async () => {
     mockedService.list.mockResolvedValue(
-      page([makeRedemption(1), makeRedemption(2, 'COLLECTED'), makeRedemption(3, 'CANCELLED')]),
+      page([
+        makeRedemption(1),
+        makeRedemption(2, 'COLLECTED'),
+        makeRedemption(3, 'CANCELLED'),
+      ]),
     );
     renderWithProviders(<RedemptionList />);
 
@@ -52,13 +66,17 @@ describe('RedemptionList', () => {
     expect(screen.getByText('Collected')).toBeTruthy();
     expect(screen.getByText('Cancelled')).toBeTruthy();
     // Only the pending item offers a cancel action.
-    expect(screen.getAllByRole('button', { name: 'Cancel redemption' })).toHaveLength(1);
+    expect(
+      screen.getAllByRole('button', { name: 'Cancel redemption' }),
+    ).toHaveLength(1);
   });
 
   it('offers a retry after a load failure', async () => {
     mockedService.list.mockRejectedValueOnce({ message: 'down', status: 500 });
     renderWithProviders(<RedemptionList />);
-    expect(await screen.findByText(/couldn.t load your redemptions/i)).toBeTruthy();
+    expect(
+      await screen.findByText(/couldn.t load your redemptions/i),
+    ).toBeTruthy();
 
     mockedService.list.mockResolvedValueOnce(page([makeRedemption(1)]));
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -67,12 +85,16 @@ describe('RedemptionList', () => {
   });
 
   it('loads more pages on demand', async () => {
-    const firstPage = Array.from({ length: 20 }, (_, index) => makeRedemption(index + 1));
+    const firstPage = Array.from({ length: 20 }, (_, index) =>
+      makeRedemption(index + 1),
+    );
     mockedService.list.mockResolvedValueOnce(page(firstPage));
     renderWithProviders(<RedemptionList />);
     const loadMore = await screen.findByRole('button', { name: 'Load more' });
 
-    mockedService.list.mockResolvedValueOnce(page([makeRedemption(21, 'COLLECTED')], 2));
+    mockedService.list.mockResolvedValueOnce(
+      page([makeRedemption(21, 'COLLECTED')], 2),
+    );
     fireEvent.click(loadMore);
 
     await waitFor(() => expect(screen.getByText('Collected')).toBeTruthy());

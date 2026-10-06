@@ -1,5 +1,4 @@
 import { makeJwt } from '@/test-utils/renderWithProviders';
-import { setStoredKycStatus } from '@/features/kyc/kyc-status-storage';
 import { restoreSessionUser } from './session-restore';
 
 const FUTURE = Math.floor(Date.now() / 1000) + 3600;
@@ -12,29 +11,21 @@ describe('restoreSessionUser', () => {
     expect(restoreSessionUser()).toBeNull();
   });
 
-  it('restores the customer and their remembered kyc status', () => {
+  // KYC status is not in the token and is never trusted from browser storage: screens
+  // that need it fetch it from MainServer (GET /user/kyc) once mounted.
+  it('restores the customer from the token, with KYC status left to the server', () => {
     window.localStorage.setItem(
       'access_token',
       makeJwt({ user_uuid: 'user-1', phone: '9999900001', exp: FUTURE }),
     );
-    setStoredKycStatus('user-1', 'pending');
 
     expect(restoreSessionUser()).toEqual({
       userId: 'user-1',
       role: 'customer',
       mobileNumber: '9999900001',
       isNewUser: false,
-      kycStatus: 'pending',
+      kycStatus: 'not_started',
     });
-  });
-
-  it('falls back to not_started when no kyc status was remembered', () => {
-    window.localStorage.setItem(
-      'access_token',
-      makeJwt({ user_uuid: 'user-2', phone: '9999900002', exp: FUTURE }),
-    );
-
-    expect(restoreSessionUser()?.kycStatus).toBe('not_started');
   });
 
   it('clears an expired token and returns null', () => {

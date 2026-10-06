@@ -41,40 +41,52 @@ describe('mapPublicTenantInfoToConfig', () => {
     expect(config.subdomain).toBeNull();
   });
 
-  describe.each([[undefined], [null], ['text'], [42], [[]]])('with an unusable ui config %p', (ui) => {
-    it('falls back to the brand-neutral defaults', () => {
-      const config = mapPublicTenantInfoToConfig(makeInfo(ui));
+  describe.each([[undefined], [null], ['text'], [42], [[]]])(
+    'with an unusable ui config %p',
+    (ui) => {
+      it('falls back to the brand-neutral defaults', () => {
+        const config = mapPublicTenantInfoToConfig(makeInfo(ui));
 
-      expect(config.brandLogo).toEqual(DEFAULT_TENANT_UI.brandLogo);
-      expect(config.theme).toEqual(DEFAULT_TENANT_UI.theme);
-      expect(config.activeModules).toEqual(DEFAULT_TENANT_UI.activeModules);
-    });
-  });
+        // No logo: the tenant's own name is shown (Logo's text fallback), never the default
+        // DigiGold artwork, which would brand a real tenant as someone else.
+        expect(config.brandLogo).toEqual({ url: '', alt: 'Acme Jewellers' });
+        expect(config.theme).toEqual(DEFAULT_TENANT_UI.theme);
+        expect(config.activeModules).toEqual(DEFAULT_TENANT_UI.activeModules);
+      });
+    },
+  );
 
   describe('brand logo', () => {
     it('uses the configured logo and alt text', () => {
       const config = mapPublicTenantInfoToConfig(
-        makeInfo({ brandLogo: { url: 'https://cdn.example.com/logo.png', alt: 'Acme' } }),
+        makeInfo({
+          brandLogo: { url: 'https://cdn.example.com/logo.png', alt: 'Acme' },
+        }),
       );
 
-      expect(config.brandLogo).toEqual({ url: 'https://cdn.example.com/logo.png', alt: 'Acme' });
+      expect(config.brandLogo).toEqual({
+        url: 'https://cdn.example.com/logo.png',
+        alt: 'Acme',
+      });
     });
 
-    it('uses an empty alt text when none is configured', () => {
+    it("uses the tenant's name as alt text when none is configured", () => {
       const config = mapPublicTenantInfoToConfig(
         makeInfo({ brandLogo: { url: 'https://cdn.example.com/logo.png' } }),
       );
 
-      expect(config.brandLogo.alt).toBe('');
+      expect(config.brandLogo.alt).toBe('Acme Jewellers');
     });
 
-    it('falls back to the default logo when the url is missing or not a string', () => {
-      expect(mapPublicTenantInfoToConfig(makeInfo({ brandLogo: { alt: 'x' } })).brandLogo).toEqual(
-        DEFAULT_TENANT_UI.brandLogo,
-      );
+    it('shows no artwork when the url is missing or not a string, never the DigiGold logo', () => {
       expect(
-        mapPublicTenantInfoToConfig(makeInfo({ brandLogo: { url: 5 } })).brandLogo,
-      ).toEqual(DEFAULT_TENANT_UI.brandLogo);
+        mapPublicTenantInfoToConfig(makeInfo({ brandLogo: { alt: 'x' } }))
+          .brandLogo,
+      ).toEqual({ url: '', alt: 'x' });
+      expect(
+        mapPublicTenantInfoToConfig(makeInfo({ brandLogo: { url: 5 } }))
+          .brandLogo,
+      ).toEqual({ url: '', alt: 'Acme Jewellers' });
     });
   });
 
@@ -83,7 +95,12 @@ describe('mapPublicTenantInfoToConfig', () => {
       const config = mapPublicTenantInfoToConfig(
         makeInfo({
           theme: {
-            colors: { primary: '#112233', secondary: '#445566', tertiary: '#778899', neutral: '#aabbcc' },
+            colors: {
+              primary: '#112233',
+              secondary: '#445566',
+              tertiary: '#778899',
+              neutral: '#aabbcc',
+            },
             fontFamily: { headline: 'Playfair', body: 'Inter', label: 'Inter' },
           },
         }),
@@ -95,7 +112,11 @@ describe('mapPublicTenantInfoToConfig', () => {
         tertiary: '#778899',
         neutral: '#aabbcc',
       });
-      expect(config.theme.fontFamily).toEqual({ headline: 'Playfair', body: 'Inter', label: 'Inter' });
+      expect(config.theme.fontFamily).toEqual({
+        headline: 'Playfair',
+        body: 'Inter',
+        label: 'Inter',
+      });
     });
 
     it('fills missing roles from the defaults', () => {
@@ -104,31 +125,48 @@ describe('mapPublicTenantInfoToConfig', () => {
       );
 
       expect(config.theme.colors.primary).toBe('#112233');
-      expect(config.theme.colors.secondary).toBe(DEFAULT_TENANT_UI.theme.colors.secondary);
-      expect(config.theme.fontFamily).toEqual(DEFAULT_TENANT_UI.theme.fontFamily);
+      expect(config.theme.colors.secondary).toBe(
+        DEFAULT_TENANT_UI.theme.colors.secondary,
+      );
+      expect(config.theme.fontFamily).toEqual(
+        DEFAULT_TENANT_UI.theme.fontFamily,
+      );
     });
 
     it('ignores values that are not strings', () => {
       const config = mapPublicTenantInfoToConfig(
         makeInfo({
-          theme: { colors: { primary: 123, secondary: null }, fontFamily: { body: 7 } },
+          theme: {
+            colors: { primary: 123, secondary: null },
+            fontFamily: { body: 7 },
+          },
         }),
       );
 
-      expect(config.theme.colors.primary).toBe(DEFAULT_TENANT_UI.theme.colors.primary);
-      expect(config.theme.colors.secondary).toBe(DEFAULT_TENANT_UI.theme.colors.secondary);
-      expect(config.theme.fontFamily.body).toBe(DEFAULT_TENANT_UI.theme.fontFamily.body);
+      expect(config.theme.colors.primary).toBe(
+        DEFAULT_TENANT_UI.theme.colors.primary,
+      );
+      expect(config.theme.colors.secondary).toBe(
+        DEFAULT_TENANT_UI.theme.colors.secondary,
+      );
+      expect(config.theme.fontFamily.body).toBe(
+        DEFAULT_TENANT_UI.theme.fontFamily.body,
+      );
     });
 
     it('does not mutate the shared defaults', () => {
-      mapPublicTenantInfoToConfig(makeInfo({ theme: { colors: { primary: '#000000' } } }));
+      mapPublicTenantInfoToConfig(
+        makeInfo({ theme: { colors: { primary: '#000000' } } }),
+      );
 
       expect(DEFAULT_TENANT_UI.theme.colors.primary).toBe('#D4AF37');
     });
 
     it('does not add roles the app does not know about', () => {
       const config = mapPublicTenantInfoToConfig(
-        makeInfo({ theme: { colors: { primary: '#112233', danger: '#ff0000' } } }),
+        makeInfo({
+          theme: { colors: { primary: '#112233', danger: '#ff0000' } },
+        }),
       );
 
       expect(Object.keys(config.theme.colors).sort()).toEqual([
@@ -164,7 +202,9 @@ describe('mapPublicTenantInfoToConfig', () => {
     });
 
     it('does not mutate the shared defaults', () => {
-      mapPublicTenantInfoToConfig(makeInfo({ activeModules: { trading: false } }));
+      mapPublicTenantInfoToConfig(
+        makeInfo({ activeModules: { trading: false } }),
+      );
 
       expect(DEFAULT_TENANT_UI.activeModules.trading).toBe(true);
     });

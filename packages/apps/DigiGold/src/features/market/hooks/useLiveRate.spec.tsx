@@ -13,13 +13,17 @@ jest.mock('../market.sse', () => ({
 }));
 
 const mockedService = marketService as jest.Mocked<typeof marketService>;
-const mockedSubscribe = subscribeToLiveRate as jest.MockedFunction<typeof subscribeToLiveRate>;
+const mockedSubscribe = subscribeToLiveRate as jest.MockedFunction<
+  typeof subscribeToLiveRate
+>;
 
 const rate = (price: number): MarketRate => ({
   pricePerGramInr: price,
   mcxBaseRateInr: price - 313,
   marginAppliedInr: 100,
   gstAppliedInr: 213,
+  bidPerGramInr: price - 330,
+  askPerGramInr: price - 313,
   purityLabel: '24K',
   updatedAt: '2026-10-01T10:00:00Z',
 });
@@ -41,13 +45,17 @@ describe('useLiveRate', () => {
     const { result } = renderHookWithProviders(() => useLiveRate());
     expect(result.current.isLoading).toBe(true);
 
-    await waitFor(() => expect(result.current.data?.pricePerGramInr).toBe(7000));
+    await waitFor(() =>
+      expect(result.current.data?.pricePerGramInr).toBe(7000),
+    );
     expect(result.current.isLoading).toBe(false);
   });
 
   it('skips the one-off fetch when the store already holds a rate', () => {
     const { result } = renderHookWithProviders(() => useLiveRate(), {
-      preloaded: { market: { current: rate(7100), previous: null, status: 'open' } },
+      preloaded: {
+        market: { current: rate(7100), previous: null, status: 'open' },
+      },
     });
 
     expect(mockedService.getLastRate).not.toHaveBeenCalled();

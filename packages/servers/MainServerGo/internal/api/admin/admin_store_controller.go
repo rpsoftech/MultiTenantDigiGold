@@ -194,7 +194,7 @@ func (ac *AdminStoreController) ApproveKYC(c fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user not found in tenant"})
 	}
 
-	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user.ID, "verified", nil); err != nil {
+	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user, "verified", nil); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to approve kyc"})
 	}
 
@@ -219,7 +219,7 @@ func (ac *AdminStoreController) RejectKYC(c fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user not found in tenant"})
 	}
 
-	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user.ID, "rejected", nil); err != nil {
+	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user, "rejected", nil); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to reject kyc"})
 	}
 

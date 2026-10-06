@@ -1,64 +1,144 @@
-// Marks this file as a module so its helpers do not leak into other specs.
-export {};
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
+import type { apiClient } from '@/lib/api/client';
+import type { marketService } from './market.service';
+import { applyDefaultTenantPricing } from './tenantPricing';
 
-jest.mock('@/lib/api/client', () => ({
-  apiClient: { get: jest.fn() },
-}));
-
-// The mock-mode flag is read once when the module loads, so each case loads it fresh and
-// gets the matching fresh copy of the mocked api client.
-async function load(mockMode = false) {
-  jest.resetModules();
-  if (mockMode) process.env.NEXT_PUBLIC_USE_MOCK_MARKET = 'true';
-  else delete process.env.NEXT_PUBLIC_USE_MOCK_MARKET;
-
-  const { marketService } = await import('./market.service');
-  const { apiClient } = await import('@/lib/api/client');
-  return { marketService, get: apiClient.get as jest.Mock };
+// The rate shown for purchase is the raw MCX ask with the default margin/GST estimate on
+// top (tenantPricing.ts); bid/ask stay as the raw quote sides.
+function pricedFields(mcxAsk: number) {
+  const priced = applyDefaultTenantPricing(mcxAsk);
+  return {
+    pricePerGramInr: priced.finalRatePerGramInr,
+    mcxBaseRateInr: priced.mcxBaseRateInr,
+    marginAppliedInr: priced.marginAppliedInr,
+    gstAppliedInr: priced.gstAppliedInr,
+  };
 }
 
-describe('marketService.getLastRate', () => {
-  afterEach(() => {
+const originalMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_MARKET;
+
+afterEach(() => {
+  jest.restoreAllMocks();
+  if (originalMockFlag === undefined) {
     delete process.env.NEXT_PUBLIC_USE_MOCK_MARKET;
-  });
+  } else {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKET = originalMockFlag;
+  }
+});
 
-  it('turns the last SSE frame into a priced market rate', async () => {
-    const { marketService, get } = await load();
-    get.mockResolvedValue({ data: { latest_rate: JSON.stringify({ bid: 6950, ask: 7000 }) } });
-
-    const rate = await marketService.getLastRate();
-
-    expect(get).toHaveBeenCalledWith('/rates/last-rate');
-    expect(rate).toMatchObject({
-      mcxBaseRateInr: 7000,
-      marginAppliedInr: 100,
-      purityLabel: '24K • 99.99%',
+describe('mock market rate', () => {
+  it('returns a sample last rate without requesting the API', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKET = 'true';
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+    let service!: typeof marketService;
+    let client!: typeof apiClient;
+    jest.isolateModules(() => {
+      service = (
+        require('./market.service') as { marketService: typeof marketService }
+      ).marketService;
+      client = (require('@/lib/api/client') as { apiClient: typeof apiClient })
+        .apiClient;
     });
-    expect(rate?.pricePerGramInr).toBeCloseTo(7313, 4);
-    expect(Number.isNaN(Date.parse(rate?.updatedAt ?? ''))).toBe(false);
+    const getSpy = jest
+      .spyOn(client, 'get')
+      .mockRejectedValue(new Error('Mock market must not request the API'));
+
+    const rate = await service.getLastRate();
+
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(rate).toEqual({
+      ...pricedFields(7120.83),
+      bidPerGramInr: 7116.83,
+      askPerGramInr: 7120.83,
+      purityLabel: '24K • 99.99%',
+      updatedAt: expect.any(String),
+    });
+    expect(Number.isFinite(Date.parse(rate?.updatedAt ?? ''))).toBe(true);
   });
+});
 
-  it('returns null when the server has no usable rate yet', async () => {
-    const { marketService, get } = await load();
-    get.mockResolvedValue({ data: { latest_rate: '' } });
+describe('live market rate', () => {
+  it.each([
+    ['{"last-high":7200,"bid":7000,"ask":7100}', 7100, 7000, 7100],
+    ['data: {"bid":7000,"ask":7100}\n\n', 7100, 7000, 7100],
+    ['{"ask":7100}', 7100, null, 7100],
+    ['{"bid":-1,"ask":7100}', 7100, null, 7100],
+    ['7120.83', 7120.83, null, null],
+    ['{"last-high":7200,"bid":7000}', null, null, null],
+    ['{"bid":7000,"ask":0}', null, null, null],
+  ])(
+    'parses the backend latest_rate JSON string: %s',
+    async (latestRate, expectedPrice, expectedBid, expectedAsk) => {
+      process.env.NEXT_PUBLIC_USE_MOCK_MARKET = 'false';
+      let service!: typeof marketService;
+      let client!: typeof apiClient;
+      jest.isolateModules(() => {
+        service = (
+          require('./market.service') as { marketService: typeof marketService }
+        ).marketService;
+        client = (
+          require('@/lib/api/client') as { apiClient: typeof apiClient }
+        ).apiClient;
+      });
+      const getSpy = jest.spyOn(client, 'get').mockResolvedValue({
+        data: { latest_rate: latestRate },
+      });
 
-    await expect(marketService.getLastRate()).resolves.toBeNull();
-  });
+      const rate = await service.getLastRate();
 
+      expect(getSpy).toHaveBeenCalledWith('/rates/last-rate');
+      if (expectedPrice === null) {
+        expect(rate).toBeNull();
+      } else {
+        expect(rate).toEqual({
+          ...pricedFields(expectedPrice),
+          bidPerGramInr: expectedBid,
+          askPerGramInr: expectedAsk,
+          purityLabel: '24K • 99.99%',
+          updatedAt: expect.any(String),
+        });
+      }
+    },
+  );
+});
+
+describe('live market rate failures', () => {
+  // The caller (useLiveRate) decides how to show an outage; the service must not swallow it.
   it('lets a request failure reach the caller', async () => {
-    const { marketService, get } = await load();
-    get.mockRejectedValue({ status: 500, message: 'down' });
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKET = 'false';
+    let service!: typeof marketService;
+    let client!: typeof apiClient;
+    jest.isolateModules(() => {
+      service = (
+        require('./market.service') as { marketService: typeof marketService }
+      ).marketService;
+      client = (require('@/lib/api/client') as { apiClient: typeof apiClient })
+        .apiClient;
+    });
+    jest
+      .spyOn(client, 'get')
+      .mockRejectedValue({
+        status: 500,
+        code: 'ERR_BAD_RESPONSE',
+        message: 'down',
+      });
 
-    await expect(marketService.getLastRate()).rejects.toMatchObject({ status: 500 });
+    await expect(service.getLastRate()).rejects.toMatchObject({ status: 500 });
   });
 
-  it('serves a simulated rate without calling the server in mock mode', async () => {
-    const { marketService, get } = await load(true);
+  it('returns null when the server has no rate yet', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKET = 'false';
+    let service!: typeof marketService;
+    let client!: typeof apiClient;
+    jest.isolateModules(() => {
+      service = (
+        require('./market.service') as { marketService: typeof marketService }
+      ).marketService;
+      client = (require('@/lib/api/client') as { apiClient: typeof apiClient })
+        .apiClient;
+    });
+    jest.spyOn(client, 'get').mockResolvedValue({ data: { latest_rate: '' } });
 
-    const rate = await marketService.getLastRate();
-
-    expect(get).not.toHaveBeenCalled();
-    expect(rate?.pricePerGramInr).toBeGreaterThan(7000);
-    expect(rate?.marginAppliedInr).toBe(100);
+    await expect(service.getLastRate()).resolves.toBeNull();
   });
 });

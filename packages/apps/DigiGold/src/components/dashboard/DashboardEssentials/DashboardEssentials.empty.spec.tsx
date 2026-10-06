@@ -25,7 +25,10 @@ describe('DashboardEssentials with nothing to show', () => {
         tenant: {
           config: {
             ...DEFAULT_TENANT_CONFIG,
-            activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, vault: false },
+            activeModules: {
+              ...DEFAULT_TENANT_CONFIG.activeModules,
+              vault: false,
+            },
           },
         },
       },

@@ -15,7 +15,9 @@ describe('header menu config', () => {
   const vault = menus.find((menu) => menu.id === 'vault');
 
   it('lists Redeem Gold under the Vault menu pointing at the redemptions route', () => {
-    const redemptions = vault?.children?.find((item) => item.id === 'redemptions');
+    const redemptions = vault?.children?.find(
+      (item) => item.id === 'redemptions',
+    );
 
     expect(redemptions).toBeDefined();
     expect(redemptions?.url).toBe(ROUTES.redemptions);
@@ -29,7 +31,10 @@ describe('header menu config', () => {
   });
 
   it('does not expose a sell action anywhere in the menu', () => {
-    const urls = menus.flatMap((menu) => [menu.url, ...(menu.children ?? []).map((c) => c.url)]);
+    const urls = menus.flatMap((menu) => [
+      menu.url,
+      ...(menu.children ?? []).map((c) => c.url),
+    ]);
 
     expect(urls.some((url) => /sell/i.test(url))).toBe(false);
   });

@@ -4,13 +4,16 @@ import { redemptionService } from '../redemption.service';
 import type { Redemption } from '../redemption.types';
 import { useCancelRedemption } from './useCancelRedemption';
 import { useCreateRedemption } from './useCreateRedemption';
-import { useRedemptions } from './useRedemptions';
+import { PORTFOLIO_QUERY_KEY } from '@/features/portfolio/hooks/usePortfolio';
+import { REDEMPTIONS_QUERY_KEY, useRedemptions } from './useRedemptions';
 
 jest.mock('../redemption.service', () => ({
   redemptionService: { create: jest.fn(), list: jest.fn(), cancel: jest.fn() },
 }));
 
-const mockedService = redemptionService as jest.Mocked<typeof redemptionService>;
+const mockedService = redemptionService as jest.Mocked<
+  typeof redemptionService
+>;
 
 function makeRedemption(index: number): Redemption {
   return {
@@ -25,7 +28,9 @@ function makeRedemption(index: number): Redemption {
 function makePage(count: number, page: number) {
   return {
     success: true,
-    data: Array.from({ length: count }, (_, index) => makeRedemption(page * 100 + index)),
+    data: Array.from({ length: count }, (_, index) =>
+      makeRedemption(page * 100 + index),
+    ),
     page,
     limit: 20,
   };
@@ -78,7 +83,9 @@ describe('useCreateRedemption', () => {
       redemption: makeRedemption(1),
       message: 'ok',
     });
-    const { result, queryClient } = renderHookWithProviders(() => useCreateRedemption());
+    const { result, queryClient } = renderHookWithProviders(() =>
+      useCreateRedemption(),
+    );
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => {
@@ -88,17 +95,28 @@ describe('useCreateRedemption', () => {
     expect(mockedService.create.mock.calls[0][0]).toEqual({ weight_grams: 2 });
     const keys = invalidate.mock.calls.map(([filters]) => filters?.queryKey);
     expect(keys).toEqual(
-      expect.arrayContaining([['redemptions'], ['user', 'portfolio'], ['trade', 'history']]),
+      expect.arrayContaining([
+        REDEMPTIONS_QUERY_KEY,
+        PORTFOLIO_QUERY_KEY,
+        ['trade', 'history'],
+      ]),
     );
   });
 
   it('does not refresh anything when creation fails', async () => {
-    mockedService.create.mockRejectedValue({ message: 'Insufficient', status: 400 });
-    const { result, queryClient } = renderHookWithProviders(() => useCreateRedemption());
+    mockedService.create.mockRejectedValue({
+      message: 'Insufficient',
+      status: 400,
+    });
+    const { result, queryClient } = renderHookWithProviders(() =>
+      useCreateRedemption(),
+    );
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => {
-      await result.current.mutateAsync({ weight_grams: 2 }).catch(() => undefined);
+      await result.current
+        .mutateAsync({ weight_grams: 2 })
+        .catch(() => undefined);
     });
 
     expect(invalidate).not.toHaveBeenCalled();
@@ -110,7 +128,9 @@ describe('useCancelRedemption', () => {
 
   it('cancels by uuid and refreshes related data', async () => {
     mockedService.cancel.mockResolvedValue({ success: true, message: 'ok' });
-    const { result, queryClient } = renderHookWithProviders(() => useCancelRedemption());
+    const { result, queryClient } = renderHookWithProviders(() =>
+      useCancelRedemption(),
+    );
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => {
@@ -122,8 +142,13 @@ describe('useCancelRedemption', () => {
   });
 
   it('refreshes even when the server rejects, because the list is then stale', async () => {
-    mockedService.cancel.mockRejectedValue({ code: 'REDEMPTION_NOT_PENDING', status: 409 });
-    const { result, queryClient } = renderHookWithProviders(() => useCancelRedemption());
+    mockedService.cancel.mockRejectedValue({
+      code: 'REDEMPTION_NOT_PENDING',
+      status: 409,
+    });
+    const { result, queryClient } = renderHookWithProviders(() =>
+      useCancelRedemption(),
+    );
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => {

@@ -22,6 +22,8 @@ export const marketService = {
       mcxBaseRateInr: frame.mcxBaseRateInr,
       marginAppliedInr: frame.marginAppliedInr,
       gstAppliedInr: frame.gstAppliedInr,
+      bidPerGramInr: frame.bidPerGramInr,
+      askPerGramInr: frame.askPerGramInr,
       purityLabel: MARKET_PURITY_LABEL,
       updatedAt: new Date().toISOString(),
     };

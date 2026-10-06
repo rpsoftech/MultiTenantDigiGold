@@ -5,16 +5,29 @@ import { useCategories } from './useCategories';
 import { useTrendingProducts } from './useTrendingProducts';
 
 jest.mock('../marketplace.service', () => ({
-  marketplaceService: { getCategories: jest.fn(), getTrendingProducts: jest.fn() },
+  marketplaceService: {
+    getCategories: jest.fn(),
+    getTrendingProducts: jest.fn(),
+  },
 }));
 
-const mockedService = marketplaceService as jest.Mocked<typeof marketplaceService>;
+const mockedService = marketplaceService as jest.Mocked<
+  typeof marketplaceService
+>;
 
 describe('useCategories', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('loads the categories', async () => {
-    const categories = [{ id: 'c1', label: 'Rings', imageUrl: '/r', imageAlt: 'Rings', url: '/r' }];
+    const categories = [
+      {
+        id: 'c1',
+        label: 'Rings',
+        imageUrl: '/r',
+        imageAlt: 'Rings',
+        url: '/r',
+      },
+    ];
     mockedService.getCategories.mockResolvedValue(categories);
     const { result } = renderHookWithProviders(() => useCategories());
 
@@ -23,7 +36,10 @@ describe('useCategories', () => {
   });
 
   it('reports a failure', async () => {
-    mockedService.getCategories.mockRejectedValue({ status: 500, message: 'down' });
+    mockedService.getCategories.mockRejectedValue({
+      status: 500,
+      message: 'down',
+    });
     const { result } = renderHookWithProviders(() => useCategories());
 
     await waitFor(() => expect(result.current.isError).toBe(true));
@@ -53,7 +69,10 @@ describe('useTrendingProducts', () => {
   });
 
   it('reports a failure', async () => {
-    mockedService.getTrendingProducts.mockRejectedValue({ status: 500, message: 'down' });
+    mockedService.getTrendingProducts.mockRejectedValue({
+      status: 500,
+      message: 'down',
+    });
     const { result } = renderHookWithProviders(() => useTrendingProducts());
 
     await waitFor(() => expect(result.current.isError).toBe(true));

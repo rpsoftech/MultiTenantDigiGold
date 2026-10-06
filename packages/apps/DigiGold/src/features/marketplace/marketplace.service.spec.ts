@@ -1,91 +1,128 @@
-// Marks this file as a module so its helpers do not leak into other specs.
-export {};
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
+import type { apiClient } from '@/lib/api/client';
+import type { marketplaceService } from './marketplace.service';
 
-const CATEGORIES = [
-  { id: 'c1', label: 'Rings', imageUrl: '/r.png', imageAlt: 'Rings', url: '/marketplace/rings' },
-];
-const PRODUCTS = [
-  {
-    id: 'p1',
-    title: 'Necklace',
-    imageUrl: '/n.png',
-    imageAlt: 'Necklace',
-    price: 50000,
-    currency: 'INR',
-    isNew: true,
-    url: '/marketplace/p1',
-  },
-];
+const originalMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
 
-jest.mock('@/lib/api/client', () => ({
-  apiClient: { get: jest.fn() },
-}));
+afterEach(() => {
+  jest.restoreAllMocks();
+  if (originalMockFlag === undefined)
+    delete process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
+  else process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = originalMockFlag;
+});
 
-// The mock-data flag is read once when the module loads, so each case loads it fresh and
-// gets the matching fresh copy of the mocked api client.
-async function load(mockMode = false) {
-  jest.resetModules();
-  if (mockMode) process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = 'true';
-  else delete process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
+describe('live marketplace service', () => {
+  it.each([
+    {
+      method: 'getCategories' as const,
+      path: '/marketplace/categories',
+      items: [
+        {
+          id: 'rings',
+          label: 'Rings',
+          imageUrl: '/rings.jpg',
+          imageAlt: 'Rings',
+          url: '/marketplace/rings',
+        },
+      ],
+    },
+    {
+      method: 'getTrendingProducts' as const,
+      path: '/marketplace/trending',
+      items: [
+        {
+          id: 'ring-1',
+          title: 'Gold ring',
+          imageUrl: '/ring.jpg',
+          imageAlt: 'Ring',
+          price: 5000,
+          currency: 'INR',
+          isNew: false,
+          url: '/marketplace/ring-1',
+        },
+      ],
+    },
+  ])(
+    'loads $path using the API data envelope',
+    async ({ method, path, items }) => {
+      process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = 'false';
+      let service!: typeof marketplaceService;
+      let client!: typeof apiClient;
+      jest.isolateModules(() => {
+        service = (
+          require('./marketplace.service') as {
+            marketplaceService: typeof marketplaceService;
+          }
+        ).marketplaceService;
+        client = (
+          require('@/lib/api/client') as { apiClient: typeof apiClient }
+        ).apiClient;
+      });
+      const request = jest
+        .spyOn(client, 'get')
+        .mockResolvedValue({ data: { success: true, data: items } });
 
-  const { marketplaceService } = await import('./marketplace.service');
-  const { apiClient } = await import('@/lib/api/client');
-  return { marketplaceService, get: apiClient.get as jest.Mock };
+      await expect(service[method]()).resolves.toEqual(items);
+      expect(request).toHaveBeenCalledWith(path);
+    },
+  );
+});
+
+function loadService(mockMode: boolean) {
+  process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = mockMode ? 'true' : 'false';
+  let service!: typeof marketplaceService;
+  let client!: typeof apiClient;
+  jest.isolateModules(() => {
+    service = (
+      require('./marketplace.service') as {
+        marketplaceService: typeof marketplaceService;
+      }
+    ).marketplaceService;
+    client = (require('@/lib/api/client') as { apiClient: typeof apiClient })
+      .apiClient;
+  });
+  return { service, client };
 }
 
-describe('marketplaceService', () => {
-  afterEach(() => {
-    delete process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
-  });
+describe('marketplace service failures', () => {
+  // The dashboard sections show their own error and retry; the service must not hide it.
+  it('lets a request failure reach the caller', async () => {
+    const { service, client } = loadService(false);
+    jest
+      .spyOn(client, 'get')
+      .mockRejectedValue({
+        status: 500,
+        code: 'ERR_BAD_RESPONSE',
+        message: 'down',
+      });
 
-  describe('against the server', () => {
-    it('reads trending products from the catalogue endpoint', async () => {
-      const { marketplaceService, get } = await load();
-      get.mockResolvedValue({ data: { data: PRODUCTS } });
-
-      await expect(marketplaceService.getTrendingProducts()).resolves.toEqual(PRODUCTS);
-      expect(get).toHaveBeenCalledWith('/marketplace/trending');
-    });
-
-    it('reads categories from the catalogue endpoint', async () => {
-      const { marketplaceService, get } = await load();
-      get.mockResolvedValue({ data: { data: CATEGORIES } });
-
-      await expect(marketplaceService.getCategories()).resolves.toEqual(CATEGORIES);
-      expect(get).toHaveBeenCalledWith('/marketplace/categories');
-    });
-
-    it('lets a request failure reach the caller', async () => {
-      const { marketplaceService, get } = await load();
-      get.mockRejectedValue({ status: 500, message: 'down' });
-
-      await expect(marketplaceService.getCategories()).rejects.toMatchObject({ status: 500 });
+    await expect(service.getCategories()).rejects.toMatchObject({
+      status: 500,
     });
   });
+});
 
-  describe('in mock mode', () => {
-    it('serves sample trending products without calling the server', async () => {
-      const { marketplaceService, get } = await load(true);
+describe('mock marketplace service', () => {
+  it.each(['getCategories', 'getTrendingProducts'] as const)(
+    '%s serves sample data without calling the server',
+    async (method) => {
+      const { service, client } = loadService(true);
+      const request = jest
+        .spyOn(client, 'get')
+        .mockRejectedValue(
+          new Error('Mock marketplace must not request the API'),
+        );
 
-      const products = await marketplaceService.getTrendingProducts();
+      const items = await service[method]();
 
-      expect(get).not.toHaveBeenCalled();
-      expect(products.length).toBeGreaterThan(0);
-      expect(products[0]).toEqual(
-        expect.objectContaining({ id: expect.any(String), price: expect.any(Number) }),
+      expect(request).not.toHaveBeenCalled();
+      expect(items.length).toBeGreaterThan(0);
+      expect(items[0]).toEqual(
+        expect.objectContaining({
+          id: expect.any(String),
+          url: expect.any(String),
+        }),
       );
-    });
-
-    it('serves sample categories without calling the server', async () => {
-      const { marketplaceService, get } = await load(true);
-
-      const categories = await marketplaceService.getCategories();
-
-      expect(get).not.toHaveBeenCalled();
-      expect(categories.length).toBeGreaterThan(0);
-      expect(categories[0]).toEqual(
-        expect.objectContaining({ id: expect.any(String), label: expect.any(String) }),
-      );
-    });
-  });
+    },
+  );
 });

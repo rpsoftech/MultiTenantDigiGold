@@ -17,6 +17,8 @@
   width: 100%;
   border-collapse: collapse;
   min-width: 640px;
+
+  @include stacked-table;
 }
 
 .table th {
@@ -72,4 +74,16 @@
   padding: var(--space-1) var(--space-3);
   font-size: 0.75rem;
   width: auto;
+}
+
+// The stacked-table mixin already lays out this unlabelled cell as a full-width block; on
+// small screens the buttons just need to wrap and start from the left.
+.actionsCell {
+  @include below-md {
+    .actions {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      white-space: normal;
+    }
+  }
 }

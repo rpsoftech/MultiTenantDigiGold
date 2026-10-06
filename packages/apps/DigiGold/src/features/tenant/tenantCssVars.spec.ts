@@ -18,7 +18,9 @@ describe('computeTenantCssVars', () => {
 
   it('derives each scale from the configured base colour', () => {
     const vars = asMap(DEFAULT_TENANT_CONFIG);
-    const expected = generateColorScale(DEFAULT_TENANT_CONFIG.theme.colors.primary);
+    const expected = generateColorScale(
+      DEFAULT_TENANT_CONFIG.theme.colors.primary,
+    );
 
     expect(vars.get('--color-primary-300')).toBe(expected[300]);
     expect(vars.get('--color-primary-700')).toBe(expected[700]);
@@ -28,7 +30,9 @@ describe('computeTenantCssVars', () => {
     const vars = asMap(DEFAULT_TENANT_CONFIG);
 
     expect(vars.get('--brand-primary')).toBe(vars.get('--color-primary-500'));
-    expect(vars.get('--brand-secondary')).toBe(vars.get('--color-secondary-500'));
+    expect(vars.get('--brand-secondary')).toBe(
+      vars.get('--color-secondary-500'),
+    );
     expect(vars.get('--brand-tertiary')).toBe(vars.get('--color-tertiary-500'));
     expect(vars.get('--brand-neutral')).toBe(vars.get('--color-neutral-500'));
   });

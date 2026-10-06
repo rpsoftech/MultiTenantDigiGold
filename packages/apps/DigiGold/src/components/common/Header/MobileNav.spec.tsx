@@ -8,7 +8,14 @@ jest.mock('next/navigation', () => ({
 }));
 
 const menus: MenuItem[] = [
-  { id: 'home', label: 'Home', url: '/home', enabled: true, order: 1, icon: 'home' },
+  {
+    id: 'home',
+    label: 'Home',
+    url: '/home',
+    enabled: true,
+    order: 1,
+    icon: 'home',
+  },
   {
     id: 'vault',
     label: 'Vault',
@@ -16,7 +23,13 @@ const menus: MenuItem[] = [
     enabled: true,
     order: 2,
     children: [
-      { id: 'passbook', label: 'Passbook', url: '/vault/passbook', enabled: true, order: 1 },
+      {
+        id: 'passbook',
+        label: 'Passbook',
+        url: '/vault/passbook',
+        enabled: true,
+        order: 1,
+      },
     ],
   },
   {
@@ -30,13 +43,28 @@ const menus: MenuItem[] = [
 ];
 
 const actions: HeaderAction[] = [
-  { id: 'sign-in', label: 'Sign In', url: '/login', type: 'link', enabled: true, order: 1 },
+  {
+    id: 'sign-in',
+    label: 'Sign In',
+    url: '/login',
+    type: 'link',
+    enabled: true,
+    order: 1,
+  },
 ];
 
-function setup(overrides: Partial<React.ComponentProps<typeof MobileNav>> = {}) {
+function setup(
+  overrides: Partial<React.ComponentProps<typeof MobileNav>> = {},
+) {
   const onOpenChange = jest.fn();
   render(
-    <MobileNav open onOpenChange={onOpenChange} menus={menus} actions={actions} {...overrides} />,
+    <MobileNav
+      open
+      onOpenChange={onOpenChange}
+      menus={menus}
+      actions={actions}
+      {...overrides}
+    />,
   );
   return { onOpenChange };
 }
@@ -57,13 +85,17 @@ describe('MobileNav', () => {
 
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByText('Menu')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/home');
+    expect(
+      screen.getByRole('link', { name: 'Home' }).getAttribute('href'),
+    ).toBe('/home');
   });
 
   it('marks the current page link as active', () => {
     setup();
 
-    expect(screen.getByRole('link', { name: 'Home' }).className).toContain('linkActive');
+    expect(screen.getByRole('link', { name: 'Home' }).className).toContain(
+      'linkActive',
+    );
   });
 
   it('opens external links in a new tab with a safe rel', () => {
@@ -82,7 +114,9 @@ describe('MobileNav', () => {
 
     fireEvent.click(parent);
     expect(parent.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByRole('link', { name: 'Passbook' }).getAttribute('href')).toBe('/vault/passbook');
+    expect(
+      screen.getByRole('link', { name: 'Passbook' }).getAttribute('href'),
+    ).toBe('/vault/passbook');
 
     fireEvent.click(parent);
     expect(screen.queryByRole('link', { name: 'Passbook' })).toBeNull();

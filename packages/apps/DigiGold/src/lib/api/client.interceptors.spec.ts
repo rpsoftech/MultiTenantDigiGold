@@ -1,4 +1,8 @@
-import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+import {
+  AxiosError,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import { makeJwt } from '@/test-utils/renderWithProviders';
 import { getAccessToken, setTokens } from '@/lib/auth/tokenStorage';
 import { onSessionExpired } from '@/lib/auth/sessionEvents';
@@ -13,9 +17,21 @@ let lastConfig: InternalAxiosRequestConfig | undefined;
 function respondWith(status: number, data: unknown = {}) {
   apiClient.defaults.adapter = async (config) => {
     lastConfig = config;
-    const response = { status, data, statusText: '', headers: {}, config } as AxiosResponse;
+    const response = {
+      status,
+      data,
+      statusText: '',
+      headers: {},
+      config,
+    } as AxiosResponse;
     if (status >= 400) {
-      throw new AxiosError('Request failed', 'ERR_BAD_REQUEST', config, null, response);
+      throw new AxiosError(
+        'Request failed',
+        'ERR_BAD_REQUEST',
+        config,
+        null,
+        response,
+      );
     }
     return response;
   };
@@ -40,7 +56,8 @@ describe('apiClient interceptors', () => {
   afterEach(() => {
     unsubscribe();
     apiClient.defaults.adapter = originalAdapter;
-    if (originalTenant === undefined) delete process.env.NEXT_PUBLIC_TENANT_UUID;
+    if (originalTenant === undefined)
+      delete process.env.NEXT_PUBLIC_TENANT_UUID;
     else process.env.NEXT_PUBLIC_TENANT_UUID = originalTenant;
   });
 
@@ -110,7 +127,9 @@ describe('apiClient interceptors', () => {
       setTokens({ accessToken: makeJwt({ exp: FUTURE }) });
       respondWith(401, { message: 'Unauthorized', name: 'UNAUTHORIZED' });
 
-      await expect(apiClient.get('/user/portfolio')).rejects.toMatchObject({ status: 401 });
+      await expect(apiClient.get('/user/portfolio')).rejects.toMatchObject({
+        status: 401,
+      });
 
       expect(getAccessToken()).toBeNull();
       expect(expired).toHaveBeenCalledTimes(1);
@@ -120,7 +139,9 @@ describe('apiClient interceptors', () => {
       setTokens({ accessToken: makeJwt({ exp: FUTURE }) });
       respondWith(401, { message: 'Invalid OTP', name: 'INVALID_OTP' });
 
-      await expect(apiClient.post('/auth/otp/verify', {})).rejects.toMatchObject({
+      await expect(
+        apiClient.post('/auth/otp/verify', {}),
+      ).rejects.toMatchObject({
         status: 401,
         code: 'INVALID_OTP',
       });
@@ -133,13 +154,18 @@ describe('apiClient interceptors', () => {
       setTokens({ accessToken: makeJwt({ exp: FUTURE }) });
       respondWith(500, { message: 'Boom' });
 
-      await expect(apiClient.get('/user/portfolio')).rejects.toMatchObject({ status: 500 });
+      await expect(apiClient.get('/user/portfolio')).rejects.toMatchObject({
+        status: 500,
+      });
 
       expect(expired).not.toHaveBeenCalled();
     });
 
     it('normalizes the MainServer error body', async () => {
-      respondWith(429, { message: 'Please wait 30 seconds', name: 'ERROR_RECENT_OTP_REQ_EXIST' });
+      respondWith(429, {
+        message: 'Please wait 30 seconds',
+        name: 'ERROR_RECENT_OTP_REQ_EXIST',
+      });
 
       await expect(apiClient.get('/x')).rejects.toEqual({
         message: 'Please wait 30 seconds',

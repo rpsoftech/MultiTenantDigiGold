@@ -43,7 +43,9 @@ describe('market slice', () => {
     store.dispatch(rateReceived(rate(7040)));
 
     expect(selectMarketRate(store.getState())?.pricePerGramInr).toBe(7040);
-    expect(selectPreviousMarketRate(store.getState())?.pricePerGramInr).toBe(7050);
+    expect(selectPreviousMarketRate(store.getState())?.pricePerGramInr).toBe(
+      7050,
+    );
   });
 
   it('tracks the connection status separately from the rate', () => {

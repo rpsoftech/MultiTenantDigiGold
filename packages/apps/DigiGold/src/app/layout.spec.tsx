@@ -11,7 +11,11 @@ jest.mock('./providers', () => ({
   }: {
     children: React.ReactNode;
     initialTenantConfig: { displayName: string };
-  }) => <div data-testid="providers" data-tenant={initialTenantConfig.displayName}>{children}</div>,
+  }) => (
+    <div data-testid="providers" data-tenant={initialTenantConfig.displayName}>
+      {children}
+    </div>
+  ),
 }));
 
 describe('RootLayout', () => {
@@ -26,7 +30,9 @@ describe('RootLayout', () => {
   });
 
   it('inlines the default tenant theme so the first paint is already themed', () => {
-    const [firstName, firstValue] = computeTenantCssVars(DEFAULT_TENANT_CONFIG)[0];
+    const [firstName, firstValue] = computeTenantCssVars(
+      DEFAULT_TENANT_CONFIG,
+    )[0];
 
     expect(markup).toContain('id="tenant-theme-vars"');
     expect(markup).toContain(`${firstName}:${firstValue}`);

@@ -20,13 +20,19 @@ describe('CategoryCard', () => {
   it('links to the category page', () => {
     render(<CategoryCard category={category} />);
 
-    expect(screen.getByRole('link').getAttribute('href')).toBe('/marketplace/rings');
+    expect(screen.getByRole('link').getAttribute('href')).toBe(
+      '/marketplace/rings',
+    );
   });
 
   it('shows the image with its alt text and the label', () => {
     render(<CategoryCard category={category} />);
 
-    expect((screen.getByAltText('A gold ring') as HTMLImageElement).getAttribute('src')).toBe('/rings.png');
+    expect(
+      (screen.getByAltText('A gold ring') as HTMLImageElement).getAttribute(
+        'src',
+      ),
+    ).toBe('/rings.png');
     expect(screen.getByText('Rings')).toBeTruthy();
   });
 });

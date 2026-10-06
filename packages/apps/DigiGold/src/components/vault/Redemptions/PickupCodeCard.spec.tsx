@@ -13,14 +13,18 @@ describe('PickupCodeCard', () => {
     render(<PickupCodeCard code="123456" />);
 
     expect(screen.getByText('123456')).toBeTruthy();
-    expect(screen.getByText(/show this code at the store counter/i)).toBeTruthy();
+    expect(
+      screen.getByText(/show this code at the store counter/i),
+    ).toBeTruthy();
   });
 
   it('hides the instruction in compact mode', () => {
     render(<PickupCodeCard code="123456" compact />);
 
     expect(screen.getByText('123456')).toBeTruthy();
-    expect(screen.queryByText(/show this code at the store counter/i)).toBeNull();
+    expect(
+      screen.queryByText(/show this code at the store counter/i),
+    ).toBeNull();
   });
 
   it('copies the code and confirms, then resets the label', async () => {

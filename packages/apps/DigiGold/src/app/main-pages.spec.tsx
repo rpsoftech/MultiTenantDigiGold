@@ -11,9 +11,12 @@ jest.mock('@/components/dashboard/PromoCarousel/PromoCarousel', () => ({
 jest.mock('@/components/dashboard/CategoryCarousel/CategoryCarousel', () => ({
   CategoryCarousel: () => <div>category carousel</div>,
 }));
-jest.mock('@/components/dashboard/DashboardEssentials/DashboardEssentials', () => ({
-  DashboardEssentials: () => <div>dashboard essentials</div>,
-}));
+jest.mock(
+  '@/components/dashboard/DashboardEssentials/DashboardEssentials',
+  () => ({
+    DashboardEssentials: () => <div>dashboard essentials</div>,
+  }),
+);
 jest.mock('@/components/dashboard/TrendingJewelry/TrendingJewelry', () => ({
   TrendingJewelry: () => <div>trending jewelry</div>,
 }));
@@ -30,14 +33,18 @@ jest.mock('@/components/vault/Redemptions/Redemptions', () => ({
   Redemptions: () => <div>redemptions</div>,
 }));
 jest.mock('@/components/main/MainShell/MainShell', () => ({
-  MainShell: ({ children }: { children: React.ReactNode }) => <div data-testid="shell">{children}</div>,
+  MainShell: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="shell">{children}</div>
+  ),
 }));
 
 describe('main app pages', () => {
   it('home shows the dashboard sections in order', () => {
     const { container } = render(<HomePage />);
 
-    expect(Array.from(container.children).map((element) => element.textContent)).toEqual([
+    expect(
+      Array.from(container.children).map((element) => element.textContent),
+    ).toEqual([
       'promo carousel',
       'category carousel',
       'dashboard essentials',

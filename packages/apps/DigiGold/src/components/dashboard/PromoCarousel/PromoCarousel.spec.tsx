@@ -15,14 +15,35 @@ jest.mock('./usePromoCarouselConfig', () => ({
 const mockedConfig = usePromoCarouselConfig as jest.Mock;
 
 const slides = [
-  { id: 'a', imageUrl: '/a.png', imageAlt: 'First offer', linkUrl: '/offers/a', enabled: true, order: 1 },
-  { id: 'b', imageUrl: '/b.png', imageAlt: 'Second offer', enabled: true, order: 2 },
-  { id: 'c', imageUrl: '/c.png', imageAlt: 'Third offer', linkUrl: '/offers/c', enabled: true, order: 3 },
+  {
+    id: 'a',
+    imageUrl: '/a.png',
+    imageAlt: 'First offer',
+    linkUrl: '/offers/a',
+    enabled: true,
+    order: 1,
+  },
+  {
+    id: 'b',
+    imageUrl: '/b.png',
+    imageAlt: 'Second offer',
+    enabled: true,
+    order: 2,
+  },
+  {
+    id: 'c',
+    imageUrl: '/c.png',
+    imageAlt: 'Third offer',
+    linkUrl: '/offers/c',
+    enabled: true,
+    order: 3,
+  },
 ];
 
 const dot = (index: number) =>
   screen.getByRole('tab', { name: `Show slide ${index} of 3` });
-const track = () => screen.getByAltText('First offer').closest('a')?.parentElement as HTMLElement;
+const track = () =>
+  screen.getByAltText('First offer').closest('a')?.parentElement as HTMLElement;
 
 describe('PromoCarousel', () => {
   beforeEach(() => {
@@ -47,8 +68,12 @@ describe('PromoCarousel', () => {
   it('makes a slide with a link clickable and leaves the others plain', () => {
     render(<PromoCarousel />);
 
-    expect(screen.getByRole('link', { name: 'First offer' }).getAttribute('href')).toBe('/offers/a');
-    expect(screen.getByRole('link', { name: 'Third offer' }).getAttribute('href')).toBe('/offers/c');
+    expect(
+      screen.getByRole('link', { name: 'First offer' }).getAttribute('href'),
+    ).toBe('/offers/a');
+    expect(
+      screen.getByRole('link', { name: 'Third offer' }).getAttribute('href'),
+    ).toBe('/offers/c');
     expect(screen.getAllByRole('link')).toHaveLength(2);
   });
 
@@ -70,7 +95,10 @@ describe('PromoCarousel', () => {
   });
 
   it('shows no dots for a single slide', () => {
-    mockedConfig.mockReturnValue({ slides: [slides[0]], autoplayIntervalMs: 5000 });
+    mockedConfig.mockReturnValue({
+      slides: [slides[0]],
+      autoplayIntervalMs: 5000,
+    });
     render(<PromoCarousel />);
 
     expect(screen.queryByRole('tablist')).toBeNull();
@@ -121,7 +149,10 @@ describe('PromoCarousel', () => {
     });
 
     it('does not autoplay a single slide', () => {
-      mockedConfig.mockReturnValue({ slides: [slides[0]], autoplayIntervalMs: 5000 });
+      mockedConfig.mockReturnValue({
+        slides: [slides[0]],
+        autoplayIntervalMs: 5000,
+      });
       render(<PromoCarousel />);
 
       act(() => {

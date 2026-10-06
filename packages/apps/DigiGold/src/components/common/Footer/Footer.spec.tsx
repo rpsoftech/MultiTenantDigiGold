@@ -13,16 +13,24 @@ jest.mock('next/image', () => ({
 describe('Footer', () => {
   it('shows a copyright line with the tenant name and the current year', () => {
     renderWithProviders(<Footer />, {
-      preloaded: { tenant: { config: { ...DEFAULT_TENANT_CONFIG, displayName: 'Acme Jewellers' } } },
+      preloaded: {
+        tenant: {
+          config: { ...DEFAULT_TENANT_CONFIG, displayName: 'Acme Jewellers' },
+        },
+      },
     });
 
     expect(
-      screen.getByText(`© ${new Date().getFullYear()} Acme Jewellers. All rights reserved.`),
+      screen.getByText(
+        `© ${new Date().getFullYear()} Acme Jewellers. All rights reserved.`,
+      ),
     ).toBeTruthy();
   });
 
   it('falls back to the platform name before a tenant is known', () => {
-    renderWithProviders(<Footer />, { preloaded: { tenant: { config: null } } });
+    renderWithProviders(<Footer />, {
+      preloaded: { tenant: { config: null } },
+    });
 
     expect(screen.getByText(/DigiGold\. All rights reserved\./)).toBeTruthy();
   });
@@ -38,19 +46,27 @@ describe('Footer', () => {
   it('links to the configured pages', () => {
     renderWithProviders(<Footer />);
 
-    expect(screen.getByRole('link', { name: 'Privacy Policy' }).getAttribute('href')).toBe(
-      '/privacy-policy',
-    );
-    expect(screen.getByRole('link', { name: 'Terms of Service' }).getAttribute('href')).toBe(
-      '/terms-of-service',
-    );
-    expect(screen.getByRole('link', { name: 'Help Center' }).getAttribute('href')).toBe('/help-center');
+    expect(
+      screen.getByRole('link', { name: 'Privacy Policy' }).getAttribute('href'),
+    ).toBe('/privacy-policy');
+    expect(
+      screen
+        .getByRole('link', { name: 'Terms of Service' })
+        .getAttribute('href'),
+    ).toBe('/terms-of-service');
+    expect(
+      screen.getByRole('link', { name: 'Help Center' }).getAttribute('href'),
+    ).toBe('/help-center');
   });
 
   it('shows the icon configured for a link', () => {
     renderWithProviders(<Footer />);
 
-    expect(screen.getByRole('link', { name: 'Vault Security' }).querySelector('svg')).not.toBeNull();
-    expect(screen.getByRole('link', { name: 'About Us' }).querySelector('svg')).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Vault Security' }).querySelector('svg'),
+    ).not.toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'About Us' }).querySelector('svg'),
+    ).toBeNull();
   });
 });

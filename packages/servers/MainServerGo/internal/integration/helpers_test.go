@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -109,6 +110,10 @@ func pendingCustomer(t *testing.T) string {
 var (
 	adminTokensMu sync.Mutex
 	adminTokens   = map[string]string{}
+	// adminLoginErrs remembers a failed login so later tests fail with the real cause.
+	// Without it every test needing that admin retried the login, and once the auth
+	// routes' 10-per-minute limit was spent the failure surfaced as an unrelated 429.
+	adminLoginErrs = map[string]string{}
 )
 
 // adminToken logs a seeded admin in through the real password + TOTP flow and
@@ -120,27 +125,45 @@ func adminToken(t *testing.T, username, tenantUUID string) string {
 	if tok, ok := adminTokens[username]; ok {
 		return tok
 	}
+	if reason, failed := adminLoginErrs[username]; failed {
+		t.Fatalf("admin %q could not log in earlier in this run: %s", username, reason)
+	}
 
+	tok, reason := loginAdmin(t, username, tenantUUID)
+	if reason != "" {
+		adminLoginErrs[username] = reason
+		t.Fatalf("admin %q login failed: %s", username, reason)
+	}
+	adminTokens[username] = tok
+	return tok
+}
+
+// loginAdmin runs password + TOTP login and returns the access token, or a reason.
+func loginAdmin(t *testing.T, username, tenantUUID string) (token, reason string) {
+	t.Helper()
 	login := call(t, "POST", "/admin/auth/login", "", tenantUUID, map[string]string{
 		"username": username, "password": adminPassword,
 	})
-	expectStatus(t, login, http.StatusOK)
+	if login.Status != http.StatusOK {
+		return "", fmt.Sprintf("password step: status %d, body %v", login.Status, login.Body)
+	}
 	tempToken, _ := login.Body["temp_token"].(string)
 
 	code, err := totp.GenerateCode(adminTOTPSecret, time.Now())
 	if err != nil {
-		t.Fatalf("totp: %v", err)
+		return "", fmt.Sprintf("generate totp: %v", err)
 	}
 	verify := call(t, "POST", "/admin/auth/totp/verify", "", tenantUUID, map[string]string{
 		"temp_token": tempToken, "code": code,
 	})
-	expectStatus(t, verify, http.StatusOK)
+	if verify.Status != http.StatusOK {
+		return "", fmt.Sprintf("totp step: status %d, body %v", verify.Status, verify.Body)
+	}
 	tok, _ := verify.Body["access_token"].(string)
 	if tok == "" {
-		t.Fatalf("no access_token in %v", verify.Body)
+		return "", fmt.Sprintf("no access_token in %v", verify.Body)
 	}
-	adminTokens[username] = tok
-	return tok
+	return tok, ""
 }
 
 func demoManager(t *testing.T) string {

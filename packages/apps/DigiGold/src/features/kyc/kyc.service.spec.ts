@@ -11,7 +11,10 @@ describe('kycService.submitKyc', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('posts the payload to /user/kyc and returns the response body', async () => {
-    const body = { success: true, message: 'KYC document uploaded and pending verification' };
+    const body = {
+      success: true,
+      message: 'KYC document uploaded and pending verification',
+    };
     mockedClient.post.mockResolvedValue({ data: body });
 
     const payload = { pan_number: 'ABCDE1234F', aadhaar_last4: '1234' };
@@ -22,7 +25,9 @@ describe('kycService.submitKyc', () => {
   });
 
   it('passes the optional document url through when provided', async () => {
-    mockedClient.post.mockResolvedValue({ data: { success: true, message: '' } });
+    mockedClient.post.mockResolvedValue({
+      data: { success: true, message: '' },
+    });
     const payload = {
       pan_number: 'ABCDE1234F',
       aadhaar_last4: '1234',
@@ -35,7 +40,11 @@ describe('kycService.submitKyc', () => {
   });
 
   it('lets request errors reach the caller', async () => {
-    mockedClient.post.mockRejectedValue({ message: 'boom', code: 'X', status: 500 });
+    mockedClient.post.mockRejectedValue({
+      message: 'boom',
+      code: 'X',
+      status: 500,
+    });
     await expect(
       kycService.submitKyc({ pan_number: 'ABCDE1234F', aadhaar_last4: '1234' }),
     ).rejects.toMatchObject({ status: 500 });

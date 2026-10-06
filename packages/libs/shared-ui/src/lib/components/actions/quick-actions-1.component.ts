@@ -117,7 +117,7 @@ import { TradeService } from '@dg/services';
 export class QuickActions1Component {
   private tradeService = inject(TradeService);
 
-  @Input() showDelivery: boolean = true;
+  @Input() showDelivery = true;
 
   openTrade(action: 'BUY' | 'SELL') {
     this.tradeService.tradeAction.set(action);

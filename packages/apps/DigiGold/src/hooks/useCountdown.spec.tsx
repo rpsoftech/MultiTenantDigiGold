@@ -59,9 +59,12 @@ describe('useCountdown', () => {
   });
 
   it('follows a changed initial value', () => {
-    const { result, rerender } = renderHook(({ seconds }) => useCountdown(seconds), {
-      initialProps: { seconds: 10 },
-    });
+    const { result, rerender } = renderHook(
+      ({ seconds }) => useCountdown(seconds),
+      {
+        initialProps: { seconds: 10 },
+      },
+    );
 
     rerender({ seconds: 4 });
 

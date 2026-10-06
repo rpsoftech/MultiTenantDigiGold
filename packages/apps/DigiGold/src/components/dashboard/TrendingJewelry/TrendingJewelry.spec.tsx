@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { useTrendingProducts } from '@/features/marketplace/hooks/useTrendingProducts';
 import type { Product } from '@/features/marketplace/marketplace.types';
 import { TrendingJewelry } from './TrendingJewelry';
@@ -23,6 +23,30 @@ jest.mock('./trending-jewelry.config.json', () => ({
 }));
 
 const mockedUseProducts = useTrendingProducts as jest.Mock;
+// A complete React Query result for the hook mock: the component reads isSuccess/isError
+// (an empty list is only "empty" after a successful load) and refetch for its Retry button.
+const refetch = jest.fn();
+function queryState({
+  data,
+  isLoading = false,
+  isError = false,
+}: {
+  data: unknown;
+  isLoading?: boolean;
+  isError?: boolean;
+}) {
+  return {
+    data,
+    isLoading,
+    isError,
+    isSuccess: !isLoading && !isError,
+    error: isError
+      ? { message: 'down', code: 'ERR_BAD_RESPONSE', status: 503 }
+      : null,
+    isFetching: false,
+    refetch,
+  };
+}
 
 const products: Product[] = [
   {
@@ -48,36 +72,63 @@ const products: Product[] = [
 ];
 
 describe('TrendingJewelry', () => {
-  beforeEach(() => mockedUseProducts.mockReturnValue({ data: products, isLoading: false }));
+  beforeEach(() =>
+    mockedUseProducts.mockReturnValue(
+      queryState({ data: products, isLoading: false }),
+    ),
+  );
 
   it('shows the heading, subtitle and a link to everything', () => {
     render(<TrendingJewelry />);
 
-    expect(screen.getByRole('heading', { name: 'Trending Jewelry' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Trending Jewelry' }),
+    ).toBeTruthy();
     expect(screen.getByText('Fresh from our collection')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'View all' }).getAttribute('href')).toBe('/marketplace/jewelry');
+    expect(
+      screen.getByRole('link', { name: 'View all' }).getAttribute('href'),
+    ).toBe('/marketplace/jewelry');
   });
 
   it('shows a loader while products load', () => {
-    mockedUseProducts.mockReturnValue({ data: undefined, isLoading: true });
+    mockedUseProducts.mockReturnValue(
+      queryState({ data: undefined, isLoading: true }),
+    );
     render(<TrendingJewelry />);
 
-    expect(screen.getByRole('status', { name: 'Loading trending jewelry' })).toBeTruthy();
+    expect(
+      screen.getByRole('status', { name: 'Loading trending jewelry' }),
+    ).toBeTruthy();
   });
 
   it('shows an empty message when there is nothing trending', () => {
-    mockedUseProducts.mockReturnValue({ data: [], isLoading: false });
+    mockedUseProducts.mockReturnValue(
+      queryState({ data: [], isLoading: false }),
+    );
     render(<TrendingJewelry />);
 
-    expect(screen.getByText('No trending jewelry available right now.')).toBeTruthy();
+    expect(
+      screen.getByText('No trending jewelry available right now.'),
+    ).toBeTruthy();
   });
 
-  it('shows no products and no empty message when the request failed', () => {
-    mockedUseProducts.mockReturnValue({ data: undefined, isLoading: false });
+  it('explains a failed request and retries it, without claiming nothing is trending', () => {
+    mockedUseProducts.mockReturnValue(
+      queryState({ data: undefined, isError: true }),
+    );
     render(<TrendingJewelry />);
 
-    expect(screen.queryByText('No trending jewelry available right now.')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain(
+      "We couldn't load trending jewelry.",
+    );
+    expect(
+      screen.queryByText('No trending jewelry available right now.'),
+    ).toBeNull();
     expect(screen.queryByText('Heritage Necklace')).toBeNull();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Retry loading trending jewelry' }),
+    );
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   it('shows a card for every product', () => {
@@ -109,11 +160,15 @@ describe('ProductCard', () => {
   it('links to the product details', () => {
     render(<ProductCard product={products[0]} config={config} />);
 
-    expect(screen.getByRole('link', { name: 'View details' }).getAttribute('href')).toBe('/marketplace/p1');
+    expect(
+      screen.getByRole('link', { name: 'View details' }).getAttribute('href'),
+    ).toBe('/marketplace/p1');
   });
 
   it('shows the New badge only for new products', () => {
-    const { rerender } = render(<ProductCard product={products[0]} config={config} />);
+    const { rerender } = render(
+      <ProductCard product={products[0]} config={config} />,
+    );
     expect(screen.getByText('New')).toBeTruthy();
 
     rerender(<ProductCard product={products[1]} config={config} />);

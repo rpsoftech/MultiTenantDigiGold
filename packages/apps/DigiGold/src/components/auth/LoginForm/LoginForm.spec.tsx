@@ -7,13 +7,19 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
 }));
 jest.mock('@/features/auth/auth.service', () => ({
-  authService: { requestOtp: jest.fn(), verifyOtp: jest.fn(), completeProfile: jest.fn() },
+  authService: {
+    requestOtp: jest.fn(),
+    verifyOtp: jest.fn(),
+    completeProfile: jest.fn(),
+  },
 }));
 
 const mockedAuth = authService as jest.Mocked<typeof authService>;
 
-const mobileInput = () => screen.getByLabelText('Mobile Number') as HTMLInputElement;
-const getOtpButton = () => screen.getByRole('button', { name: /Get OTP/ }) as HTMLButtonElement;
+const mobileInput = () =>
+  screen.getByLabelText('Mobile Number') as HTMLInputElement;
+const getOtpButton = () =>
+  screen.getByRole('button', { name: /Get OTP/ }) as HTMLButtonElement;
 
 function typeNumber(value: string) {
   fireEvent.change(mobileInput(), { target: { value } });
@@ -52,7 +58,9 @@ describe('LoginForm', () => {
     typeNumber('1234567890');
     fireEvent.blur(mobileInput());
 
-    expect(await screen.findByText('Enter a valid 10-digit mobile number')).toBeTruthy();
+    expect(
+      await screen.findByText('Enter a valid 10-digit mobile number'),
+    ).toBeTruthy();
     expect(getOtpButton().disabled).toBe(true);
   });
 
@@ -62,7 +70,9 @@ describe('LoginForm', () => {
     typeNumber('98765');
     fireEvent.blur(mobileInput());
 
-    expect(await screen.findByText('Enter a valid 10-digit mobile number')).toBeTruthy();
+    expect(
+      await screen.findByText('Enter a valid 10-digit mobile number'),
+    ).toBeTruthy();
   });
 
   it('requests an OTP and moves to verification', async () => {
@@ -77,8 +87,12 @@ describe('LoginForm', () => {
 
     fireEvent.click(getOtpButton());
 
-    expect(await screen.findByRole('heading', { name: 'Verify your identity' })).toBeTruthy();
-    expect(mockedAuth.requestOtp.mock.calls[0][0]).toEqual({ mobileNumber: '9876543210' });
+    expect(
+      await screen.findByRole('heading', { name: 'Verify your identity' }),
+    ).toBeTruthy();
+    expect(mockedAuth.requestOtp.mock.calls[0][0]).toEqual({
+      mobileNumber: '9876543210',
+    });
   });
 
   it('shows the local development code when the server returns one', async () => {
@@ -109,7 +123,9 @@ describe('LoginForm', () => {
     fireEvent.click(getOtpButton());
 
     expect(await screen.findByText('Could not send OTP')).toBeTruthy();
-    expect(screen.getByText('Please wait 30 seconds before requesting a new OTP.')).toBeTruthy();
+    expect(
+      screen.getByText('Please wait 30 seconds before requesting a new OTP.'),
+    ).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Welcome' })).toBeTruthy();
   });
 
@@ -121,7 +137,9 @@ describe('LoginForm', () => {
 
     fireEvent.click(getOtpButton());
 
-    expect(await screen.findByText('Please check the number and try again.')).toBeTruthy();
+    expect(
+      await screen.findByText('Please check the number and try again.'),
+    ).toBeTruthy();
   });
 
   it('lets the visitor go back from verification to change the number', async () => {
@@ -138,7 +156,9 @@ describe('LoginForm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit mobile number' }));
 
-    expect(await screen.findByRole('heading', { name: 'Welcome' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Welcome' }),
+    ).toBeTruthy();
   });
 
   it('links to the terms and privacy policy', () => {

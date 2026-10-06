@@ -24,7 +24,11 @@
 
 .detailGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  // At most two columns (as before); drops to one when a column would be under 130px.
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(max(130px, calc((100% - var(--space-3)) / 2)), 1fr)
+  );
   gap: var(--space-2) var(--space-3);
 }
 

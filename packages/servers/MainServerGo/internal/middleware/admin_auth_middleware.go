@@ -41,6 +41,12 @@ func GetAdminAuthMiddleware() *AdminAuthMiddleware {
 
 // Intercept validates the admin JWT from the Authorization header and
 // injects AdminUUID, Role, and TenantID into Fiber Locals.
+//
+// It checks the signature and expiry only (no database lookup per request), so an access
+// token keeps working for the rest of its 15-minute life after the admin logs out or is
+// deactivated. Both end the session at the next refresh: logout revokes the refresh token,
+// and refresh rejects a deactivated admin. Routes that must react instantly to
+// deactivation need to re-check the admin themselves.
 func (m *AdminAuthMiddleware) Intercept(c fiber.Ctx) error {
 	authHeader := c.Get(env.XApiToken)
 	if authHeader == "" {

@@ -1,5 +1,6 @@
 import { makeStore } from '@/store';
 import {
+  adminSessionEstablished,
   profileCompleted,
   registrationStarted,
   selectIsAdmin,
@@ -43,7 +44,9 @@ describe('session slice auth flow', () => {
   it('starts registration for a new number without authenticating', () => {
     const store = makeStore();
 
-    store.dispatch(registrationStarted({ token: 'reg-token', phone: '9876543210' }));
+    store.dispatch(
+      registrationStarted({ token: 'reg-token', phone: '9876543210' }),
+    );
 
     const state = store.getState().session;
     expect(state.registrationToken).toBe('reg-token');
@@ -78,25 +81,31 @@ describe('session slice auth flow', () => {
     expect(store.getState().session.user).toBeNull();
   });
 
-  it('clears everything on logout', () => {
+  it('clears the customer session on logout and moves to a new revision', () => {
     const store = makeStore();
     store.dispatch(sessionEstablished(customer));
+    const revision = store.getState().session.revision;
 
     store.dispatch(sessionCleared());
 
     expect(store.getState().session).toEqual({
       user: null,
       isAuthenticated: false,
+      admin: null,
+      revision: revision + 1,
       registrationToken: null,
       registrationPhone: null,
     });
   });
 
-  it('identifies an admin session', () => {
+  // The admin panel session lives in its own field, independent of the customer one.
+  it('identifies an admin session from the admin slot only', () => {
     const store = makeStore();
 
     store.dispatch(sessionEstablished({ ...customer, role: 'admin' }));
+    expect(selectIsAdmin(store.getState())).toBe(false);
 
+    store.dispatch(adminSessionEstablished({ ...customer, role: 'admin' }));
     expect(selectIsAdmin(store.getState())).toBe(true);
   });
 });

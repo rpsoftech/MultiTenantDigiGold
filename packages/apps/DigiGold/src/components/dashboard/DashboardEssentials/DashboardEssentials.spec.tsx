@@ -90,7 +90,9 @@ describe('DashboardEssentials', () => {
   it('shows every card when all modules are on', () => {
     renderWithProviders(<DashboardEssentials />, withModules({}));
 
-    expect(screen.getByRole('heading', { name: 'Dashboard Essentials' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Dashboard Essentials' }),
+    ).toBeTruthy();
     expect(screen.getByText('My Digital Passbook')).toBeTruthy();
     expect(screen.getByText('Start a Gold SIP')).toBeTruthy();
     expect(screen.getByText('Explore Jewelry')).toBeTruthy();
@@ -106,7 +108,10 @@ describe('DashboardEssentials', () => {
   });
 
   it('hides the cards of modules the tenant has switched off', () => {
-    renderWithProviders(<DashboardEssentials />, withModules({ trading: false, ecommerce: false }));
+    renderWithProviders(
+      <DashboardEssentials />,
+      withModules({ trading: false, ecommerce: false }),
+    );
 
     expect(screen.queryByText('Start a Gold SIP')).toBeNull();
     expect(screen.queryByText('Explore Jewelry')).toBeNull();
@@ -124,7 +129,9 @@ describe('DashboardEssentials', () => {
   });
 
   it('shows only module free cards until the tenant is known', () => {
-    renderWithProviders(<DashboardEssentials />, { preloaded: { tenant: { config: null } } });
+    renderWithProviders(<DashboardEssentials />, {
+      preloaded: { tenant: { config: null } },
+    });
 
     expect(screen.getByText('Always visible')).toBeTruthy();
     expect(screen.queryByText('My Digital Passbook')).toBeNull();
@@ -160,7 +167,11 @@ describe('EssentialCard', () => {
 
 describe('dashboard icon registry', () => {
   it('maps every icon key to a component', () => {
-    expect(Object.keys(ICON_REGISTRY).sort()).toEqual(['coins', 'gem', 'wallet']);
+    expect(Object.keys(ICON_REGISTRY).sort()).toEqual([
+      'coins',
+      'gem',
+      'wallet',
+    ]);
     for (const Icon of Object.values(ICON_REGISTRY)) {
       expect(typeof Icon).toBe('function');
     }

@@ -1,46 +1,48 @@
+import { describe, expect, it } from '@jest/globals';
 import { makeStore } from '@/store';
 import {
-  kycStatusUpdated,
+  adminSessionCleared,
+  adminSessionEstablished,
+  selectIsAdmin,
+  selectIsAuthenticated,
   sessionCleared,
   sessionEstablished,
 } from './session.slice';
-import type { SessionUser } from './session.types';
 
-const user: SessionUser = {
-  userId: 'user-1',
-  role: 'customer',
-  mobileNumber: '9999900001',
+const customer = {
+  userId: 'customer-1',
+  role: 'customer' as const,
   isNewUser: false,
-  kycStatus: 'not_started',
+  kycStatus: 'verified' as const,
+};
+const admin = {
+  userId: 'admin-1',
+  role: 'admin' as const,
+  isNewUser: false,
+  kycStatus: 'not_started' as const,
 };
 
-describe('session slice kyc status', () => {
-  it('updates the kyc status of the signed-in user', () => {
+describe('session slice: customer and admin sessions are independent', () => {
+  it('an admin sign-in does not make the visitor a signed-in customer', () => {
     const store = makeStore();
-    store.dispatch(sessionEstablished(user));
+    store.dispatch(adminSessionEstablished(admin));
 
-    store.dispatch(kycStatusUpdated('pending'));
-
-    expect(store.getState().session.user?.kycStatus).toBe('pending');
-    expect(store.getState().session.user?.userId).toBe('user-1');
-  });
-
-  it('is a no-op when nobody is signed in', () => {
-    const store = makeStore();
-
-    store.dispatch(kycStatusUpdated('verified'));
-
+    expect(selectIsAdmin(store.getState())).toBe(true);
+    expect(selectIsAuthenticated(store.getState())).toBe(false);
     expect(store.getState().session.user).toBeNull();
   });
 
-  it('is cleared together with the session', () => {
+  it('ending one session leaves the other intact', () => {
     const store = makeStore();
-    store.dispatch(sessionEstablished(user));
-    store.dispatch(kycStatusUpdated('pending'));
+    store.dispatch(sessionEstablished(customer));
+    store.dispatch(adminSessionEstablished(admin));
 
     store.dispatch(sessionCleared());
+    expect(store.getState().session.admin).toEqual(admin);
 
-    expect(store.getState().session.user).toBeNull();
-    expect(store.getState().session.isAuthenticated).toBe(false);
+    store.dispatch(sessionEstablished(customer));
+    store.dispatch(adminSessionCleared());
+    expect(store.getState().session.user).toEqual(customer);
+    expect(selectIsAuthenticated(store.getState())).toBe(true);
   });
 });

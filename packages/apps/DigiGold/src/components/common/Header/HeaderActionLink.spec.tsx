@@ -22,7 +22,11 @@ describe('HeaderActionLink', () => {
   });
 
   it('opens external actions in a new tab with a safe rel', () => {
-    render(<HeaderActionLink action={{ ...action, target: '_blank', url: 'https://example.com' }} />);
+    render(
+      <HeaderActionLink
+        action={{ ...action, target: '_blank', url: 'https://example.com' }}
+      />,
+    );
 
     const link = screen.getByRole('link', { name: 'Sign In' });
     expect(link.getAttribute('target')).toBe('_blank');
@@ -30,7 +34,9 @@ describe('HeaderActionLink', () => {
   });
 
   it('renders the configured icon', () => {
-    const { container } = render(<HeaderActionLink action={{ ...action, icon: 'user' }} />);
+    const { container } = render(
+      <HeaderActionLink action={{ ...action, icon: 'user' }} />,
+    );
 
     expect(container.querySelector('svg')).not.toBeNull();
   });
@@ -52,7 +58,9 @@ describe('HeaderActionLink', () => {
 
   it('adds an extra class and reports clicks', () => {
     const onClick = jest.fn();
-    render(<HeaderActionLink action={action} className="extra" onClick={onClick} />);
+    render(
+      <HeaderActionLink action={action} className="extra" onClick={onClick} />,
+    );
 
     const link = screen.getByRole('link');
     fireEvent.click(link);

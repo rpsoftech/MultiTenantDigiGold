@@ -23,7 +23,9 @@ describe('useTenantConfig', () => {
     const { result, store } = renderHookWithProviders(() => useTenantConfig());
 
     act(() => {
-      store.dispatch(tenantConfigReceived({ ...DEFAULT_TENANT_CONFIG, displayName: 'Acme' }));
+      store.dispatch(
+        tenantConfigReceived({ ...DEFAULT_TENANT_CONFIG, displayName: 'Acme' }),
+      );
     });
 
     expect(result.current?.displayName).toBe('Acme');

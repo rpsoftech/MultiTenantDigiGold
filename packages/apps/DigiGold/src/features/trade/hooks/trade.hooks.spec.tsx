@@ -12,7 +12,9 @@ jest.mock('../trade.service', () => ({
 
 const mockedService = tradeService as jest.Mocked<typeof tradeService>;
 
-function makeEntry(overrides: Partial<TradeHistoryEntry> = {}): TradeHistoryEntry {
+function makeEntry(
+  overrides: Partial<TradeHistoryEntry> = {},
+): TradeHistoryEntry {
   return {
     gl_uuid: 'gl-1',
     event_type: 'GOLD_PURCHASE',
@@ -40,7 +42,7 @@ describe('useInitiateBuy', () => {
       amount: 7000,
       weight_grams: 1,
       final_rate_per_gram: 7000,
-      quote_expires_at: '2026-10-01T10:00:00Z',
+      quote_expires_at: 1790762400, // unix seconds, as MainServer sends TradeQuote.ExpiresAt
     };
     mockedService.initiateBuy.mockResolvedValue(quote);
     const { result } = renderHookWithProviders(() => useInitiateBuy());
@@ -56,7 +58,10 @@ describe('useInitiateBuy', () => {
   });
 
   it('reports a rejected buy', async () => {
-    mockedService.initiateBuy.mockRejectedValue({ status: 403, message: 'KYC required' });
+    mockedService.initiateBuy.mockRejectedValue({
+      status: 403,
+      message: 'KYC required',
+    });
     const { result } = renderHookWithProviders(() => useInitiateBuy());
 
     await act(async () => {
@@ -80,16 +85,24 @@ describe('useTradeHistory', () => {
     const { result } = renderHookWithProviders(() => useTradeHistory());
 
     await waitFor(() => expect(result.current.entries).toHaveLength(20));
-    expect(mockedService.getHistory).toHaveBeenCalledWith({ page: 1, limit: 20 });
+    expect(mockedService.getHistory).toHaveBeenCalledWith({
+      page: 1,
+      limit: 20,
+    });
     expect(result.current.hasNextPage).toBe(true);
 
-    mockedService.getHistory.mockResolvedValueOnce(historyPage([makeEntry({ gl_uuid: 'last' })], 2));
+    mockedService.getHistory.mockResolvedValueOnce(
+      historyPage([makeEntry({ gl_uuid: 'last' })], 2),
+    );
     await act(async () => {
       await result.current.fetchNextPage();
     });
 
     await waitFor(() => expect(result.current.entries).toHaveLength(21));
-    expect(mockedService.getHistory).toHaveBeenLastCalledWith({ page: 2, limit: 20 });
+    expect(mockedService.getHistory).toHaveBeenLastCalledWith({
+      page: 2,
+      limit: 20,
+    });
     expect(result.current.hasNextPage).toBe(false);
   });
 
@@ -102,7 +115,9 @@ describe('useTradeHistory', () => {
   });
 
   it('returns no entries before the first response', () => {
-    mockedService.getHistory.mockReturnValue(new Promise(() => undefined) as never);
+    mockedService.getHistory.mockReturnValue(
+      new Promise(() => undefined) as never,
+    );
     const { result } = renderHookWithProviders(() => useTradeHistory());
 
     expect(result.current.entries).toEqual([]);
@@ -131,23 +146,36 @@ describe('useBuySettlement', () => {
   });
 
   it('polls the latest history while the credit has not appeared', async () => {
-    mockedService.getHistory.mockResolvedValue(historyPage([makeEntry({ reference_id: 'other' })]));
+    mockedService.getHistory.mockResolvedValue(
+      historyPage([makeEntry({ reference_id: 'other' })]),
+    );
     const { result } = renderHookWithProviders(() => useBuySettlement('pay_1'));
 
     await advance(0);
     expect(result.current.status).toBe('polling');
-    expect(mockedService.getHistory).toHaveBeenCalledWith({ page: 1, limit: 10 });
+    expect(mockedService.getHistory).toHaveBeenCalledWith({
+      page: 1,
+      limit: 10,
+    });
     const firstCalls = mockedService.getHistory.mock.calls.length;
 
     await advance(3000);
-    expect(mockedService.getHistory.mock.calls.length).toBeGreaterThan(firstCalls);
+    expect(mockedService.getHistory.mock.calls.length).toBeGreaterThan(
+      firstCalls,
+    );
     expect(result.current.status).toBe('polling');
   });
 
   it('settles with the matching ledger entry and stops polling', async () => {
-    const credited = makeEntry({ gl_uuid: 'gl-credit', reference_id: 'pay_1', weight_grams: 0.5 });
+    const credited = makeEntry({
+      gl_uuid: 'gl-credit',
+      reference_id: 'pay_1',
+      weight_grams: 0.5,
+    });
     mockedService.getHistory
-      .mockResolvedValueOnce(historyPage([makeEntry({ reference_id: 'other' })]))
+      .mockResolvedValueOnce(
+        historyPage([makeEntry({ reference_id: 'other' })]),
+      )
       .mockResolvedValue(historyPage([credited]));
     const { result } = renderHookWithProviders(() => useBuySettlement('pay_1'));
 

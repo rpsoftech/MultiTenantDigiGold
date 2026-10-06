@@ -13,7 +13,9 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => searchParams,
 }));
 jest.mock('@/components/auth/OtpForm/OtpForm', () => ({
-  OtpForm: ({ mobileNumber }: { mobileNumber: string }) => <div>otp form for {mobileNumber}</div>,
+  OtpForm: ({ mobileNumber }: { mobileNumber: string }) => (
+    <div>otp form for {mobileNumber}</div>
+  ),
 }));
 jest.mock('@/components/auth/ProfileSetupForm/ProfileSetupForm', () => ({
   ProfileSetupForm: () => <div>profile form</div>,
@@ -22,7 +24,9 @@ jest.mock('@/components/auth/LoginForm/LoginForm', () => ({
   LoginForm: () => <div>login form</div>,
 }));
 jest.mock('@/components/auth/AuthShell/AuthShell', () => ({
-  AuthShell: ({ children }: { children: React.ReactNode }) => <div data-testid="shell">{children}</div>,
+  AuthShell: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="shell">{children}</div>
+  ),
 }));
 
 const newUser: SessionUser = {
@@ -96,7 +100,9 @@ describe('auth pages', () => {
     });
 
     it('sends an already registered customer home', async () => {
-      renderWithProviders(<ProfileSetupPage />, { user: { ...newUser, isNewUser: false } });
+      renderWithProviders(<ProfileSetupPage />, {
+        user: { ...newUser, isNewUser: false },
+      });
 
       await waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
       expect(screen.queryByText('profile form')).toBeNull();

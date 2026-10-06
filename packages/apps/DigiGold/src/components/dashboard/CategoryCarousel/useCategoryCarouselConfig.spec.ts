@@ -1,7 +1,9 @@
 import { renderHook } from '@testing-library/react';
 import { useCategoryCarouselConfig } from './useCategoryCarouselConfig';
 
-jest.mock('./category-carousel.config.json', () => ({ title: 'Shop by Category' }));
+jest.mock('./category-carousel.config.json', () => ({
+  title: 'Shop by Category',
+}));
 
 describe('useCategoryCarouselConfig', () => {
   it('returns the section copy from the site config', () => {

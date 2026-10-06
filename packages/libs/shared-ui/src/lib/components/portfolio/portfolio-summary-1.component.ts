@@ -87,5 +87,5 @@ export class PortfolioSummary1Component {
   rateSignal = this.rateService.currentRate;
 
   // In a real app, this would be an Input or fetched from a PortfolioService Signal
-  @Input() goldGrams: number = 42.5832;
+  @Input() goldGrams = 42.5832;
 }

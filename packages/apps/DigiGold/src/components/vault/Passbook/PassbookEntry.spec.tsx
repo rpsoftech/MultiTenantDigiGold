@@ -1,8 +1,13 @@
 import { render, screen } from '@testing-library/react';
-import type { TradeEventType, TradeHistoryEntry } from '@/features/trade/trade.types';
+import type {
+  TradeEventType,
+  TradeHistoryEntry,
+} from '@/features/trade/trade.types';
 import { PassbookEntry } from './PassbookEntry';
 
-function makeEntry(overrides: Partial<TradeHistoryEntry> = {}): TradeHistoryEntry {
+function makeEntry(
+  overrides: Partial<TradeHistoryEntry> = {},
+): TradeHistoryEntry {
   return {
     gl_uuid: 'gl-1',
     event_type: 'GOLD_PURCHASE',
@@ -42,7 +47,10 @@ describe('PassbookEntry', () => {
   it('shows gold leaving the vault with a minus sign and no plus', () => {
     render(
       <PassbookEntry
-        entry={makeEntry({ event_type: 'PHYSICAL_REDEMPTION', weight_grams: -2 })}
+        entry={makeEntry({
+          event_type: 'PHYSICAL_REDEMPTION',
+          weight_grams: -2,
+        })}
       />,
     );
 
@@ -68,7 +76,11 @@ describe('PassbookEntry', () => {
   });
 
   it('shows an unrecognised event type as it is', () => {
-    render(<PassbookEntry entry={makeEntry({ event_type: 'SOMETHING_NEW' as TradeEventType })} />);
+    render(
+      <PassbookEntry
+        entry={makeEntry({ event_type: 'SOMETHING_NEW' as TradeEventType })}
+      />,
+    );
 
     expect(screen.getByText('SOMETHING_NEW')).toBeTruthy();
   });

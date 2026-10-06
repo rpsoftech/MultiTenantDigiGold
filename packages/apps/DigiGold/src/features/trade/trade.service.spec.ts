@@ -24,15 +24,24 @@ describe('tradeService', () => {
     const payload = { total_amount_inr: 7000, requested_rate_per_gram: 7000 };
     const result = await tradeService.initiateBuy(payload);
 
-    expect(mockedClient.post).toHaveBeenCalledWith('/trade/buy/initiate', payload);
+    expect(mockedClient.post).toHaveBeenCalledWith(
+      '/trade/buy/initiate',
+      payload,
+    );
     expect(result).toEqual(quote);
   });
 
   it('lets a rejected buy reach the caller', async () => {
-    mockedClient.post.mockRejectedValue({ status: 403, message: 'KYC required' });
+    mockedClient.post.mockRejectedValue({
+      status: 403,
+      message: 'KYC required',
+    });
 
     await expect(
-      tradeService.initiateBuy({ total_amount_inr: 70000, requested_rate_per_gram: 7000 }),
+      tradeService.initiateBuy({
+        total_amount_inr: 70000,
+        requested_rate_per_gram: 7000,
+      }),
     ).rejects.toMatchObject({ status: 403 });
   });
 
@@ -49,10 +58,14 @@ describe('tradeService', () => {
   });
 
   it('reads trade history with no params by default', async () => {
-    mockedClient.get.mockResolvedValue({ data: { success: true, data: [], page: 1, limit: 20 } });
+    mockedClient.get.mockResolvedValue({
+      data: { success: true, data: [], page: 1, limit: 20 },
+    });
 
     await tradeService.getHistory();
 
-    expect(mockedClient.get).toHaveBeenCalledWith('/trade/history', { params: {} });
+    expect(mockedClient.get).toHaveBeenCalledWith('/trade/history', {
+      params: {},
+    });
   });
 });

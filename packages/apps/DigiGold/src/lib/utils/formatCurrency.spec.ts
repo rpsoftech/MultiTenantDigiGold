@@ -8,4 +8,8 @@ describe('formatCurrency', () => {
   it('rounds to whole units with no decimal places', () => {
     expect(formatCurrency(85500.75, 'INR')).toBe('₹85,501');
   });
+
+  it('keeps paise when the caller asks for fraction digits', () => {
+    expect(formatCurrency(7120.83, 'INR', 2)).toBe('₹7,120.83');
+  });
 });

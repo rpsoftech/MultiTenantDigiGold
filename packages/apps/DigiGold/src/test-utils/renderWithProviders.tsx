@@ -25,11 +25,16 @@ export type TestContext = {
   queryClient: QueryClient;
 };
 
-function createContext({ user = customerUser, preloaded }: ProviderOptions = {}): TestContext {
+function createContext({
+  user = customerUser,
+  preloaded,
+}: ProviderOptions = {}): TestContext {
   const store = makeStore({
     session: {
       user,
       isAuthenticated: Boolean(user),
+      admin: null,
+      revision: 0,
       registrationToken: null,
       registrationPhone: null,
     },
@@ -72,7 +77,10 @@ export function renderHookWithProviders<Result, Props = undefined>(
 ) {
   const { initialProps, ...providerOptions } = options;
   const context = createContext(providerOptions);
-  const result = renderHook(hook, { wrapper: createWrapper(context), initialProps });
+  const result = renderHook(hook, {
+    wrapper: createWrapper(context),
+    initialProps,
+  });
   return { ...result, ...context };
 }
 

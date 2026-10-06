@@ -29,15 +29,17 @@ func TestTokensRoundTrip(t *testing.T) {
 		t.Fatalf("refresh token rejected: %v", err)
 	}
 
-	adminAccess, adminRefresh, err := s.GenerateAdminTokens("admin-1", "manager", 7)
+	adminAccess, adminRefresh, refreshID, err := s.GenerateAdminTokenPair("admin-1", "demo-manager", "manager", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := s.ValidateAdminToken(adminAccess); err != nil || c.TenantID != 7 {
-		t.Fatalf("admin access token rejected: %v", err)
+	if c, err := s.ValidateAdminToken(adminAccess); err != nil || c.TenantID != 7 || c.Username != "demo-manager" {
+		t.Fatalf("admin access token rejected or missing its username: %v", err)
 	}
 	if c, err := s.ValidateAdminRefreshToken(adminRefresh); err != nil || c.AdminUUID != "admin-1" {
 		t.Fatalf("admin refresh token rejected: %v", err)
+	} else if refreshID == "" || c.ID != refreshID {
+		t.Fatalf("admin refresh token jti = %q, want the returned ID %q", c.ID, refreshID)
 	}
 
 	reg, err := s.GenerateRegistrationToken("9999999999", "tenant-1")
@@ -55,7 +57,7 @@ func TestTokenKindsAreNotInterchangeable(t *testing.T) {
 	s := newTestJWTService()
 
 	userAccess, userRefresh, _ := s.GenerateTokens("user-1", "tenant-1", "9999999999")
-	adminAccess, adminRefresh, _ := s.GenerateAdminTokens("admin-1", "super_admin", 1)
+	adminAccess, adminRefresh, _, _ := s.GenerateAdminTokenPair("admin-1", "platform-admin", "super_admin", 1)
 	reg, _ := s.GenerateRegistrationToken("9999999999", "tenant-1")
 
 	reject := func(name string, err error) {

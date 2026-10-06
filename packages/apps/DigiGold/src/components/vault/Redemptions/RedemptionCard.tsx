@@ -13,7 +13,7 @@ import {
   formatGrams,
 } from '@/features/redemption/redemption.utils';
 import type { Redemption } from '@/features/redemption/redemption.types';
-import type { NormalizedApiError } from '@/lib/api/client';
+import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
 import { PickupCodeCard } from './PickupCodeCard';
 import styles from './RedemptionCard.module.scss';
 
@@ -38,15 +38,14 @@ export function RedemptionCard({ redemption }: { redemption: Redemption }) {
         description: 'The gold is back in your vault.',
       });
     } catch (error) {
-      const normalized = error as NormalizedApiError;
       setIsConfirmOpen(false);
+      const notPending = isNormalizedApiError(error) && error.code === 'REDEMPTION_NOT_PENDING';
       showToast({
         variant: 'danger',
-        title:
-          normalized.code === 'REDEMPTION_NOT_PENDING'
-            ? 'This redemption can no longer be cancelled'
-            : 'Could not cancel redemption',
-        description: normalized.message ?? 'Please try again in a moment.',
+        title: notPending
+          ? 'This redemption can no longer be cancelled'
+          : 'Could not cancel redemption',
+        description: describeApiError(error) ?? 'Please try again in a moment.',
       });
     }
   };
