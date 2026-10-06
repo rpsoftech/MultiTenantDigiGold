@@ -496,6 +496,17 @@ server and bumps the version in the key-value store. Run from the repository roo
 DEPLOY_ENV=STAGING FILE_SERVER_TOKEN=... KV_TOKEN=... go run ./packages/servers/MainServerGo/scripts/deploy.go
 ```
 
+Options:
+
+- `-dry-run` builds, compresses and hashes every binary into `build/` without uploading anything or
+  touching the key-value store. No tokens needed. Backend Tests runs it on every pull request.
+- A trailing number forces the version, e.g. `go run ./packages/servers/MainServerGo/scripts/deploy.go 120`.
+  Servers only install versions higher than the one they run.
+
+Without an override, one version covers every binary in the run. It is higher than every published
+version, and in CI never lower than the workflow run number. Each release uploads to its own file
+(`<key>_v<N>.gz`), so older releases stay available.
+
 `DEPLOY_ENV` must equal the target servers' `APP_ENV`. Running servers with `APP_ENV`
 `STAGING` or `PRODUCTION` check for a newer version every 5 minutes, verify the SHA-256,
 replace their own binary, and shut down gracefully. A process manager (systemd, etc.)
