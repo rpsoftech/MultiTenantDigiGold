@@ -5,8 +5,17 @@ on:
     branches:
       - main
       - staging
+    # Every deploy bumps the version and restarts every server, so only deploy when
+    # something that goes into the binaries changed.
+    paths:
+      - 'packages/servers/MainServerGo/**'
+      - '!packages/servers/MainServerGo/**/*_test.go'
+      - '!packages/servers/MainServerGo/**/*.md'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/workflows/deploy.yml'
 
-# Deploy runs read the current version and publish version + 1, so they must not overlap.
+# Deploy runs read the current version and publish a higher one, so they must not overlap.
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -60,24 +61,43 @@ type artifact struct {
 	info       updater.KVResponse
 }
 
-func getNextVersion(targetKey string) int {
+// getCurrentVersion returns the version published under targetKey, or 0 if nothing is published yet.
+func getCurrentVersion(targetKey string) int {
 	client := &http.Client{Timeout: 10 * time.Second}
 	current, err := updater.FetchKV(client, KeyValueURL, targetKey)
 	// Only a missing key means a first deploy. Any other failure must stop the deploy:
-	// publishing Version 1 over a higher version would make every server skip the update.
+	// guessing could publish a version below the one servers run, and they would skip it.
 	if errors.Is(err, updater.ErrKVNotFound) {
-		log.Printf("⚠️ No version found for %s. Starting at Version 1.", targetKey)
-		return 1
+		log.Printf("⚠️ No version found for %s.", targetKey)
+		return 0
 	}
 	if err != nil {
 		log.Fatalf("Could not fetch current version from KV store: %v", err)
 	}
 
-	return current.Version + 1
+	return current.Version
+}
+
+// nextVersion picks one version for every artifact in this run. It is above every published
+// version, so no server skips it, and in CI it is never below the workflow run number, so a
+// release can be traced back to the run that built it.
+func nextVersion(kvKeys []string) int {
+	next := 1
+	for _, key := range kvKeys {
+		next = max(next, getCurrentVersion(key)+1)
+	}
+	if runNumber, err := strconv.Atoi(os.Getenv("GITHUB_RUN_NUMBER")); err == nil {
+		next = max(next, runNumber)
+	}
+	return next
 }
 
 func main() {
-	if fileServerToken == "" || kvToken == "" {
+	// Usage: go run deploy.go [-dry-run] [version]
+	dryRun := flag.Bool("dry-run", false, "build, compress and hash every artifact without uploading or touching the KV store")
+	flag.Parse()
+
+	if !*dryRun && (fileServerToken == "" || kvToken == "") {
 		log.Fatal("FATAL: FILE_SERVER_TOKEN and KV_TOKEN environment variables are required.")
 	}
 	// Servers only poll keys for their exact APP_ENV, so reject anything they would never read.
@@ -90,16 +110,32 @@ func main() {
 		log.Fatalf("FATAL: DEPLOY_ENV must be %s or %s, got %q.", env.APP_ENV_STAGING, env.APP_ENV_PRODUCTION, deployEnv)
 	}
 
-	// Manual Override: `go run deploy.go <version>` forces the version for every build
-	overrideVersion := 0
-	if len(os.Args) > 1 {
-		v, err := strconv.Atoi(os.Args[1])
-		if err != nil || v < 1 {
-			log.Fatalf("FATAL: Version override must be a positive integer, got %q.", os.Args[1])
+	// Outputs exactly like: STAGING_digigold_api_linux_amd64
+	var kvKeys []string
+	for _, target := range targets {
+		for compName := range components {
+			kvKeys = append(kvKeys, updater.GetFileKey(deployEnv, compName, target.OS, target.Arch))
 		}
-		overrideVersion = v
-		log.Printf("⚠️ Manual Override: Forcing Version %d", overrideVersion)
 	}
+
+	// One version for every artifact, so api and worker from the same run always match.
+	var versionInt int
+	switch {
+	case flag.NArg() > 0:
+		// Manual Override: `go run deploy.go <version>` forces the version for every build
+		v, err := strconv.Atoi(flag.Arg(0))
+		if err != nil || v < 1 {
+			log.Fatalf("FATAL: Version override must be a positive integer, got %q.", flag.Arg(0))
+		}
+		versionInt = v
+		log.Printf("⚠️ Manual Override: Forcing Version %d", versionInt)
+	case *dryRun:
+		// A dry run publishes nothing, so it needs no version from the KV store.
+		log.Println("🧪 Dry run: building with Version 0. Nothing will be uploaded.")
+	default:
+		versionInt = nextVersion(kvKeys)
+	}
+	log.Printf("🚀 Deploying Digi Gold v%d to %s", versionInt, deployEnv)
 
 	if err := os.MkdirAll("build", 0755); err != nil {
 		log.Fatalf("Failed to create build directory: %v", err)
@@ -112,12 +148,7 @@ func main() {
 	for _, target := range targets {
 		// Loop through both microservices (API and Worker)
 		for compName, compPath := range components {
-			// Outputs exactly like: STAGING_digigold_api_linux_amd64
 			kvKey := updater.GetFileKey(deployEnv, compName, target.OS, target.Arch)
-			versionInt := overrideVersion
-			if versionInt == 0 {
-				versionInt = getNextVersion(kvKey)
-			}
 
 			log.Printf("\n========================================")
 			log.Printf("🔨 Building %s v%d [%s/%s]", compName, versionInt, target.OS, target.Arch)
@@ -170,6 +201,11 @@ func main() {
 				info:       updater.KVResponse{Version: versionInt, SHA256: hash},
 			})
 		}
+	}
+
+	if *dryRun {
+		log.Printf("\n✅ Dry run: all %d builds compiled, compressed and hashed. Skipping upload and KV update.", len(artifacts))
+		return
 	}
 
 	// PHASE 2 (6. UPLOAD): Push every file to the File Server. New versioned URLs only,
