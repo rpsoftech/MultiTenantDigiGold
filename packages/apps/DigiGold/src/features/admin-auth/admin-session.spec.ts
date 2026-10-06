@@ -22,6 +22,7 @@ describe('adminSessionUser', () => {
       expect(adminSessionUser(token({ ...validClaims, role }))).toEqual({
         userId: 'admin-123',
         role: 'admin',
+        adminRole: role,
         isNewUser: false,
         kycStatus: 'not_started',
       });

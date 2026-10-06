@@ -10,6 +10,7 @@ export type SessionUser = {
   mobileNumber?: string; // customer sessions
   email?: string; // admin sessions
   name?: string; // admin sessions
+  adminRole?: string; // admin sessions: MainServer role, e.g. super_admin, manager, custom
   isNewUser: boolean;
   kycStatus: KycStatus;
 };

@@ -41,7 +41,8 @@ type StoreLedgerResponse = {
   total_amount_inr: number;
   running_gold_balance_grams: number;
   reference_id?: string;
-  metadata_json?: Record<string, unknown> | null;
+  // Set by the server when a SYSTEM_REVERSAL entry reverses this one; omitted when false.
+  is_reversed?: boolean;
   created_at: string;
 };
 
@@ -105,7 +106,7 @@ function mapLedgerEntry(entry: StoreLedgerResponse): AdminLedgerEntry {
     runningGoldBalanceGrams: entry.running_gold_balance_grams,
     timestamp: entry.created_at,
     referenceId: entry.reference_id,
-    isReversed: entry.metadata_json?.is_reversed === true,
+    isReversed: entry.is_reversed === true,
     reversesLedgerId: reversalReference || undefined,
   };
 }
@@ -153,23 +154,7 @@ export const adminService = {
     const response = await apiClient.get<
       StorePageResponse<StoreLedgerResponse>
     >('/admin/store/ledger', { params });
-    const ledger = mapPage(response.data, mapLedgerEntry);
-    const reversedIds = new Set(
-      ledger.items.map((entry) => entry.reversesLedgerId).filter(Boolean),
-    );
-    ledger.items = ledger.items.map((entry) => ({
-      ...entry,
-      isReversed: entry.isReversed || reversedIds.has(entry.id),
-    }));
-    return ledger;
-  },
-
-  getRecentTransactions: async (): Promise<AdminLedgerEntry[]> => {
-    return (await adminService.getStoreLedger(1, 5)).items;
-  },
-
-  getRecentUsers: async (): Promise<AdminUserSummary[]> => {
-    return (await adminService.getAdminUsers(1, 5)).items;
+    return mapPage(response.data, mapLedgerEntry);
   },
 
   updateKycStatus: async ({

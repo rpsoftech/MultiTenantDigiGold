@@ -96,3 +96,13 @@ export const selectAdminUser = (state: RootState): SessionUser | null =>
   state.session.admin;
 export const selectIsAdmin = (state: RootState): boolean =>
   state.session.admin?.role === 'admin';
+
+// MainServer only lets these roles read store data (analytics, customers, ledger).
+const STORE_DATA_ROLES = ['super_admin', 'manager'];
+
+// True when the signed-in admin may view store data. A session without a role (sample
+// data mode) is allowed; MainServer still enforces the real permission on every request.
+export const selectCanViewStoreData = (state: RootState): boolean => {
+  const adminRole = state.session.admin?.adminRole;
+  return adminRole === undefined || STORE_DATA_ROLES.includes(adminRole);
+};

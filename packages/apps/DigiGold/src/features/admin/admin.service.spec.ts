@@ -175,12 +175,8 @@ describe('adminService store integration', () => {
             running_gold_balance_grams: 11,
             reference_id: 'REVERSAL_ledger-uuid',
           },
-          ledgerEntry,
-          {
-            ...ledgerEntry,
-            gl_uuid: 'metadata-reversed',
-            metadata_json: { is_reversed: true },
-          },
+          { ...ledgerEntry, is_reversed: true },
+          { ...ledgerEntry, gl_uuid: 'not-reversed' },
         ],
         page: 2,
         limit: 20,
@@ -203,28 +199,9 @@ describe('adminService store integration', () => {
       isReversed: false,
       reversesLedgerId: 'ledger-uuid',
     });
+    // The server decides: a reversal on another page still marks its original.
     expect(result.items[1].isReversed).toBe(true);
-    expect(result.items[2].isReversed).toBe(true);
-  });
-
-  it('loads recent customers and activity from the first store page', async () => {
-    const get = jest
-      .spyOn(apiClient, 'get')
-      .mockResolvedValueOnce({
-        data: { success: true, data: [customer], page: 1, limit: 5 },
-      })
-      .mockResolvedValueOnce({
-        data: { success: true, data: [ledgerEntry], page: 1, limit: 5 },
-      });
-
-    expect(await adminService.getRecentUsers()).toHaveLength(1);
-    expect(await adminService.getRecentTransactions()).toHaveLength(1);
-    expect(get).toHaveBeenNthCalledWith(1, '/admin/store/customers', {
-      params: { page: 1, limit: 5 },
-    });
-    expect(get).toHaveBeenNthCalledWith(2, '/admin/store/ledger', {
-      params: { page: 1, limit: 5 },
-    });
+    expect(result.items[2].isReversed).toBe(false);
   });
 
   it.each([

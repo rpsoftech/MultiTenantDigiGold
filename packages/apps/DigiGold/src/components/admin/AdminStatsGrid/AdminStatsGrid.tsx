@@ -61,14 +61,14 @@ export function AdminStatsGrid() {
     {
       label: 'Total gold volume',
       value: `${stats.totalVolumeGrams.toLocaleString('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} g`,
-      hint: 'Gold purchased and redeemed',
+      hint: 'Gold purchased and redeemed, excluding reversals',
       icon: CoinsIcon,
       featured: true,
     },
     {
       label: 'Total revenue',
       value: formatCurrency(stats.totalRevenueInr, 'INR', 2),
-      hint: 'Lifetime transaction value',
+      hint: 'Transaction value, excluding reversals',
       icon: WalletIcon,
     },
     {
@@ -80,7 +80,7 @@ export function AdminStatsGrid() {
     {
       label: 'Total transactions',
       value: stats.totalTransactions.toLocaleString('en-IN'),
-      hint: 'Purchases and redemptions',
+      hint: 'Purchases and redemptions, excluding reversals',
       icon: ClockIcon,
     },
   ];
