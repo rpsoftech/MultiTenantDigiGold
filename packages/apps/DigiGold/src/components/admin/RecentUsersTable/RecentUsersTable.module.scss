@@ -1,0 +1,121 @@
+@use '@/styles/mixins' as *;
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.sectionTitle {
+  font-family: var(--font-headline);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.sectionDescription {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+.viewAll {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: var(--space-2) 0;
+}
+.viewAll:hover {
+  color: var(--brand-tertiary);
+}
+.viewAll:focus-visible {
+  @include focus-ring;
+}
+.tableCard {
+  padding: 0;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+  @include stacked-table;
+
+  th {
+    text-align: left;
+    font-family: var(--font-label);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface-secondary);
+  }
+
+  td {
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+    vertical-align: middle;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+  tbody tr:hover {
+    background: var(--color-surface-secondary);
+  }
+  td.goldBalance {
+    font-weight: 700;
+    color: var(--brand-tertiary);
+    white-space: nowrap;
+  }
+}
+
+.userName {
+  font-weight: 600;
+}
+.contact {
+  display: grid;
+  gap: var(--space-1);
+}
+.email {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.joinedDate {
+  white-space: nowrap;
+}
+.state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-6);
+  min-height: 180px;
+
+  strong {
+    font-size: 1rem;
+  }
+  p {
+    margin: 0;
+    max-width: 480px;
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+}

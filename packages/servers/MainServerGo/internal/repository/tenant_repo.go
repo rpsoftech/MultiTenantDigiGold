@@ -29,6 +29,8 @@ type TenantRepository struct {
 	stmtGetFullByUUID   *sql.Stmt
 	stmtGetFullByDomain *sql.Stmt
 	stmtGetFullByShort  *sql.Stmt
+	stmtGetAllTenants   *sql.Stmt
+	stmtCountAllTenants *sql.Stmt
 
 	// Write Statements
 	stmtCreateTenant *sql.Stmt
@@ -113,6 +115,16 @@ func GetTenantRepository() *TenantRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare GetFullTenantByShortName: %v", err))
 		}
 
+		stmtGetAllTenants, err := db.Db.Prepare(fmt.Sprintf(`%s ORDER BY %s DESC LIMIT $1 OFFSET $2`, queryFullSelect, schema.ColTenantCreatedAt))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare GetAllTenants: %v", err))
+		}
+
+		stmtCountAllTenants, err := db.Db.Prepare(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, schema.TableTenants))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare CountAllTenants: %v", err))
+		}
+
 		// ==========================================
 		// 3. WRITE QUERIES
 		// ==========================================
@@ -161,6 +173,8 @@ func GetTenantRepository() *TenantRepository {
 			stmtGetFullByUUID:      stmtFullUUID,
 			stmtGetFullByDomain:    stmtFullDomain,
 			stmtGetFullByShort:     stmtFullShort,
+			stmtGetAllTenants:      stmtGetAllTenants,
+			stmtCountAllTenants:    stmtCountAllTenants,
 			stmtCreateTenant:       stmtCreate,
 			stmtUpdateTenant:       stmtUpdate,
 			tenantUUIDtoID:         make(map[string]int64),
@@ -273,6 +287,40 @@ func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (int
 
 	}
 	return id, nil
+}
+
+func (r *TenantRepository) GetAllTenantsPaginated(ctx context.Context, limit, offset int) ([]*models.Tenant, int64, error) {
+	var total int64
+	err := r.stmtCountAllTenants.QueryRowContext(ctx).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count tenants: %w", err)
+	}
+
+	rows, err := r.stmtGetAllTenants.QueryContext(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query tenants: %w", err)
+	}
+	defer rows.Close()
+
+	var tenants []*models.Tenant
+	for rows.Next() {
+		var t models.Tenant
+		if err := rows.Scan(
+			&t.ID, &t.UUID, &t.FullName, &t.ShortName,
+			&t.Domain, &t.Subdomain, &t.DomainExpiry, &t.PlanExpiry,
+			&t.RenewalCost, &t.KYCMode, &t.MarkupPercentage, &t.UIJSONConfig,
+			&t.CreatedAt, &t.ModifiedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan tenant: %w", err)
+		}
+		tenants = append(tenants, &t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return tenants, total, nil
 }
 
 // ==========================================
@@ -449,4 +497,33 @@ func (r *TenantRepository) GetPartialTenantByShortName(ctx context.Context, shor
 		return nil, err
 	}
 	return t, nil
+}
+
+func (r *TenantRepository) GetFullTenantByID(ctx context.Context, id int64) (*models.Tenant, error) {
+	query := "SELECT tenant_id, tenant_uuid, tenant_full_name, tenant_short_name, tenant_domain, tenant_subdomain, tenant_domain_expiry, tenant_plan_expiry, tenant_renewal_cost, tenant_kyc_mode, tenant_markup_percentage, tenant_ui_json_config, tenant_created_at, tenant_modified_at FROM tenants WHERE tenant_id = $1"
+	t, err := r.scanFullRetrieval(r.DB.Db.QueryRowContext(ctx, query, id))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("tenant not found")
+		}
+		return nil, err
+	}
+	return t, nil
+}
+
+func (r *TenantRepository) UpdateTenantUILayout(ctx context.Context, tenantID int64, uiConfigBytes []byte) error {
+	query := `
+		UPDATE tenants 
+		SET tenant_ui_json_config = $1, tenant_modified_at = NOW()
+		WHERE tenant_id = $2
+	`
+	_, err := r.DB.Db.ExecContext(ctx, query, string(uiConfigBytes), tenantID)
+	if err != nil {
+		return err
+	}
+
+	// Optional: invalidate cache if needed
+	// r.invalidateTenantCaches(ctx, &models.Tenant{ID: tenantID}) // Not implemented with ID only
+
+	return nil
 }

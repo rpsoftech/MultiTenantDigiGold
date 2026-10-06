@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:18-alpine # uuidv7() in the schema needs PostgreSQL 18+
+    container_name: digigold_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_DB: digigold_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql # PostgreSQL 18 images keep data under this path
+    # The schema is created by migrations: the API runs them on startup.
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: digigold_redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    # The app requires REDIS_DB_PASSWORD, so local Redis runs with a password too.
+    command:
+      ['redis-server', '--appendonly', 'yes', '--requirepass', 'localredispass']
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: digigold_api
+    ports:
+      - '8080:8080'
+    # Secrets (ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, APP_ENV) come from the local env file.
+    env_file:
+      - ./cmd/api/digiGold.env
+    # Point the API at the containers below (overrides the env file).
+    environment:
+      - PORT=8080
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_USERNAME=admin
+      - PG_PASSWORD=adminpassword
+      - PG_DATABASE=digigold_db
+      - PG_SCHEMA=public
+      - REDIS_DB_HOST=redis
+      - REDIS_DB_PORT=6379
+      - REDIS_DB_PASSWORD=localredispass
+      - REDIS_DB_DATABASE=0
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

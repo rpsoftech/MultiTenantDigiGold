@@ -1,0 +1,12 @@
+@use '@/styles/mixins' as *;
+
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-6) var(--space-4);
+
+  @include md {
+    padding: var(--space-8) var(--space-6);
+  }
+}

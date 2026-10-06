@@ -2,48 +2,46 @@ package middleware
 
 import (
 	"errors"
-	"log"
+	"fmt"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
-	// "github.com/getsentry/sentry-go" // Uncomment when Sentry is installed
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 )
 
 // GlobalErrorHandler intercepts every error returned by any Fiber controller
 func GlobalErrorHandler(c fiber.Ctx, err error) error {
-	// 1. THE MISSING LINK: Run every raw error through your Central Translator first!
-	// If it's a known Sentinel Error (like ErrRecentOTPReqExist), it becomes a RequestError.
-	// If it's already a RequestError, ParseDBError should safely pass it through.
-	translatedErr := interfaces.ParseDBError(err)
-
-	// 2. Default to 500 Internal Server Error
+	// 1. Default to 500 Internal Server Error
 	code := fiber.StatusInternalServerError
 	message := "Internal Server Error"
 	errorCode := interfaces.ERROR_INTERNAL_SERVER
 	name := "Error"
 	var extra any
 
-	// 3. Extract the structured data from our Custom Error
-	if reqErr, ok := errors.AsType[*interfaces.RequestError](translatedErr); ok {
+	// 2. Fiber's own errors (404 route not found, 405, 413...) keep their status.
+	// They must be checked before ParseDBError, which turns any unknown error into a 500.
+	if fiberErr, ok := errors.AsType[*fiber.Error](err); ok {
+		code = fiberErr.Code
+		message = fiberErr.Message
+	} else if reqErr, ok := errors.AsType[*interfaces.RequestError](interfaces.ParseDBError(err)); ok {
+		// 3. Every other error runs through the central translator: known sentinel
+		// errors become RequestErrors; anything else becomes a 500.
 		code = reqErr.StatusCode
 		message = reqErr.Message
 		errorCode = reqErr.Code
 		name = reqErr.Name
 		extra = reqErr.Extra
-	} else {
-		// Fallback: Check if it's a standard Fiber error (e.g., 404 Route Not Found)
-		if fiberErr, ok := errors.AsType[*fiber.Error](err); ok {
-			code = fiberErr.Code
-			message = fiberErr.Message
-		}
 	}
 
-	// 4. Sentry Integration
-	// We only want to spam Sentry for actual server crashes (500+),
-	// not because a user typed the wrong OTP (400/401).
+	// 4. Monitoring: only real server failures (500+) alert, not client
+	// mistakes such as a wrong OTP (400/401).
 	if code >= 500 {
-		log.Printf("🚨 CRITICAL SENTRY ALERT: %v\n", err) // We log the ORIGINAL 'err' to keep the stack trace
-		// sentry.CaptureException(err)
+		// Report the ORIGINAL err (with details) to monitoring; the client gets a generic message.
+		monitoring.Critical(c.Context(), monitoring.KindHTTP5xx, fmt.Errorf("%s %s: %w", c.Method(), c.Path(), err))
+
+		// Never send internal details (DB errors, stack info) to clients.
+		message = "Internal Server Error"
+		extra = nil
 	}
 
 	// 5. Compress the output into a uniform JSON response for the React frontend

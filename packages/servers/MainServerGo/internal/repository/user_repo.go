@@ -37,13 +37,13 @@ func GetUserRepository() *UserRepository {
 		db := postgres.GetPostgresDB()
 		rdb := redis_client.InitRedisClient()
 
-		// 1. FULL QUERY BASE (13 Columns)
+		// 1. FULL QUERY BASE (14 Columns)
 		queryFullSelect := fmt.Sprintf(`
 			SELECT 
-				%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, user_created_at, user_modified_at 
+				%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, user_created_at, user_modified_at 
 			FROM %s`,
 			schema.ColUserID, schema.ColUserUUID, schema.ColUserTenantID, schema.ColUserFullName,
-			schema.ColUserPhoneNumber, schema.ColUserEmailID, schema.ColUserKYCStatus, schema.ColUserStatusApprovedBy,
+			schema.ColUserPhoneNumber, schema.ColUserEmailID, schema.ColUserCity, schema.ColUserKYCStatus, schema.ColUserStatusApprovedBy,
 			schema.ColUserDocumentJSON, schema.ColUserERPUniqueID, schema.ColUserVaultBalance,
 			schema.TableUsers,
 		)
@@ -61,12 +61,13 @@ func GetUserRepository() *UserRepository {
 
 		// 2. CREATE QUERY
 		queryCreate := fmt.Sprintf(`
-			INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s, %s)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+			INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
 			RETURNING %s, user_created_at, user_modified_at`,
 			schema.TableUsers,
 			schema.ColUserUUID, schema.ColUserTenantID, schema.ColUserFullName, schema.ColUserPhoneNumber,
 			schema.ColUserEmailID, schema.ColUserKYCStatus, schema.ColUserDocumentJSON, schema.ColUserERPUniqueID,
+			schema.ColUserCity,
 			schema.ColUserID,
 		)
 		stmtCreate, err := db.Db.Prepare(queryCreate)
@@ -77,13 +78,14 @@ func GetUserRepository() *UserRepository {
 		// 3. UPDATE QUERY (Protects ID, UUID, TenantID, Balance, and CreatedAt)
 		queryUpdate := fmt.Sprintf(`
 			UPDATE %s SET 
-				%s = $1, %s = $2, %s = $3, %s = $4, %s = $5, %s = $6, %s = $7,
+				%s = $1, %s = $2, %s = $3, %s = $4, %s = $5, %s = $6, %s = $7, %s = $8,
 				user_modified_at = CURRENT_TIMESTAMP
-			WHERE %s = $8 AND %s = $9
+			WHERE %s = $9 AND %s = $10
 			RETURNING user_modified_at`,
 			schema.TableUsers,
 			schema.ColUserFullName, schema.ColUserPhoneNumber, schema.ColUserEmailID,
 			schema.ColUserKYCStatus, schema.ColUserStatusApprovedBy, schema.ColUserDocumentJSON, schema.ColUserERPUniqueID,
+			schema.ColUserCity,
 			schema.ColUserTenantID, schema.ColUserUUID,
 		)
 		stmtUpdate, err := db.Db.Prepare(queryUpdate)
@@ -123,9 +125,30 @@ func (r *UserRepository) invalidateUserCaches(ctx context.Context, u *models.Use
 	r.Redis.RemoveKey(ctx, keys...)
 }
 
+// userCacheEntry is the Redis form of a user. models.User hides ID and
+// TenantID from API JSON (json:"-"), so the cache stores them separately;
+// without them every cached read returned user ID 0.
+type userCacheEntry struct {
+	*models.User
+	CachedID       int64 `json:"_cached_id"`
+	CachedTenantID int64 `json:"_cached_tenant_id"`
+}
+
+// decodeUserCache returns the cached user, or false for a miss or an entry
+// written before the internal IDs were cached.
+func decodeUserCache(cached string) (*models.User, bool) {
+	entry := userCacheEntry{User: &models.User{}}
+	if err := json.Unmarshal([]byte(cached), &entry); err != nil || entry.CachedID == 0 {
+		return nil, false
+	}
+	entry.User.ID = entry.CachedID
+	entry.User.TenantID = entry.CachedTenantID
+	return entry.User, true
+}
+
 func (r *UserRepository) createUserCaches(ctx context.Context, u *models.User) {
 	keys := r.generateCacheKey(u)
-	if jsonData, err := json.Marshal(u); err == nil {
+	if jsonData, err := json.Marshal(userCacheEntry{User: u, CachedID: u.ID, CachedTenantID: u.TenantID}); err == nil {
 		for _, cacheKey := range keys {
 			r.Redis.SetStringDataWithExpiry(ctx, cacheKey, string(jsonData), userCacheTTL)
 		}
@@ -136,7 +159,7 @@ func (r *UserRepository) scanFullRetrieval(row *sql.Row) (*models.User, error) {
 	var u models.User
 	err := row.Scan(
 		&u.ID, &u.UUID, &u.TenantID, &u.FullName,
-		&u.PhoneNumber, &u.EmailID, &u.KYCStatus, &u.StatusApprovedBy,
+		&u.PhoneNumber, &u.EmailID, &u.City, &u.KYCStatus, &u.StatusApprovedBy,
 		&u.DocumentJSON, &u.ERPUniqueID, &u.VaultBalance,
 		&u.CreatedAt, &u.ModifiedAt,
 	)
@@ -157,6 +180,7 @@ func (r *UserRepository) CreateFullUserWithTx(ctx context.Context, tx *sql.Tx, u
 	err := tx.StmtContext(ctx, r.stmtCreateUser).QueryRowContext(ctx,
 		u.UUID, u.TenantID, u.FullName, u.PhoneNumber,
 		u.EmailID, u.KYCStatus, u.DocumentJSON, u.ERPUniqueID,
+		u.City,
 	).Scan(&u.ID, &u.CreatedAt, &u.ModifiedAt)
 
 	if err != nil {
@@ -170,6 +194,7 @@ func (r *UserRepository) UpdateFullUserWithTx(ctx context.Context, tx *sql.Tx, u
 	err := tx.StmtContext(ctx, r.stmtUpdateUser).QueryRowContext(ctx,
 		u.FullName, u.PhoneNumber, u.EmailID, u.KYCStatus,
 		u.StatusApprovedBy, u.DocumentJSON, u.ERPUniqueID,
+		u.City,
 		u.TenantID, u.UUID,
 	).Scan(&u.ModifiedAt)
 
@@ -185,6 +210,7 @@ func (r *UserRepository) CreateFullUser(ctx context.Context, u *models.User) err
 	err := r.stmtCreateUser.QueryRowContext(ctx,
 		u.UUID, u.TenantID, u.FullName, u.PhoneNumber,
 		u.EmailID, u.KYCStatus, u.DocumentJSON, u.ERPUniqueID,
+		u.City,
 	).Scan(&u.ID, &u.CreatedAt, &u.ModifiedAt)
 
 	if err != nil {
@@ -198,6 +224,7 @@ func (r *UserRepository) UpdateFullUser(ctx context.Context, u *models.User) err
 	err := r.stmtUpdateUser.QueryRowContext(ctx,
 		u.FullName, u.PhoneNumber, u.EmailID, u.KYCStatus,
 		u.StatusApprovedBy, u.DocumentJSON, u.ERPUniqueID,
+		u.City,
 		u.TenantID, u.UUID,
 	).Scan(&u.ModifiedAt)
 
@@ -212,9 +239,8 @@ func (r *UserRepository) GetFullUserByPhone(ctx context.Context, tenantID int64,
 	cacheKey := fmt.Sprintf("tenant/%d/user/full/phone/%s", tenantID, phone)
 
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var u models.User
-		if err := json.Unmarshal([]byte(cachedStr), &u); err == nil {
-			return &u, nil
+		if u, ok := decodeUserCache(cachedStr); ok {
+			return u, nil
 		}
 	}
 
@@ -233,9 +259,8 @@ func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, 
 
 	// 2. Check Redis Cache First
 	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var u models.User
-		if err := json.Unmarshal([]byte(cachedStr), &u); err == nil {
-			return &u, nil // CACHE HIT
+		if u, ok := decodeUserCache(cachedStr); ok {
+			return u, nil // CACHE HIT
 		}
 	}
 
@@ -251,4 +276,127 @@ func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, 
 	go r.createUserCaches(context.Background(), u)
 
 	return u, nil
+}
+
+func (r *UserRepository) GetUsersByTenant(ctx context.Context, tenantID int64, limit int, offset int) ([]*models.User, error) {
+	query := fmt.Sprintf(`
+		SELECT 
+			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s
+		WHERE %s = $1
+		ORDER BY %s DESC
+		LIMIT $2 OFFSET $3
+	`, schema.ColUserUUID, schema.ColUserFullName, schema.ColUserPhoneNumber, schema.ColUserEmailID,
+		schema.ColUserCity, schema.ColUserKYCStatus, schema.ColUserStatusApprovedBy, schema.ColUserDocumentJSON,
+		schema.ColUserERPUniqueID, schema.ColUserVaultBalance, schema.ColUserCreatedAt,
+		schema.TableUsers, schema.ColUserTenantID, schema.ColUserCreatedAt)
+
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		var u models.User
+		var fullName, emailID, erpID sql.NullString
+		var approvedBy sql.NullInt64
+		var docJSON []byte
+
+		err := rows.Scan(
+			&u.UUID, &fullName, &u.PhoneNumber, &emailID, &u.City,
+			&u.KYCStatus, &approvedBy, &docJSON, &erpID, &u.VaultBalance, &u.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user row: %w", err)
+		}
+
+		if fullName.Valid {
+			u.FullName = &fullName.String
+		}
+		if emailID.Valid {
+			u.EmailID = &emailID.String
+		}
+		if approvedBy.Valid {
+			u.StatusApprovedBy = &approvedBy.Int64
+		}
+		if erpID.Valid {
+			u.ERPUniqueID = &erpID.String
+		}
+		u.DocumentJSON = docJSON
+		users = append(users, &u)
+	}
+	return users, nil
+}
+
+func (r *UserRepository) UpdateUserKYCStatus(ctx context.Context, u *models.User, status string, adminID *int64) error {
+	query := `UPDATE users SET user_kyc_status = $1, user_status_approved_by = $2 WHERE user_id = $3`
+	_, err := r.DB.Db.ExecContext(ctx, query, status, adminID, u.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update user kyc status: %w", err)
+	}
+	// Synchronous, unlike the profile-update paths: the cached row is what InitiateBuy and
+	// GET /user/kyc read, so a stale entry would keep a just-approved customer blocked from
+	// KYC-gated purchases for the full cache TTL.
+	r.invalidateUserCaches(ctx, u)
+	return nil
+}
+
+// kycResubmittableCondition mirrors models.User.CanSubmitKYC in SQL: never submitted
+// (pending with an empty/null document) or rejected.
+const kycResubmittableCondition = `(user_kyc_status = 'rejected'
+	OR (user_kyc_status = 'pending'
+		AND (user_document_json IS NULL OR user_document_json IN ('{}'::jsonb, 'null'::jsonb))))`
+
+// SubmitKYCDocuments stores the customer's KYC details and moves them to pending review.
+// The resubmission rule is enforced in the UPDATE itself, so a concurrent admin approval
+// can't be overwritten between the caller's check and this write. Returns false when the
+// customer was not in a submittable state.
+func (r *UserRepository) SubmitKYCDocuments(ctx context.Context, u *models.User, docJSON []byte) (bool, error) {
+	query := `UPDATE users SET user_document_json = $1, user_kyc_status = 'pending'
+		WHERE user_id = $2 AND ` + kycResubmittableCondition
+	res, err := r.DB.Db.ExecContext(ctx, query, docJSON, u.ID)
+	if err != nil {
+		return false, fmt.Errorf("failed to submit kyc documents: %w", err)
+	}
+	updated, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read kyc update result: %w", err)
+	}
+	r.invalidateUserCaches(ctx, u)
+	return updated == 1, nil
+}
+
+func (r *UserRepository) GetPendingKYCUsersByTenant(ctx context.Context, tenantID int64, limit, offset int) ([]*models.User, error) {
+	query := `
+		SELECT user_id, user_uuid, user_tenant_id, user_full_name, user_phone_number, user_email_id, user_city, user_kyc_status, user_document_json, user_total_vault_balance
+		FROM users
+		WHERE user_tenant_id = $1 AND user_kyc_status = 'pending'
+			-- Every new user defaults to 'pending'; only actual submissions need review.
+			AND user_document_json IS NOT NULL AND user_document_json NOT IN ('{}'::jsonb, 'null'::jsonb)
+		ORDER BY user_modified_at ASC
+		LIMIT $2 OFFSET $3
+	`
+	rows, err := r.DB.Db.QueryContext(ctx, query, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pending kyc users: %w", err)
+	}
+	defer rows.Close()
+
+	users := []*models.User{}
+	for rows.Next() {
+		var u models.User
+		var docJSON []byte
+		if err := rows.Scan(
+			&u.ID, &u.UUID, &u.TenantID, &u.FullName, &u.PhoneNumber, &u.EmailID, &u.City, &u.KYCStatus, &docJSON, &u.VaultBalance,
+		); err != nil {
+			return nil, err
+		}
+		if len(docJSON) > 0 {
+			u.DocumentJSON = docJSON
+		}
+		users = append(users, &u)
+	}
+	return users, nil
 }

@@ -1,0 +1,90 @@
+@use '@/styles/mixins' as *;
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  cursor: pointer;
+  color: var(--color-text-primary);
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  color: var(--color-on-brand);
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.name {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  display: none;
+
+  @include sm {
+    display: inline;
+  }
+}
+
+.content {
+  min-width: 200px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  z-index: 20;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-surface-secondary);
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.logoutItem {
+  color: var(--color-danger);
+}
+
+.separator {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+}

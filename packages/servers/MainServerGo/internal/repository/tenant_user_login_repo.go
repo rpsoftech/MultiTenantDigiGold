@@ -3,11 +3,9 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -17,23 +15,28 @@ import (
 )
 
 type TenantUserLoginRepository struct {
-	DB    *postgres.PostgresDBStruct
-	Redis *redis_client.RedisClientStruct
-
-	// Prepared Statements
-	stmtGetFullUUID  *sql.Stmt
-	stmtGetFullPhone *sql.Stmt
-	stmtCreateAdmin  *sql.Stmt
-	stmtUpdateAdmin  *sql.Stmt
+	DB                         *postgres.PostgresDBStruct
+	Redis                      *redis_client.RedisClientStruct
+	stmtGetFullUUID            *sql.Stmt
+	stmtGetFullPhone           *sql.Stmt
+	stmtGetFullUsername        *sql.Stmt
+	stmtCreateAdmin            *sql.Stmt
+	stmtUpdateAdmin            *sql.Stmt
+	stmtGetAllAdmins           *sql.Stmt
+	stmtCountAllAdmins         *sql.Stmt
+	stmtGetAllAdminsByTenant   *sql.Stmt
+	stmtCountAllAdminsByTenant *sql.Stmt
 }
 
 var (
-	adminRepoInstance *TenantUserLoginRepository
-	adminRepoOnce     sync.Once
+	adminRepoInstance     *TenantUserLoginRepository
+	adminRepoOnce         sync.Once
+	ErrTOTPAlreadyEnabled = errors.New("TOTP is already enabled for this admin")
 )
 
-// adminCacheTTL is shorter than users/tenants because RBAC permissions need to reflect quickly
-const adminCacheTTL = time.Minute * 15
+// Admin reads are not cached: they carry the password hash and TOTP secret,
+// which must not sit in Redis, and they are rare (login and admin management).
+// invalidateAdminCaches still clears entries written by older versions.
 
 // GetTenantUserLoginRepository implements Thread-Safe Lazy Initialization
 func GetTenantUserLoginRepository() *TenantUserLoginRepository {
@@ -42,14 +45,14 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		rdb := redis_client.InitRedisClient()
 
 		// ==========================================
-		// 1. FULL QUERY BASE (11 Columns)
+		// 1. FULL QUERY BASE (13 Columns)
 		// ==========================================
 		queryFullSelect := fmt.Sprintf(`
 			SELECT 
-				%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s 
+				%s, %s, %s, %s, %s, %s, COALESCE(%s, ''), %s, %s, %s, %s, %s, %s
 			FROM %s`,
 			schema.ColTUID, schema.ColTUUID, schema.ColTUTenantID, schema.ColTUUsername,
-			schema.ColTUPhoneNumber, schema.ColTUPasswordHash, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
+			schema.ColTUPhoneNumber, schema.ColTUPasswordHash, schema.ColTUTOTPSecret, schema.ColTUTOTPEnabled, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
 			schema.ColTUCreatedAt, schema.ColTUModifiedAt,
 			schema.TableTenantUserLogins,
 		)
@@ -66,16 +69,43 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare GetFullAdminByPhone: %v", err))
 		}
 
+		// Get by Username (Strict Tenant Isolation + Must be Active)
+		stmtUsername, err := db.Db.Prepare(fmt.Sprintf(`%s WHERE %s = $1 AND %s = $2 AND %s = true`, queryFullSelect, schema.ColTUTenantID, schema.ColTUUsername, schema.ColTUIsActive))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare GetFullAdminByUsername: %v", err))
+		}
+
+		// Pagination Queries
+		stmtGetAllAdmins, err := db.Db.Prepare(fmt.Sprintf(`%s ORDER BY %s DESC LIMIT $1 OFFSET $2`, queryFullSelect, schema.ColTUCreatedAt))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetAllAdmins: %v", err))
+		}
+
+		stmtCountAllAdmins, err := db.Db.Prepare(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, schema.TableTenantUserLogins))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountAllAdmins: %v", err))
+		}
+
+		stmtGetAllAdminsByTenant, err := db.Db.Prepare(fmt.Sprintf(`%s WHERE %s = $1 ORDER BY %s DESC LIMIT $2 OFFSET $3`, queryFullSelect, schema.ColTUTenantID, schema.ColTUCreatedAt))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetAllAdminsByTenant: %v", err))
+		}
+
+		stmtCountAllAdminsByTenant, err := db.Db.Prepare(fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s = $1`, schema.TableTenantUserLogins, schema.ColTUTenantID))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountAllAdminsByTenant: %v", err))
+		}
+
 		// ==========================================
 		// 2. CREATE QUERY
 		// ==========================================
 		queryCreate := fmt.Sprintf(`
-			INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s, %s)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+			INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
 			RETURNING %s, %s, %s`,
 			schema.TableTenantUserLogins,
 			schema.ColTUUID, schema.ColTUTenantID, schema.ColTUUsername, schema.ColTUPhoneNumber,
-			schema.ColTUPasswordHash, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
+			schema.ColTUPasswordHash, schema.ColTUTOTPSecret, schema.ColTUTOTPEnabled, schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
 			schema.ColTUID, schema.ColTUCreatedAt, schema.ColTUModifiedAt,
 		)
 		stmtCreate, err := db.Db.Prepare(queryCreate)
@@ -88,12 +118,13 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		// ==========================================
 		queryUpdate := fmt.Sprintf(`
 			UPDATE %s SET 
-				%s = $1, %s = $2, %s = $3, %s = $4, %s = $5, %s = $6,
+				%s = $1, %s = $2, %s = $3, %s = $4, %s = $5, %s = $6, %s = $7, %s = $8,
 				%s = CURRENT_TIMESTAMP
-			WHERE %s = $7 AND %s = $8
+			WHERE %s = $9 AND %s = $10
 			RETURNING %s`,
 			schema.TableTenantUserLogins,
 			schema.ColTUUsername, schema.ColTUPhoneNumber, schema.ColTUPasswordHash,
+			schema.ColTUTOTPSecret, schema.ColTUTOTPEnabled,
 			schema.ColTURole, schema.ColTUIsActive, schema.ColTUPermissionsJSON,
 			schema.ColTUModifiedAt,
 			schema.ColTUTenantID, schema.ColTUUID,
@@ -105,12 +136,17 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 		}
 
 		adminRepoInstance = &TenantUserLoginRepository{
-			DB:               db,
-			Redis:            rdb,
-			stmtGetFullUUID:  stmtUUID,
-			stmtGetFullPhone: stmtPhone,
-			stmtCreateAdmin:  stmtCreate,
-			stmtUpdateAdmin:  stmtUpdate,
+			DB:                         db,
+			Redis:                      rdb,
+			stmtGetFullUUID:            stmtUUID,
+			stmtGetFullPhone:           stmtPhone,
+			stmtGetFullUsername:        stmtUsername,
+			stmtCreateAdmin:            stmtCreate,
+			stmtUpdateAdmin:            stmtUpdate,
+			stmtGetAllAdmins:           stmtGetAllAdmins,
+			stmtCountAllAdmins:         stmtCountAllAdmins,
+			stmtGetAllAdminsByTenant:   stmtGetAllAdminsByTenant,
+			stmtCountAllAdminsByTenant: stmtCountAllAdminsByTenant,
 		}
 	})
 	return adminRepoInstance
@@ -121,13 +157,14 @@ func GetTenantUserLoginRepository() *TenantUserLoginRepository {
 // ==========================================
 
 func (r *TenantUserLoginRepository) generateCacheKey(a *models.TenantUserLogin) []string {
-	keys := make([]string, 0, 2)
+	keys := make([]string, 0, 3)
 
 	// STRICT TENANT ISOLATION: The tenantID is the root of the cache key
 	base := fmt.Sprintf("tenant/%d/admin/full/", a.TenantID)
 
 	keys = append(keys, base+"uuid/"+a.UUID)
 	keys = append(keys, base+"phone/"+a.PhoneNumber)
+	keys = append(keys, base+"username/"+a.Username)
 
 	return keys
 }
@@ -137,20 +174,11 @@ func (r *TenantUserLoginRepository) invalidateAdminCaches(ctx context.Context, a
 	r.Redis.RemoveKey(ctx, keys...)
 }
 
-func (r *TenantUserLoginRepository) createAdminCaches(ctx context.Context, a *models.TenantUserLogin) {
-	keys := r.generateCacheKey(a)
-	if jsonData, err := json.Marshal(a); err == nil {
-		for _, cacheKey := range keys {
-			r.Redis.SetStringDataWithExpiry(ctx, cacheKey, string(jsonData), adminCacheTTL)
-		}
-	}
-}
-
 func (r *TenantUserLoginRepository) scanFullRetrieval(row *sql.Row) (*models.TenantUserLogin, error) {
 	var a models.TenantUserLogin
 	err := row.Scan(
 		&a.ID, &a.UUID, &a.TenantID, &a.Username,
-		&a.PhoneNumber, &a.PasswordHash, &a.Role, &a.IsActive, &a.PermissionsJSON,
+		&a.PhoneNumber, &a.PasswordHash, &a.TOTPSecret, &a.IsTOTPEnabled, &a.Role, &a.IsActive, &a.PermissionsJSON,
 		&a.CreatedAt, &a.ModifiedAt,
 	)
 	if err != nil {
@@ -171,7 +199,7 @@ func (r *TenantUserLoginRepository) scanFullRetrieval(row *sql.Row) (*models.Ten
 func (r *TenantUserLoginRepository) CreateFullAdminWithTx(ctx context.Context, tx *sql.Tx, a *models.TenantUserLogin) error {
 	err := tx.StmtContext(ctx, r.stmtCreateAdmin).QueryRowContext(ctx,
 		a.UUID, a.TenantID, a.Username, a.PhoneNumber,
-		a.PasswordHash, a.Role, a.IsActive, a.PermissionsJSON,
+		a.PasswordHash, a.TOTPSecret, a.IsTOTPEnabled, a.Role, a.IsActive, a.PermissionsJSON,
 	).Scan(&a.ID, &a.CreatedAt, &a.ModifiedAt)
 
 	if err != nil {
@@ -179,7 +207,6 @@ func (r *TenantUserLoginRepository) CreateFullAdminWithTx(ctx context.Context, t
 	}
 
 	// Safely update the cache in the background only if the database write succeeds
-	go r.createAdminCaches(context.Background(), a)
 	return nil
 }
 
@@ -187,6 +214,7 @@ func (r *TenantUserLoginRepository) CreateFullAdminWithTx(ctx context.Context, t
 func (r *TenantUserLoginRepository) UpdateFullAdminWithTx(ctx context.Context, tx *sql.Tx, a *models.TenantUserLogin) error {
 	err := tx.StmtContext(ctx, r.stmtUpdateAdmin).QueryRowContext(ctx,
 		a.Username, a.PhoneNumber, a.PasswordHash,
+		a.TOTPSecret, a.IsTOTPEnabled,
 		a.Role, a.IsActive, a.PermissionsJSON,
 		a.TenantID, a.UUID, // WHERE clause variables
 	).Scan(&a.ModifiedAt)
@@ -203,6 +231,7 @@ func (r *TenantUserLoginRepository) UpdateFullAdminWithTx(ctx context.Context, t
 func (r *TenantUserLoginRepository) UpdateFullAdmin(ctx context.Context, a *models.TenantUserLogin) error {
 	err := r.stmtUpdateAdmin.QueryRowContext(ctx,
 		a.Username, a.PhoneNumber, a.PasswordHash,
+		a.TOTPSecret, a.IsTOTPEnabled,
 		a.Role, a.IsActive, a.PermissionsJSON,
 		a.TenantID, a.UUID, // WHERE clause variables
 	).Scan(&a.ModifiedAt)
@@ -216,49 +245,125 @@ func (r *TenantUserLoginRepository) UpdateFullAdmin(ctx context.Context, a *mode
 	return nil
 }
 
+// InitializeTOTPSecret preserves an unfinished enrollment across password logins,
+// retries, and concurrent setup requests. PostgreSQL evaluates the secret after
+// acquiring the row lock, so only the first request can choose the enrollment key.
+func (r *TenantUserLoginRepository) InitializeTOTPSecret(ctx context.Context, tenantID int64, uuid, candidateSecret string) (string, error) {
+	query := fmt.Sprintf(`
+		UPDATE %s SET
+			%s = COALESCE(NULLIF(%s, ''), $3),
+			%s = CURRENT_TIMESTAMP
+		WHERE %s = $1 AND %s = $2 AND %s = true AND %s = false
+		RETURNING %s`,
+		schema.TableTenantUserLogins,
+		schema.ColTUTOTPSecret, schema.ColTUTOTPSecret,
+		schema.ColTUModifiedAt,
+		schema.ColTUTenantID, schema.ColTUUID, schema.ColTUIsActive, schema.ColTUTOTPEnabled,
+		schema.ColTUTOTPSecret,
+	)
+
+	var secret string
+	err := r.DB.Db.QueryRowContext(ctx, query, tenantID, uuid, candidateSecret).Scan(&secret)
+	if err == nil {
+		return secret, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+
+	// Verification may have enabled TOTP while setup waited for the row lock.
+	admin, err := r.GetFullAdminByUUID(ctx, tenantID, uuid)
+	if err != nil {
+		return "", err
+	}
+	if admin.IsTOTPEnabled {
+		return "", ErrTOTPAlreadyEnabled
+	}
+	return "", interfaces.ErrUserNotFound
+}
+
 // ==========================================
 // READ OPERATIONS (Cache-Aside Pattern)
 // ==========================================
 
 // GetFullAdminByUUID is used primarily for middleware authorization and profile fetching
 func (r *TenantUserLoginRepository) GetFullAdminByUUID(ctx context.Context, tenantID int64, uuid string) (*models.TenantUserLogin, error) {
-	cacheKey := fmt.Sprintf("tenant/%d/admin/full/uuid/%s", tenantID, uuid)
-
-	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var a models.TenantUserLogin
-		if err := json.Unmarshal([]byte(cachedStr), &a); err == nil {
-			return &a, nil
-		}
-	}
-
 	a, err := r.scanFullRetrieval(r.stmtGetFullUUID.QueryRowContext(ctx, tenantID, uuid))
 	if err != nil {
 		return nil, err
 	}
 
-	go r.createAdminCaches(context.Background(), a)
 	return a, nil
 }
 
 // GetActiveAdminByPhone is used for the Login flow. It strictly enforces the tu_is_active flag.
 func (r *TenantUserLoginRepository) GetActiveAdminByPhone(ctx context.Context, tenantID int64, phone string) (*models.TenantUserLogin, error) {
-	cacheKey := fmt.Sprintf("tenant/%d/admin/full/phone/%s", tenantID, phone)
-
-	if cachedStr, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedStr != "" {
-		var a models.TenantUserLogin
-		if err := json.Unmarshal([]byte(cachedStr), &a); err == nil {
-			// Double check active status just in case cache wasn't invalidated properly on a ban
-			if a.IsActive {
-				return &a, nil
-			}
-		}
-	}
-
 	a, err := r.scanFullRetrieval(r.stmtGetFullPhone.QueryRowContext(ctx, tenantID, phone))
 	if err != nil {
 		return nil, err // Fails if they don't exist OR if IsActive = false due to the SQL WHERE clause
 	}
 
-	go r.createAdminCaches(context.Background(), a)
 	return a, nil
+}
+
+// GetActiveAdminByUsername is used for the Login flow. It strictly enforces the tu_is_active flag.
+func (r *TenantUserLoginRepository) GetActiveAdminByUsername(ctx context.Context, tenantID int64, username string) (*models.TenantUserLogin, error) {
+	a, err := r.scanFullRetrieval(r.stmtGetFullUsername.QueryRowContext(ctx, tenantID, username))
+	if err != nil {
+		return nil, err
+	}
+
+	return a, nil
+}
+
+func (r *TenantUserLoginRepository) scanMultipleFullRetrieval(rows *sql.Rows) ([]*models.TenantUserLogin, error) {
+	var admins []*models.TenantUserLogin
+	for rows.Next() {
+		var a models.TenantUserLogin
+		if err := rows.Scan(
+			&a.ID, &a.UUID, &a.TenantID, &a.Username, &a.PhoneNumber,
+			&a.PasswordHash, &a.TOTPSecret, &a.IsTOTPEnabled, &a.Role,
+			&a.IsActive, &a.PermissionsJSON,
+			&a.CreatedAt, &a.ModifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		admins = append(admins, &a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return admins, nil
+}
+
+func (r *TenantUserLoginRepository) GetAllAdminsPaginated(ctx context.Context, limit, offset int) ([]*models.TenantUserLogin, int64, error) {
+	var total int64
+	if err := r.stmtCountAllAdmins.QueryRowContext(ctx).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.stmtGetAllAdmins.QueryContext(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	admins, err := r.scanMultipleFullRetrieval(rows)
+	return admins, total, err
+}
+
+func (r *TenantUserLoginRepository) GetAllAdminsByTenantPaginated(ctx context.Context, tenantID int64, limit, offset int) ([]*models.TenantUserLogin, int64, error) {
+	var total int64
+	if err := r.stmtCountAllAdminsByTenant.QueryRowContext(ctx, tenantID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.stmtGetAllAdminsByTenant.QueryContext(ctx, tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	admins, err := r.scanMultipleFullRetrieval(rows)
+	return admins, total, err
 }

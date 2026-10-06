@@ -1,0 +1,207 @@
+@use '@/styles/mixins' as *;
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.successIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+}
+
+.centered {
+  align-items: center;
+  text-align: center;
+}
+
+.title {
+  font-family: var(--font-headline);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.balanceRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-secondary);
+}
+
+.balanceLabel {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.balanceValue {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+
+  @include lg {
+    flex: 1;
+  }
+}
+
+// Shown at every size. On desktop the card stretches to the list pane's height, so the
+// panel is pushed to the bottom, just above the submit button.
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-secondary);
+
+  @include lg {
+    margin-top: auto;
+  }
+}
+
+.stepsTitle {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+}
+
+.stepNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-on-brand);
+  background: var(--brand-primary);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface-secondary);
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+
+  dt {
+    color: var(--color-text-muted);
+  }
+
+  dd {
+    margin: 0;
+    font-weight: 700;
+    color: var(--color-text-primary);
+  }
+}
+
+.note {
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: var(--space-3) 0 0;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+
+  @include sm {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.loaderRow {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-8) 0;
+}
+
+.link {
+  font-family: var(--font-label);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+}

@@ -1,0 +1,28 @@
+export const ROUTES = {
+  login: '/login',
+  otp: '/otp',
+  profileSetup: '/profile-setup',
+  home: '/home',
+  vault: '/vault',
+  passbook: '/vault/passbook',
+  redemptions: '/vault/redemptions',
+  kyc: '/kyc',
+  sip: '/invest/sip',
+  // /jewellery redirects to the default category (DEFAULT_JEWELLERY_CATEGORY_ID); category
+  // and product URLs come from features/marketplace/marketplace.catalogue.ts.
+  jewellery: '/jewellery',
+  jewelry: '/jewellery',
+  marketplace: '/jewellery',
+  aboutUs: '/about-us',
+  vaultSecurity: '/vault/security',
+  privacyPolicy: '/privacy-policy',
+  termsOfService: '/terms-of-service',
+  helpCenter: '/help-center',
+  contactSupport: '/contact-support',
+  adminLogin: '/admin/login',
+  adminDashboard: '/admin/dashboard',
+  adminCustomers: '/admin/customers',
+  adminLedger: '/admin/ledger',
+  adminProfile: '/admin/profile',
+  adminUpdatePassword: '/admin/update-password',
+} as const;

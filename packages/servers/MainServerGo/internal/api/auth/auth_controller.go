@@ -2,11 +2,13 @@ package auth_controllers
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/service"
+	utility_functions "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions"
 )
 
 type (
@@ -36,9 +38,10 @@ type (
 		RegistrationToken string `json:"registration_token,omitempty"`
 	}
 	RegisterPayload struct {
-		RegistrationToken string  `json:"registration_token" validate:"required"`
-		FullName          string  `json:"full_name" validate:"required"`
-		EmailID           *string `json:"email_id"`
+		RegistrationToken string `json:"registration_token" validate:"required"`
+		FullName          string `json:"full_name" validate:"required,max=255"`
+		Location          string `json:"location" validate:"required,min=2,max=100"` // city, stored as users.user_city
+		EmailID           string `json:"email_id"`
 	}
 )
 
@@ -175,6 +178,14 @@ func (ac *AuthController) Register(c fiber.Ctx) error {
 		}
 	}
 
+	// The tags above are only enforced when validated explicitly.
+	payload.FullName = strings.TrimSpace(payload.FullName)
+	payload.Location = strings.TrimSpace(payload.Location)
+	payload.EmailID = strings.TrimSpace(payload.EmailID)
+	if reqErr := utility_functions.ValidateReqInput(&payload); reqErr != nil {
+		return reqErr
+	}
+
 	// 4. USE THE INJECTED SINGLETON
 	phone, tokenTenantUUID, err := ac.JWTService.ValidateRegistrationToken(payload.RegistrationToken)
 	if err != nil {
@@ -201,7 +212,7 @@ func (ac *AuthController) Register(c fiber.Ctx) error {
 	}
 
 	// 3. CRITICAL FIX: Use c.Context()
-	user, err := ac.UserService.RegisterUser(c.Context(), tenantID, phone, payload.FullName, payload.EmailID)
+	user, err := ac.UserService.RegisterUser(c.Context(), tenantID, phone, payload.FullName, payload.EmailID, payload.Location)
 	if err != nil {
 		return interfaces.ParseDBError(err)
 	}

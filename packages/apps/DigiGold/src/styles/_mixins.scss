@@ -1,0 +1,128 @@
+@mixin sm {
+  @media (min-width: 640px) {
+    @content;
+  }
+}
+@mixin md {
+  @media (min-width: 768px) {
+    @content;
+  }
+}
+@mixin lg {
+  @media (min-width: 1024px) {
+    @content;
+  }
+}
+@mixin xl {
+  @media (min-width: 1280px) {
+    @content;
+  }
+}
+
+@mixin focus-ring {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+@mixin reduced-motion {
+  @media (prefers-reduced-motion: reduce) {
+    @content;
+  }
+}
+
+@mixin below-md {
+  @media (max-width: 767.98px) {
+    @content;
+  }
+}
+
+// Hides content visually while keeping it available to screen readers.
+@mixin visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+// Turns a table into a stack of labelled cards below the md breakpoint.
+// Include inside the table's class: `.table { @include stacked-table; }`.
+//
+// - Each data <td> needs a data-label attribute; it is shown as the cell's caption.
+// - A cell with several parts (e.g. name + id) wraps them in one element, so the parts stay
+//   stacked together on the right instead of becoming separate items across the row.
+// - A cell without data-label (e.g. row actions) spans the full width with no caption.
+//
+// Selectors go through `tbody` so they outrank the component's own `.table td` rules, which
+// come later in the file with otherwise equal specificity.
+//
+// Trade-off: display:block on rows and cells drops the table semantics in some screen
+// readers on small screens. Every value keeps its visible caption, so the content still
+// reads in order.
+@mixin stacked-table {
+  @include below-md {
+    min-width: 0;
+
+    thead {
+      @include visually-hidden;
+    }
+
+    tbody,
+    tbody tr {
+      display: block;
+      width: 100%;
+    }
+
+    tbody tr {
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    tbody td,
+    tbody tr:last-child td {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      width: 100%;
+      padding: var(--space-2) 0;
+      border-bottom: none;
+      text-align: right;
+    }
+
+    tbody td > * {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    tbody td::before {
+      content: attr(data-label);
+      flex-shrink: 0;
+      font-family: var(--font-label);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+      text-align: left;
+    }
+
+    tbody td:not([data-label]) {
+      display: block;
+      text-align: left;
+    }
+
+    tbody td:not([data-label])::before,
+    tbody td:empty::before {
+      content: none;
+    }
+  }
+}
