@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from '@jest/globals';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { AdminLedgerEntry } from '@/features/admin/admin.types';
 import { StoreLedgerTable } from './StoreLedgerTable';
 
@@ -75,5 +75,68 @@ describe('StoreLedgerTable', () => {
     expect(screen.getByText('Other movement')).toBeTruthy();
     expect(screen.getByText('Other mode')).toBeTruthy();
     expect(screen.getByText('Recorded')).toBeTruthy();
+  });
+
+  it('hides the actions column unless a reverse handler is provided', () => {
+    render(<StoreLedgerTable entries={[purchase]} />);
+
+    expect(screen.queryByRole('button', { name: /Reverse/ })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
+  });
+
+  it('enables Reverse only for entries that can be reversed', () => {
+    const onReverse = jest.fn();
+    render(
+      <StoreLedgerTable
+        entries={[
+          purchase,
+          { ...purchase, id: 'already', isReversed: true },
+          {
+            ...purchase,
+            id: 'reversal',
+            eventType: 'SYSTEM_REVERSAL',
+            reversesLedgerId: 'already',
+          },
+        ]}
+        onReverse={onReverse}
+      />,
+    );
+
+    const open = screen.getByRole('button', {
+      name: 'Reverse ledger entry ledger-purchase',
+    }) as HTMLButtonElement;
+    const reversed = screen.getByRole('button', {
+      name: 'Reverse ledger entry already',
+    }) as HTMLButtonElement;
+    const reversal = screen.getByRole('button', {
+      name: 'Reverse ledger entry reversal',
+    }) as HTMLButtonElement;
+
+    expect(open.disabled).toBe(false);
+    expect(reversed.disabled).toBe(true);
+    expect(reversal.disabled).toBe(true);
+    fireEvent.click(reversed);
+    fireEvent.click(reversal);
+    expect(onReverse).not.toHaveBeenCalled();
+    fireEvent.click(open);
+    expect(onReverse).toHaveBeenCalledWith(purchase);
+  });
+
+  it('blocks the row that is being reversed', () => {
+    render(
+      <StoreLedgerTable
+        entries={[purchase]}
+        onReverse={jest.fn()}
+        reversingId="ledger-purchase"
+      />,
+    );
+
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Reverse ledger entry ledger-purchase',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 });
