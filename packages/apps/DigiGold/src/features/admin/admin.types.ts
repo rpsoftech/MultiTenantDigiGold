@@ -59,6 +59,22 @@ export type PendingKycSubmission = {
   documents: KycDocuments;
 };
 
+// A customer's request to collect physical gold at the counter. MainServer never sends the
+// pickup code to staff: the customer reads it out and staff type it in.
+export type PendingRedemption = {
+  id: string;
+  ledgerId: string;
+  weightGrams: number;
+  requestedAt: string;
+  customerName: string;
+  customerPhone: string;
+};
+
+export type CollectRedemptionPayload = {
+  redemptionId: string;
+  pickupCode: string;
+};
+
 export type UpdateKycStatusPayload = {
   userId: string;
   kycStatus: Extract<KycStatus, 'verified' | 'rejected'>;

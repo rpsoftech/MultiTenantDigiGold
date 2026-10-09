@@ -7,6 +7,7 @@ import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import {
   ShieldIcon,
   ShieldCheckIcon,
+  TruckIcon,
   HomeIcon,
   UserIcon,
   WalletIcon,
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { href: ROUTES.adminCustomers, label: 'Customers', icon: UserIcon },
   { href: ROUTES.adminCounterSale, label: 'Counter sale', icon: CoinsIcon },
   { href: ROUTES.adminKycReview, label: 'KYC review', icon: ShieldCheckIcon },
+  { href: ROUTES.adminPickups, label: 'Pickups', icon: TruckIcon },
   { href: ROUTES.adminLedger, label: 'Store ledger', icon: WalletIcon },
 ];
 

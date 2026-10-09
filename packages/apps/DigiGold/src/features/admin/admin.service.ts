@@ -8,7 +8,9 @@ import type {
   CounterTradeReceipt,
   KycDocuments,
   KycStatus,
+  CollectRedemptionPayload,
   PendingKycSubmission,
+  PendingRedemption,
   StorePage,
   UpdateKycStatusPayload,
 } from './admin.types';
@@ -16,7 +18,10 @@ import {
   mockGetAdminStats,
   mockGetAdminUsers,
   mockCreateCounterTrade,
+  mockCancelRedemption,
+  mockCollectRedemption,
   mockGetPendingKyc,
+  mockGetPendingRedemptions,
   mockGetStoreLedger,
   mockReverseLedgerEntry,
   mockUpdateKycStatus,
@@ -48,6 +53,15 @@ type PendingKycResponse = {
   city: string | null;
   total_vault_balance: number;
   document_json: Record<string, unknown> | null;
+};
+
+type PendingRedemptionResponse = {
+  redemption_uuid: string;
+  ledger_uuid?: string;
+  weight_grams: number;
+  customer_name?: string;
+  customer_phone: string;
+  created_at: string;
 };
 
 type StoreLedgerResponse = {
@@ -163,6 +177,19 @@ function mapPendingKyc(entry: PendingKycResponse): PendingKycSubmission {
   };
 }
 
+function mapPendingRedemption(
+  entry: PendingRedemptionResponse,
+): PendingRedemption {
+  return {
+    id: entry.redemption_uuid,
+    ledgerId: entry.ledger_uuid ?? '',
+    weightGrams: entry.weight_grams,
+    requestedAt: entry.created_at,
+    customerName: entry.customer_name?.trim() || 'Unnamed customer',
+    customerPhone: entry.customer_phone,
+  };
+}
+
 function mapLedgerEntry(entry: StoreLedgerResponse): AdminLedgerEntry {
   const reversalReference =
     entry.event_type === 'SYSTEM_REVERSAL' &&
@@ -226,6 +253,50 @@ export const adminService = {
       StorePageResponse<PendingKycResponse>
     >('/admin/store/kyc/pending', { params });
     return mapPage(response.data, mapPendingKyc);
+  },
+
+  // phone is an exact 10-digit match on MainServer; an empty string lists everyone.
+  getPendingRedemptions: async (
+    page = 1,
+    limit = 20,
+    phone = '',
+  ): Promise<StorePage<PendingRedemption>> => {
+    const { page: safePage, limit: safeLimit } = normalizePagination(
+      page,
+      limit,
+    );
+    const trimmedPhone = phone.trim();
+    if (isAdminDataSample())
+      return mockGetPendingRedemptions(safePage, safeLimit, trimmedPhone);
+    const params: Record<string, string | number> = {
+      page: safePage,
+      limit: safeLimit,
+    };
+    if (trimmedPhone) params.phone = trimmedPhone;
+    const response = await apiClient.get<
+      StorePageResponse<PendingRedemptionResponse>
+    >('/admin/store/redemptions/pending', { params });
+    return mapPage(response.data, mapPendingRedemption);
+  },
+
+  collectRedemption: async ({
+    redemptionId,
+    pickupCode,
+  }: CollectRedemptionPayload): Promise<void> => {
+    if (isAdminDataSample())
+      return mockCollectRedemption(redemptionId, pickupCode);
+    await apiClient.post('/admin/store/redemptions/collect', {
+      redemption_uuid: redemptionId,
+      pickup_code: pickupCode,
+    });
+  },
+
+  // Returns the grams to the customer's vault by reversing the redemption's ledger debit.
+  cancelRedemption: async (redemptionId: string): Promise<void> => {
+    if (isAdminDataSample()) return mockCancelRedemption(redemptionId);
+    await apiClient.post('/admin/store/redemptions/cancel', {
+      redemption_uuid: redemptionId,
+    });
   },
 
   getStoreLedger: async (

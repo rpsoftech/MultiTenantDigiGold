@@ -6,6 +6,7 @@ import type {
   AdminStats,
   AdminUserSummary,
   PendingKycSubmission,
+  PendingRedemption,
   StorePage,
 } from './admin.types';
 
@@ -148,6 +149,118 @@ export async function mockGetPendingKyc(
     }),
   );
   return paginate(pending, page, limit);
+}
+
+type MockRedemption = PendingRedemption & {
+  status: 'PENDING' | 'COLLECTED' | 'CANCELLED';
+  // Real pickup codes never reach staff; the sample data keeps them here so the screen can be
+  // tried without a server. Aarav: 482915 and 159037, Priya: 730264.
+  pickupCode: string;
+};
+
+const MOCK_REDEMPTIONS: MockRedemption[] = [
+  {
+    id: 'RDM-201',
+    ledgerId: 'GL-9941',
+    weightGrams: 5,
+    requestedAt: '2026-10-08T09:30:00.000Z',
+    customerName: 'Aarav Sharma',
+    customerPhone: '9876543210',
+    status: 'PENDING',
+    pickupCode: '482915',
+  },
+  {
+    id: 'RDM-202',
+    ledgerId: 'GL-9942',
+    weightGrams: 2.5,
+    requestedAt: '2026-10-08T11:05:00.000Z',
+    customerName: 'Priya Patel',
+    customerPhone: '9123456789',
+    status: 'PENDING',
+    pickupCode: '730264',
+  },
+  {
+    id: 'RDM-203',
+    ledgerId: 'GL-9943',
+    weightGrams: 1.25,
+    requestedAt: '2026-10-09T08:15:00.000Z',
+    customerName: 'Aarav Sharma',
+    customerPhone: '9876543210',
+    status: 'PENDING',
+    pickupCode: '159037',
+  },
+];
+
+// Same shape the API client produces for a MainServer error response.
+function redemptionError(status: number, code: string, message: string) {
+  return { status, code, message };
+}
+
+function findPendingRedemption(id: string): MockRedemption {
+  const redemption = MOCK_REDEMPTIONS.find((candidate) => candidate.id === id);
+  if (!redemption) {
+    throw redemptionError(
+      404,
+      'REDEMPTION_NOT_FOUND',
+      'Redemption request not found.',
+    );
+  }
+  if (redemption.status !== 'PENDING') {
+    throw redemptionError(
+      409,
+      'REDEMPTION_NOT_PENDING',
+      'Redemption is no longer pending.',
+    );
+  }
+  return redemption;
+}
+
+export async function mockGetPendingRedemptions(
+  page = 1,
+  limit = 20,
+  phone = '',
+): Promise<StorePage<PendingRedemption>> {
+  const pending = MOCK_REDEMPTIONS.filter(
+    (redemption) =>
+      redemption.status === 'PENDING' &&
+      (!phone || redemption.customerPhone === phone),
+  ).map(
+    ({
+      id,
+      ledgerId,
+      weightGrams,
+      requestedAt,
+      customerName,
+      customerPhone,
+    }) => ({
+      id,
+      ledgerId,
+      weightGrams,
+      requestedAt,
+      customerName,
+      customerPhone,
+    }),
+  );
+  return paginate(pending, page, limit);
+}
+
+export async function mockCollectRedemption(
+  id: string,
+  pickupCode: string,
+): Promise<void> {
+  const redemption = findPendingRedemption(id);
+  if (redemption.pickupCode !== pickupCode) {
+    throw redemptionError(
+      400,
+      'INVALID_PICKUP_CODE',
+      'Pickup code does not match.',
+    );
+  }
+  redemption.status = 'COLLECTED';
+}
+
+export async function mockCancelRedemption(id: string): Promise<void> {
+  findPendingRedemption(id).status = 'CANCELLED';
 }
 
 export async function mockGetStoreLedger(
