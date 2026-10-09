@@ -6,7 +6,9 @@ import type {
   AdminUserSummary,
   CounterTradePayload,
   CounterTradeReceipt,
+  KycDocuments,
   KycStatus,
+  PendingKycSubmission,
   StorePage,
   UpdateKycStatusPayload,
 } from './admin.types';
@@ -14,6 +16,7 @@ import {
   mockGetAdminStats,
   mockGetAdminUsers,
   mockCreateCounterTrade,
+  mockGetPendingKyc,
   mockGetStoreLedger,
   mockReverseLedgerEntry,
   mockUpdateKycStatus,
@@ -35,6 +38,16 @@ type StoreCustomerResponse = {
   kyc_status: KycStatus;
   document_json: Record<string, unknown> | null;
   created_at: string;
+};
+
+type PendingKycResponse = {
+  user_uuid: string;
+  full_name: string | null;
+  phone_number: string;
+  email_id: string | null;
+  city: string | null;
+  total_vault_balance: number;
+  document_json: Record<string, unknown> | null;
 };
 
 type StoreLedgerResponse = {
@@ -111,6 +124,45 @@ function mapCustomer(customer: StoreCustomerResponse): AdminUserSummary {
   };
 }
 
+const KNOWN_DOCUMENT_FIELDS = ['pan_number', 'aadhaar_last4'];
+
+function documentValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (typeof value === 'number') return String(value);
+  return undefined;
+}
+
+// document_json is customer-supplied JSON, so tolerate null, non-objects and odd value types.
+export function mapKycDocuments(raw: unknown): KycDocuments {
+  const doc =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const other = Object.entries(doc)
+    .filter(([key]) => !KNOWN_DOCUMENT_FIELDS.includes(key))
+    .flatMap(([key, value]) => {
+      const text = documentValue(value);
+      return text ? [{ label: key.replace(/_/g, ' '), value: text }] : [];
+    });
+  return {
+    panNumber: documentValue(doc.pan_number),
+    aadhaarLast4: documentValue(doc.aadhaar_last4),
+    other,
+  };
+}
+
+function mapPendingKyc(entry: PendingKycResponse): PendingKycSubmission {
+  return {
+    userId: entry.user_uuid,
+    name: entry.full_name?.trim() || 'Unnamed customer',
+    mobileNumber: entry.phone_number,
+    email: entry.email_id || undefined,
+    city: entry.city?.trim() || undefined,
+    goldBalanceGrams: entry.total_vault_balance,
+    documents: mapKycDocuments(entry.document_json),
+  };
+}
+
 function mapLedgerEntry(entry: StoreLedgerResponse): AdminLedgerEntry {
   const reversalReference =
     entry.event_type === 'SYSTEM_REVERSAL' &&
@@ -162,6 +214,18 @@ export const adminService = {
       StorePageResponse<StoreCustomerResponse>
     >('/admin/store/customers', { params });
     return mapPage(response.data, mapCustomer);
+  },
+
+  getPendingKyc: async (
+    page = 1,
+    limit = 20,
+  ): Promise<StorePage<PendingKycSubmission>> => {
+    const params = normalizePagination(page, limit);
+    if (isAdminDataSample()) return mockGetPendingKyc(params.page, params.limit);
+    const response = await apiClient.get<
+      StorePageResponse<PendingKycResponse>
+    >('/admin/store/kyc/pending', { params });
+    return mapPage(response.data, mapPendingKyc);
   },
 
   getStoreLedger: async (

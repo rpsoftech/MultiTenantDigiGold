@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import {
   ShieldIcon,
+  ShieldCheckIcon,
   HomeIcon,
   UserIcon,
   WalletIcon,
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { href: ROUTES.adminDashboard, label: 'Overview', icon: HomeIcon },
   { href: ROUTES.adminCustomers, label: 'Customers', icon: UserIcon },
   { href: ROUTES.adminCounterSale, label: 'Counter sale', icon: CoinsIcon },
+  { href: ROUTES.adminKycReview, label: 'KYC review', icon: ShieldCheckIcon },
   { href: ROUTES.adminLedger, label: 'Store ledger', icon: WalletIcon },
 ];
 

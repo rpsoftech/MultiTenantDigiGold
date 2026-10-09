@@ -5,6 +5,7 @@ import type {
   CounterTradeReceipt,
   AdminStats,
   AdminUserSummary,
+  PendingKycSubmission,
   StorePage,
 } from './admin.types';
 
@@ -124,6 +125,29 @@ export async function mockGetAdminUsers(
     page,
     limit,
   );
+}
+
+const MOCK_KYC_DOCUMENTS: Record<string, PendingKycSubmission['documents']> = {
+  'USR-102': { panNumber: 'ABCDE1234F', aadhaarLast4: '4821', other: [] },
+};
+
+export async function mockGetPendingKyc(
+  page = 1,
+  limit = 20,
+): Promise<StorePage<PendingKycSubmission>> {
+  const pending = MOCK_USERS.filter(
+    (user) => user.kycStatus === 'pending' && MOCK_KYC_DOCUMENTS[user.userId],
+  ).map(
+    (user): PendingKycSubmission => ({
+      userId: user.userId,
+      name: user.name,
+      mobileNumber: user.mobileNumber,
+      email: user.email,
+      goldBalanceGrams: user.goldBalanceGrams,
+      documents: MOCK_KYC_DOCUMENTS[user.userId],
+    }),
+  );
+  return paginate(pending, page, limit);
 }
 
 export async function mockGetStoreLedger(
