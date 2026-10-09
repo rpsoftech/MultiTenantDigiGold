@@ -2,49 +2,103 @@
 
 import { useState } from 'react';
 import { Card } from '@/components/common/Card/Card';
-import { Badge } from '@/components/common/Badge/Badge';
 import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
-import { useAdminUsers } from '@/features/admin/hooks/useAdminUsers';
+import { useToast } from '@/components/common/Toast/Toast';
+import { KycReviewDialog } from '@/components/admin/KycReviewDialog/KycReviewDialog';
+import { usePendingKyc } from '@/features/admin/hooks/usePendingKyc';
 import { useUpdateKycStatus } from '@/features/admin/hooks/useUpdateKycStatus';
+import type {
+  PendingKycSubmission,
+  UpdateKycStatusPayload,
+} from '@/features/admin/admin.types';
+import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
 import { formatMobileNumber } from '@/lib/utils/formatMobileNumber';
-import {
-  KYC_BADGE_VARIANT,
-  KYC_LABEL,
-} from '@/components/admin/adminStatusBadge';
 import styles from './UserApprovalsTable.module.scss';
 
-function joinedDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? '—'
-    : date.toLocaleDateString('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      });
-}
+type Decision = UpdateKycStatusPayload['kycStatus'];
+
+const DECISION_TOAST: Record<Decision, string> = {
+  verified: 'KYC approved',
+  rejected: 'KYC rejected',
+};
 
 export function UserApprovalsTable() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
-  const { data, isLoading, isError, isFetching, refetch } = useAdminUsers(
+  const [target, setTarget] = useState<PendingKycSubmission | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const { showToast } = useToast();
+  const updateKycStatus = useUpdateKycStatus();
+  const { data, isLoading, isError, isFetching, refetch } = usePendingKyc(
     page,
     limit,
   );
-  const updateKycStatus = useUpdateKycStatus();
-  const users = data?.items ?? [];
-  const firstCustomer = (page - 1) * limit + 1;
+  const submissions = data?.items ?? [];
+  const firstItem = (page - 1) * limit + 1;
+
+  function openReview(submission: PendingKycSubmission) {
+    setDialogError(null);
+    setTarget(submission);
+  }
+
+  function closeReview() {
+    // The dialog also refuses to close mid-request; this guards the other entry points.
+    if (updateKycStatus.isPending) return;
+    setTarget(null);
+    setDialogError(null);
+  }
+
+  function decide(kycStatus: Decision) {
+    if (!target || updateKycStatus.isPending) return;
+    const submission = target;
+    updateKycStatus.mutate(
+      { userId: submission.userId, kycStatus },
+      {
+        onSuccess: () => {
+          setTarget(null);
+          showToast({
+            title: DECISION_TOAST[kycStatus],
+            description: `${submission.name}’s KYC was ${kycStatus === 'verified' ? 'approved' : 'rejected'}.`,
+            variant: 'success',
+          });
+        },
+        onError: (error) => {
+          const status = isNormalizedApiError(error) ? error.status : null;
+          if (status === 403 || status === 404) {
+            // Not in this store any more: our copy is stale and the queue is refetching.
+            setTarget(null);
+            showToast({
+              title: 'Customer unavailable',
+              description:
+                'This customer is no longer in your store. The queue has been refreshed.',
+              variant: 'danger',
+            });
+            return;
+          }
+          setDialogError(
+            describeApiError(error) ??
+              'The decision could not be saved. Please try again.',
+          );
+        },
+      },
+    );
+  }
+
+  const pendingDecision = updateKycStatus.isPending
+    ? (updateKycStatus.variables?.kycStatus ?? null)
+    : null;
 
   return (
-    <section aria-labelledby="customer-directory-title">
+    <section aria-labelledby="kyc-review-title">
       <div className={styles.sectionHeader}>
         <div>
-          <h2 id="customer-directory-title" className={styles.sectionTitle}>
-            Customer directory
+          <h2 id="kyc-review-title" className={styles.sectionTitle}>
+            KYC review
           </h2>
           <p className={styles.sectionDescription}>
-            Customer vault balances, contact details, and KYC approvals.
+            Customers who have submitted KYC details and are waiting for a
+            decision, oldest first.
           </p>
         </div>
         <label className={styles.pageSize}>
@@ -64,22 +118,16 @@ export function UserApprovalsTable() {
         </label>
       </div>
 
-      {updateKycStatus.isError && (
-        <p className={styles.actionError} role="alert">
-          KYC status could not be updated. Please try again.
-        </p>
-      )}
-
       <Card className={styles.tableCard}>
         {isLoading ? (
           <div className={styles.state}>
-            <Loader label="Loading customers" />
-            <p>Loading customer accounts…</p>
+            <Loader label="Loading KYC submissions" />
+            <p>Loading KYC submissions…</p>
           </div>
         ) : isError ? (
           <div className={styles.state} role="alert">
-            <strong>Customer directory is unavailable</strong>
-            <p>We couldn’t load this page of customers. Please try again.</p>
+            <strong>KYC queue is unavailable</strong>
+            <p>We couldn’t load the pending submissions. Please try again.</p>
             <Button
               variant="outlined"
               onClick={() => refetch()}
@@ -88,52 +136,56 @@ export function UserApprovalsTable() {
               Try again
             </Button>
           </div>
-        ) : users.length === 0 ? (
+        ) : submissions.length === 0 ? (
           <div className={styles.state}>
             <strong>
-              {page === 1 ? 'No customers yet' : 'No customers on this page'}
+              {page === 1
+                ? 'No KYC submissions waiting'
+                : 'No submissions on this page'}
             </strong>
             <p>
               {page === 1
-                ? 'Customer accounts and vault balances will appear here when customers join your store.'
-                : 'Go to the previous page to see more customer accounts.'}
+                ? 'New KYC submissions will appear here for review.'
+                : 'Go to the previous page to see more submissions.'}
             </p>
           </div>
         ) : (
           <div className={styles.tableScroll} aria-busy={isFetching}>
-            <table className={styles.table} aria-label="Customer directory">
+            <table className={styles.table} aria-label="Pending KYC submissions">
               <thead>
                 <tr>
                   <th scope="col">Customer</th>
                   <th scope="col">Contact</th>
                   <th scope="col">Vault balance</th>
-                  <th scope="col">KYC status</th>
-                  <th scope="col">Joined</th>
                   <th scope="col">
-                    <span className={styles.visuallyHidden}>KYC actions</span>
+                    <span className={styles.visuallyHidden}>Review</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
-                  <tr key={user.userId}>
+                {submissions.map((submission) => (
+                  <tr key={submission.userId}>
                     <td data-label="Customer">
                       <div>
                         <span className={styles.userName}>
-                          {user.name || 'Unnamed customer'}
+                          {submission.name}
                         </span>
-                        <span className={styles.userId}>{user.userId}</span>
+                        <span className={styles.userId}>
+                          {submission.userId}
+                        </span>
                       </div>
                     </td>
                     <td data-label="Contact">
                       <div className={styles.contact}>
                         <span>
-                          {user.mobileNumber
-                            ? `+91 ${formatMobileNumber(user.mobileNumber)}`
+                          {submission.mobileNumber
+                            ? `+91 ${formatMobileNumber(submission.mobileNumber)}`
                             : '—'}
                         </span>
-                        {user.email && (
-                          <span className={styles.email}>{user.email}</span>
+                        {submission.email && (
+                          <span className={styles.email}>
+                            {submission.email}
+                          </span>
                         )}
                       </div>
                     </td>
@@ -141,62 +193,16 @@ export function UserApprovalsTable() {
                       className={styles.goldBalance}
                       data-label="Vault balance"
                     >
-                      {user.goldBalanceGrams.toFixed(4)} g
-                    </td>
-                    <td data-label="KYC status">
-                      <Badge variant={KYC_BADGE_VARIANT[user.kycStatus]}>
-                        {KYC_LABEL[user.kycStatus]}
-                      </Badge>
-                    </td>
-                    <td className={styles.joinedDate} data-label="Joined">
-                      {joinedDate(user.joinedAt)}
+                      {submission.goldBalanceGrams.toFixed(4)} g
                     </td>
                     <td className={styles.actionsCell}>
-                      {user.kycStatus === 'pending' && (
-                        <div className={styles.actions}>
-                          <Button
-                            className={styles.actionButton}
-                            aria-label={`Approve KYC for ${user.name || user.userId}`}
-                            disabled={updateKycStatus.isPending}
-                            isLoading={
-                              updateKycStatus.isPending &&
-                              updateKycStatus.variables?.userId ===
-                                user.userId &&
-                              updateKycStatus.variables?.kycStatus ===
-                                'verified'
-                            }
-                            onClick={() =>
-                              updateKycStatus.mutate({
-                                userId: user.userId,
-                                kycStatus: 'verified',
-                              })
-                            }
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            className={styles.actionButton}
-                            aria-label={`Reject KYC for ${user.name || user.userId}`}
-                            disabled={updateKycStatus.isPending}
-                            isLoading={
-                              updateKycStatus.isPending &&
-                              updateKycStatus.variables?.userId ===
-                                user.userId &&
-                              updateKycStatus.variables?.kycStatus ===
-                                'rejected'
-                            }
-                            onClick={() =>
-                              updateKycStatus.mutate({
-                                userId: user.userId,
-                                kycStatus: 'rejected',
-                              })
-                            }
-                          >
-                            Reject
-                          </Button>
-                        </div>
-                      )}
+                      <Button
+                        className={styles.reviewButton}
+                        aria-label={`Review KYC for ${submission.name}`}
+                        onClick={() => openReview(submission)}
+                      >
+                        Review
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -205,15 +211,15 @@ export function UserApprovalsTable() {
           </div>
         )}
 
-        <nav className={styles.pagination} aria-label="Customer pagination">
+        <nav className={styles.pagination} aria-label="KYC pagination">
           <span className={styles.pageSummary} aria-live="polite">
             {isFetching
-              ? 'Loading customers…'
+              ? 'Loading submissions…'
               : isError
                 ? `Page ${page}`
-                : users.length
-                  ? `Showing ${firstCustomer}–${firstCustomer + users.length - 1} customers`
-                  : '0 customers on this page'}
+                : submissions.length
+                  ? `Showing ${firstItem}–${firstItem + submissions.length - 1} submissions`
+                  : '0 submissions on this page'}
           </span>
           <div className={styles.pageControls}>
             <Button
@@ -236,6 +242,15 @@ export function UserApprovalsTable() {
           </div>
         </nav>
       </Card>
+
+      <KycReviewDialog
+        key={target?.userId ?? 'closed'}
+        submission={target}
+        pendingDecision={pendingDecision}
+        error={dialogError}
+        onDecide={decide}
+        onClose={closeReview}
+      />
     </section>
   );
 }

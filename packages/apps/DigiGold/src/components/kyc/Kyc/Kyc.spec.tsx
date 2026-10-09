@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -105,6 +105,8 @@ describe('KYC status views', () => {
     expect(screen.getByText('KYC verified')).toBeTruthy();
     expect(screen.getByText(/Purchases above ₹50,000 are unlocked/)).toBeTruthy();
     expect(screen.queryByLabelText('PAN Number')).toBeNull();
+    expect(screen.getByText('Verified')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Continue to home/ }).getAttribute('href')).toBe('/home');
   });
 
   it('shows the under-review state without a form', () => {
@@ -113,6 +115,9 @@ describe('KYC status views', () => {
     renderKyc();
     expect(screen.getByText('KYC under review')).toBeTruthy();
     expect(screen.queryByLabelText('PAN Number')).toBeNull();
+    const steps = within(screen.getByRole('list', { name: 'Verification progress' })).getAllByRole('listitem');
+    expect(steps.map((step) => step.getAttribute('data-state'))).toEqual(['done', 'current', 'upcoming']);
+    expect(screen.getByRole('link', { name: 'Back to home' })).toBeTruthy();
   });
 
   it('shows the form for a customer who has not started, without a document link field', () => {
@@ -122,6 +127,9 @@ describe('KYC status views', () => {
     expect(screen.getByLabelText('PAN Number')).toBeTruthy();
     expect(screen.queryByLabelText(/Document Link/)).toBeNull();
     expect(screen.queryByText(/not approved/)).toBeNull();
+    expect(screen.getByText('Identity check')).toBeTruthy();
+    expect(screen.getByText('Takes about a minute')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('explains a rejection above the form', () => {
@@ -129,6 +137,8 @@ describe('KYC status views', () => {
     setKyc('rejected');
     renderKyc();
     expect(screen.getByText(/previous KYC submission was not approved/)).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('not approved');
+    expect(screen.getByText('Action needed')).toBeTruthy();
     expect(screen.getByLabelText('PAN Number')).toBeTruthy();
   });
 });
