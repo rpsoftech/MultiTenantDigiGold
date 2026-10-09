@@ -204,6 +204,78 @@ describe('adminService store integration', () => {
     expect(result.items[2].isReversed).toBe(false);
   });
 
+  it('maps the pending KYC queue from /admin/store/kyc/pending', async () => {
+    const get = jest.spyOn(apiClient, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        page: 1,
+        limit: 1,
+        data: [
+          {
+            user_uuid: 'customer-uuid',
+            full_name: '  ',
+            phone_number: '9123456789',
+            email_id: null,
+            city: ' Pune ',
+            total_vault_balance: 2.5,
+            document_json: { pan_number: 'ABCDE1234F', aadhaar_last4: '4821' },
+          },
+        ],
+      },
+    });
+
+    const result = await adminService.getPendingKyc(1, 1);
+
+    expect(get).toHaveBeenCalledWith('/admin/store/kyc/pending', {
+      params: { page: 1, limit: 1 },
+    });
+    expect(result).toEqual({
+      items: [
+        {
+          userId: 'customer-uuid',
+          name: 'Unnamed customer',
+          mobileNumber: '9123456789',
+          email: undefined,
+          city: 'Pune',
+          goldBalanceGrams: 2.5,
+          documents: {
+            panNumber: 'ABCDE1234F',
+            aadhaarLast4: '4821',
+            other: [],
+          },
+        },
+      ],
+      page: 1,
+      limit: 1,
+      hasNextPage: true,
+    });
+  });
+
+  it('treats a null pending KYC list as empty and normalises invalid paging', async () => {
+    const get = jest.spyOn(apiClient, 'get').mockResolvedValue({
+      data: { success: true, page: 1, limit: 20, data: null },
+    });
+
+    const result = await adminService.getPendingKyc(0, 500);
+
+    expect(get).toHaveBeenCalledWith('/admin/store/kyc/pending', {
+      params: { page: 1, limit: 20 },
+    });
+    expect(result.items).toEqual([]);
+    expect(result.hasNextPage).toBe(false);
+  });
+
+  it('serves the pending queue from sample data without calling the API', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
+    const get = jest.spyOn(apiClient, 'get');
+
+    const result = await adminService.getPendingKyc();
+
+    expect(get).not.toHaveBeenCalled();
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0].documents.panNumber).toBeTruthy();
+  });
+
   it.each([
     { kycStatus: 'verified' as const, action: 'approve' },
     { kycStatus: 'rejected' as const, action: 'reject' },
@@ -222,6 +294,111 @@ describe('adminService store integration', () => {
       });
     },
   );
+
+  it('posts the ledger uuid to the reversal endpoint', async () => {
+    const post = jest
+      .spyOn(apiClient, 'post')
+      .mockResolvedValue({ data: { success: true } });
+
+    await expect(
+      adminService.reverseLedgerEntry('ledger-uuid'),
+    ).resolves.toBeUndefined();
+    expect(post).toHaveBeenCalledWith('/admin/store/ledger/reverse', {
+      ledger_uuid: 'ledger-uuid',
+    });
+  });
+
+  it('propagates a reversal conflict so the caller can handle it', async () => {
+    const error = { status: 409, code: 'ERROR_LEDGER_REVERSAL', message: 'ledger entry is already reversed' };
+    jest.spyOn(apiClient, 'post').mockRejectedValue(error);
+
+    await expect(adminService.reverseLedgerEntry('ledger-uuid')).rejects.toBe(
+      error,
+    );
+  });
+
+  describe('createCounterTrade', () => {
+    const trade = {
+      gl_uuid: 'gl-1',
+      event_type: 'GOLD_PURCHASE',
+      payment_mode: 'COUNTER_UPI',
+      weight_grams: 0.1333,
+      total_amount_inr: 1000,
+      running_gold_balance_grams: 1.1333,
+      mcx_base_rate: 7000,
+      tenant_margin_applied: 100,
+      gst_applied: 213,
+      final_rate_per_gram: 7313,
+      created_at: '2026-10-05T10:00:00Z',
+    };
+
+    it('sends only the amount when the cashier entered rupees', async () => {
+      const post = jest
+        .spyOn(apiClient, 'post')
+        .mockResolvedValue({ data: { success: true, trade } });
+
+      const receipt = await adminService.createCounterTrade({
+        userId: 'customer-uuid',
+        ratePerGram: 7313,
+        amountInr: 1000,
+        paymentMode: 'COUNTER_UPI',
+      });
+
+      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter', {
+        user_uuid: 'customer-uuid',
+        requested_rate_per_gram: 7313,
+        payment_mode: 'COUNTER_UPI',
+        total_amount_inr: 1000,
+      });
+      expect(receipt).toEqual({
+        id: 'gl-1',
+        eventType: 'GOLD_PURCHASE',
+        paymentMode: 'COUNTER_UPI',
+        weightGrams: 0.1333,
+        amountInr: 1000,
+        ratePerGram: 7313,
+        mcxBaseRate: 7000,
+        marginInr: 100,
+        gstInr: 213,
+        runningGoldBalanceGrams: 1.1333,
+        createdAt: '2026-10-05T10:00:00Z',
+      });
+    });
+
+    it('sends only the grams when the cashier entered weight', async () => {
+      const post = jest
+        .spyOn(apiClient, 'post')
+        .mockResolvedValue({ data: { success: true, trade } });
+
+      await adminService.createCounterTrade({
+        userId: 'customer-uuid',
+        ratePerGram: 7313,
+        weightGrams: 2.5,
+        paymentMode: 'COUNTER_CASH',
+      });
+
+      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter', {
+        user_uuid: 'customer-uuid',
+        requested_rate_per_gram: 7313,
+        payment_mode: 'COUNTER_CASH',
+        weight_grams: 2.5,
+      });
+    });
+
+    it('propagates a slippage conflict so the caller can react', async () => {
+      const error = { status: 409, code: 'SLIPPAGE_EXCEEDED', message: 'moved' };
+      jest.spyOn(apiClient, 'post').mockRejectedValue(error);
+
+      await expect(
+        adminService.createCounterTrade({
+          userId: 'customer-uuid',
+          ratePerGram: 7313,
+          amountInr: 1000,
+          paymentMode: 'COUNTER_CASH',
+        }),
+      ).rejects.toBe(error);
+    });
+  });
 
   it('propagates API errors instead of replacing a failed request with an empty page', async () => {
     const error = { status: 500, message: 'Unable to fetch ledger' };

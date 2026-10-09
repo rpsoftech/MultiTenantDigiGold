@@ -22,7 +22,10 @@ export const ROUTES = {
   adminLogin: '/admin/login',
   adminDashboard: '/admin/dashboard',
   adminCustomers: '/admin/customers',
+  adminKycReview: '/admin/kyc-review',
   adminLedger: '/admin/ledger',
+  adminPickups: '/admin/pickups',
+  adminCounterSale: '/admin/counter-sale',
   adminProfile: '/admin/profile',
   adminUpdatePassword: '/admin/update-password',
 } as const;
