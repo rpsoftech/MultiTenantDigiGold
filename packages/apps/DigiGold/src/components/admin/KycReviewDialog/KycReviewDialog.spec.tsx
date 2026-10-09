@@ -33,7 +33,9 @@ function renderDialog(
   );
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 afterEach(cleanup);
 
 describe('KycReviewDialog', () => {
