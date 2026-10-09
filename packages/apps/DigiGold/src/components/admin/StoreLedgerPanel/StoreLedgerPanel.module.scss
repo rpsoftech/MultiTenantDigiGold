@@ -124,3 +124,55 @@
   padding: var(--space-2) var(--space-4);
   font-size: 0.8125rem;
 }
+
+.actionError,
+.dialogError {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.summary {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.875rem;
+
+  div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+
+  dt {
+    color: var(--color-text-muted);
+  }
+
+  dd {
+    margin: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+}
+
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+
+  button {
+    min-height: 40px;
+  }
+}

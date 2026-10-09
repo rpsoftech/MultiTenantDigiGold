@@ -223,6 +223,111 @@ describe('adminService store integration', () => {
     },
   );
 
+  it('posts the ledger uuid to the reversal endpoint', async () => {
+    const post = jest
+      .spyOn(apiClient, 'post')
+      .mockResolvedValue({ data: { success: true } });
+
+    await expect(
+      adminService.reverseLedgerEntry('ledger-uuid'),
+    ).resolves.toBeUndefined();
+    expect(post).toHaveBeenCalledWith('/admin/store/ledger/reverse', {
+      ledger_uuid: 'ledger-uuid',
+    });
+  });
+
+  it('propagates a reversal conflict so the caller can handle it', async () => {
+    const error = { status: 409, code: 'ERROR_LEDGER_REVERSAL', message: 'ledger entry is already reversed' };
+    jest.spyOn(apiClient, 'post').mockRejectedValue(error);
+
+    await expect(adminService.reverseLedgerEntry('ledger-uuid')).rejects.toBe(
+      error,
+    );
+  });
+
+  describe('createCounterTrade', () => {
+    const trade = {
+      gl_uuid: 'gl-1',
+      event_type: 'GOLD_PURCHASE',
+      payment_mode: 'COUNTER_UPI',
+      weight_grams: 0.1333,
+      total_amount_inr: 1000,
+      running_gold_balance_grams: 1.1333,
+      mcx_base_rate: 7000,
+      tenant_margin_applied: 100,
+      gst_applied: 213,
+      final_rate_per_gram: 7313,
+      created_at: '2026-10-05T10:00:00Z',
+    };
+
+    it('sends only the amount when the cashier entered rupees', async () => {
+      const post = jest
+        .spyOn(apiClient, 'post')
+        .mockResolvedValue({ data: { success: true, trade } });
+
+      const receipt = await adminService.createCounterTrade({
+        userId: 'customer-uuid',
+        ratePerGram: 7313,
+        amountInr: 1000,
+        paymentMode: 'COUNTER_UPI',
+      });
+
+      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter', {
+        user_uuid: 'customer-uuid',
+        requested_rate_per_gram: 7313,
+        payment_mode: 'COUNTER_UPI',
+        total_amount_inr: 1000,
+      });
+      expect(receipt).toEqual({
+        id: 'gl-1',
+        eventType: 'GOLD_PURCHASE',
+        paymentMode: 'COUNTER_UPI',
+        weightGrams: 0.1333,
+        amountInr: 1000,
+        ratePerGram: 7313,
+        mcxBaseRate: 7000,
+        marginInr: 100,
+        gstInr: 213,
+        runningGoldBalanceGrams: 1.1333,
+        createdAt: '2026-10-05T10:00:00Z',
+      });
+    });
+
+    it('sends only the grams when the cashier entered weight', async () => {
+      const post = jest
+        .spyOn(apiClient, 'post')
+        .mockResolvedValue({ data: { success: true, trade } });
+
+      await adminService.createCounterTrade({
+        userId: 'customer-uuid',
+        ratePerGram: 7313,
+        weightGrams: 2.5,
+        paymentMode: 'COUNTER_CASH',
+      });
+
+      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter', {
+        user_uuid: 'customer-uuid',
+        requested_rate_per_gram: 7313,
+        payment_mode: 'COUNTER_CASH',
+        weight_grams: 2.5,
+      });
+    });
+
+    it('propagates a slippage conflict so the caller can react', async () => {
+      const error = { status: 409, code: 'SLIPPAGE_EXCEEDED', message: 'moved' };
+      jest.spyOn(apiClient, 'post').mockRejectedValue(error);
+
+      await expect(
+        adminService.createCounterTrade({
+          userId: 'customer-uuid',
+          ratePerGram: 7313,
+          amountInr: 1000,
+          paymentMode: 'COUNTER_CASH',
+        }),
+      ).rejects.toBe(error);
+    });
+  });
+
   it('propagates API errors instead of replacing a failed request with an empty page', async () => {
     const error = { status: 500, message: 'Unable to fetch ledger' };
     jest.spyOn(apiClient, 'get').mockRejectedValue(error);

@@ -4,6 +4,8 @@ import type {
   AdminLedgerEntry,
   AdminStats,
   AdminUserSummary,
+  CounterTradePayload,
+  CounterTradeReceipt,
   KycStatus,
   StorePage,
   UpdateKycStatusPayload,
@@ -11,7 +13,9 @@ import type {
 import {
   mockGetAdminStats,
   mockGetAdminUsers,
+  mockCreateCounterTrade,
   mockGetStoreLedger,
+  mockReverseLedgerEntry,
   mockUpdateKycStatus,
 } from './admin.mock';
 
@@ -44,6 +48,22 @@ type StoreLedgerResponse = {
   // Set by the server when a SYSTEM_REVERSAL entry reverses this one; omitted when false.
   is_reversed?: boolean;
   created_at: string;
+};
+
+type CounterTradeResponse = {
+  trade: {
+    gl_uuid: string;
+    event_type: string;
+    payment_mode: string;
+    weight_grams: number;
+    total_amount_inr: number;
+    running_gold_balance_grams: number;
+    mcx_base_rate: number;
+    tenant_margin_applied: number;
+    gst_applied: number;
+    final_rate_per_gram: number;
+    created_at: string;
+  };
 };
 
 type StorePageResponse<T> = ApiResponse<T[] | null> & {
@@ -155,6 +175,44 @@ export const adminService = {
       StorePageResponse<StoreLedgerResponse>
     >('/admin/store/ledger', { params });
     return mapPage(response.data, mapLedgerEntry);
+  },
+
+  reverseLedgerEntry: async (ledgerId: string): Promise<void> => {
+    if (isAdminDataSample()) return mockReverseLedgerEntry(ledgerId);
+    await apiClient.post('/admin/store/ledger/reverse', {
+      ledger_uuid: ledgerId,
+    });
+  },
+
+  createCounterTrade: async (
+    payload: CounterTradePayload,
+  ): Promise<CounterTradeReceipt> => {
+    if (isAdminDataSample()) return mockCreateCounterTrade(payload);
+    const response = await apiClient.post<CounterTradeResponse>(
+      '/admin/store/trade/counter',
+      {
+        user_uuid: payload.userId,
+        requested_rate_per_gram: payload.ratePerGram,
+        payment_mode: payload.paymentMode,
+        ...(payload.weightGrams !== undefined
+          ? { weight_grams: payload.weightGrams }
+          : { total_amount_inr: payload.amountInr }),
+      },
+    );
+    const trade = response.data.trade;
+    return {
+      id: trade.gl_uuid,
+      eventType: trade.event_type,
+      paymentMode: trade.payment_mode,
+      weightGrams: trade.weight_grams,
+      amountInr: trade.total_amount_inr,
+      ratePerGram: trade.final_rate_per_gram,
+      mcxBaseRate: trade.mcx_base_rate,
+      marginInr: trade.tenant_margin_applied,
+      gstInr: trade.gst_applied,
+      runningGoldBalanceGrams: trade.running_gold_balance_grams,
+      createdAt: trade.created_at,
+    };
   },
 
   updateKycStatus: async ({
