@@ -1,3 +1,5 @@
+import type { AuditEventFilters } from './admin.types';
+
 export const adminQueryKeys = {
   analytics: ['admin', 'store', 'analytics'] as const,
   customers: ['admin', 'store', 'customers'] as const,
@@ -13,4 +15,8 @@ export const adminQueryKeys = {
   ledger: ['admin', 'store', 'ledger'] as const,
   ledgerPage: (page: number, limit: number) =>
     ['admin', 'store', 'ledger', page, limit] as const,
+  auditEvents: ['admin', 'audit', 'events'] as const,
+  auditEventsPage: (filters: AuditEventFilters, page: number, limit: number) =>
+    ['admin', 'audit', 'events', filters, page, limit] as const,
+  auditTenants: ['admin', 'audit', 'tenants'] as const,
 };

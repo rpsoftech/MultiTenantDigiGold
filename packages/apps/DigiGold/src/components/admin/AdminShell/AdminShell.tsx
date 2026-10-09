@@ -12,26 +12,44 @@ import {
   UserIcon,
   WalletIcon,
   CoinsIcon,
+  ClockIcon,
 } from '@/components/common/icons/Icons';
+import { useAppSelector } from '@/store/hooks';
+import { selectIsSuperAdmin } from '@/store/session/session.slice';
 import { AdminProfileMenu } from '@/components/admin/AdminProfileMenu/AdminProfileMenu';
 import { isAdminDataSample } from '@/features/admin/admin.service';
 import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils/cn';
 import styles from './AdminShell.module.scss';
 
-const NAV_ITEMS = [
+const NAV_ITEMS: {
+  href: string;
+  label: string;
+  icon: typeof HomeIcon;
+  superAdminOnly?: boolean;
+}[] = [
   { href: ROUTES.adminDashboard, label: 'Overview', icon: HomeIcon },
   { href: ROUTES.adminCustomers, label: 'Customers', icon: UserIcon },
   { href: ROUTES.adminCounterSale, label: 'Counter sale', icon: CoinsIcon },
   { href: ROUTES.adminKycReview, label: 'KYC review', icon: ShieldCheckIcon },
   { href: ROUTES.adminPickups, label: 'Pickups', icon: TruckIcon },
   { href: ROUTES.adminLedger, label: 'Store ledger', icon: WalletIcon },
+  {
+    href: ROUTES.adminAuditEvents,
+    label: 'Audit log',
+    icon: ClockIcon,
+    superAdminOnly: true,
+  },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const tenantConfig = useTenantConfig();
   const tenantName = tenantConfig?.displayName ?? 'DigiGold';
   const pathname = usePathname();
+  const isSuperAdmin = useAppSelector(selectIsSuperAdmin);
+  const navItems = NAV_ITEMS.filter(
+    (item) => !item.superAdminOnly || isSuperAdmin,
+  );
 
   return (
     <div className={styles.shell}>
@@ -55,7 +73,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav className={styles.navigation} aria-label="Store administration">
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
               <Link

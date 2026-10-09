@@ -1,6 +1,10 @@
 import { sizeCounterTrade } from './counterTrade.utils';
 import type {
   AdminLedgerEntry,
+  AdminTenantOption,
+  AuditEvent,
+  AuditEventFilters,
+  AuditEventsPage,
   CounterTradePayload,
   CounterTradeReceipt,
   AdminStats,
@@ -272,6 +276,109 @@ export async function mockGetStoreLedger(
     page,
     limit,
   );
+}
+
+const MOCK_TENANT_UUID = '11111111-1111-4111-8111-111111111111';
+
+export const MOCK_TENANTS: AdminTenantOption[] = [
+  { tenantUuid: MOCK_TENANT_UUID, name: 'DigiGold' },
+  { tenantUuid: '22222222-2222-4222-8222-222222222222', name: 'Sample Jewellers' },
+];
+
+const MOCK_AUDIT_EVENTS: AuditEvent[] = [
+  {
+    id: 'evt-1006',
+    key: 'key-1006',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'OTPVerifyEvent',
+    isProcessed: true,
+    parentNames: [],
+    payload: { phone: '9876543210', otp: '123456', verified: true },
+    ipAddress: '203.0.113.9',
+    occurredAt: '2026-10-08T11:20:00.000Z',
+  },
+  {
+    id: 'evt-1005',
+    key: 'key-1005',
+    tenantId: '7',
+    eventName: 'ADMIN_LOGGED_IN',
+    isProcessed: true,
+    parentNames: [],
+    payload: { role: 'super_admin', ip: '203.0.113.4' },
+    ipAddress: '203.0.113.4',
+    adminId: 'adm-001',
+    occurredAt: '2026-10-08T09:05:00.000Z',
+  },
+  {
+    id: 'evt-1004',
+    key: 'key-1004',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'MARGIN_UPDATED',
+    isProcessed: false,
+    parentNames: ['TenantConfigUpdated'],
+    payload: { oldMargin: 2.5, newMargin: 3.1 },
+    adminId: 'adm-001',
+    occurredAt: '2026-10-07T15:40:00.000Z',
+  },
+  {
+    id: 'evt-1003',
+    key: 'key-1003',
+    tenantId: '22222222-2222-4222-8222-222222222222',
+    eventName: 'KYC_DOC_VERIFIED',
+    isProcessed: true,
+    parentNames: [],
+    payload: { userUuid: 'USR-102', status: 'verified' },
+    occurredAt: '2026-10-05T12:00:00.000Z',
+  },
+  {
+    id: 'evt-1002',
+    key: 'key-1002',
+    tenantId: '7',
+    eventName: 'TRADE_GOLD_PURCHASE',
+    isProcessed: true,
+    parentNames: [],
+    payload: { weightGrams: 1.2, amountInr: 8672.47, nested: { ref: 'pay_demo_9931' } },
+    occurredAt: '2026-10-02T09:15:00.000Z',
+  },
+  {
+    id: 'evt-1001',
+    key: 'key-1001',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'TENANT_UI_LAYOUT_UPDATED',
+    isProcessed: true,
+    parentNames: [],
+    payload: null,
+    occurredAt: '2026-09-28T08:00:00.000Z',
+  },
+];
+
+export async function mockGetAuditEvents(
+  filters: AuditEventFilters,
+  page = 1,
+  limit = 20,
+): Promise<AuditEventsPage> {
+  const from = filters.from ? new Date(`${filters.from}T00:00:00`).getTime() : null;
+  const to = filters.to ? new Date(`${filters.to}T23:59:59`).getTime() : null;
+  const matching = MOCK_AUDIT_EVENTS.filter((event) => {
+    const time = new Date(event.occurredAt).getTime();
+    return (
+      (!filters.tenantUuid || event.tenantId === filters.tenantUuid) &&
+      (!filters.type || event.eventName === filters.type) &&
+      (from === null || time >= from) &&
+      (to === null || time <= to)
+    );
+  });
+  return {
+    items: matching.slice((page - 1) * limit, page * limit),
+    total: matching.length,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(matching.length / limit)),
+  };
+}
+
+export async function mockGetAdminTenants(): Promise<AdminTenantOption[]> {
+  return MOCK_TENANTS.map((tenant) => ({ ...tenant }));
 }
 
 export async function mockUpdateKycStatus(

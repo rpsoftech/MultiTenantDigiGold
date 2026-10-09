@@ -41,6 +41,42 @@ export type StorePage<T> = {
   hasNextPage: boolean;
 };
 
+export type AuditEvent = {
+  id: string;
+  key: string;
+  // A tenant UUID for most events, but logins and trades are stored under the numeric tenant ID.
+  tenantId: string;
+  eventName: string;
+  isProcessed: boolean;
+  parentNames: string[];
+  // The shape depends on the event, so it stays untyped until it is displayed.
+  payload: unknown;
+  ipAddress?: string;
+  adminId?: string;
+  occurredAt: string;
+};
+
+export type AuditEventFilters = {
+  tenantUuid?: string;
+  type?: string;
+  // Calendar dates as YYYY-MM-DD, both inclusive.
+  from?: string;
+  to?: string;
+};
+
+export type AuditEventsPage = {
+  items: AuditEvent[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export type AdminTenantOption = {
+  tenantUuid: string;
+  name: string;
+};
+
 // Mirrors the submitted document_json: MainServer stores only pan_number and aadhaar_last4,
 // and anything else it may add later is surfaced as `other` rather than dropped.
 export type KycDocuments = {

@@ -3,6 +3,10 @@ import type { ApiResponse } from '@/types/api.types';
 import type {
   AdminLedgerEntry,
   AdminStats,
+  AdminTenantOption,
+  AuditEvent,
+  AuditEventFilters,
+  AuditEventsPage,
   AdminUserSummary,
   CounterTradePayload,
   CounterTradeReceipt,
@@ -16,7 +20,9 @@ import type {
 } from './admin.types';
 import {
   mockGetAdminStats,
+  mockGetAdminTenants,
   mockGetAdminUsers,
+  mockGetAuditEvents,
   mockCreateCounterTrade,
   mockCancelRedemption,
   mockCollectRedemption,
@@ -210,6 +216,67 @@ function mapLedgerEntry(entry: StoreLedgerResponse): AdminLedgerEntry {
   };
 }
 
+type AuditEventResponse = {
+  id?: string;
+  _id?: string;
+  key?: string;
+  tenantId?: string;
+  eventName: string;
+  isProcessed?: boolean;
+  parentNames?: string[] | null;
+  payload?: unknown;
+  ipAddressAOccurredFrom?: string;
+  adminId?: string;
+  occurredAt: string;
+};
+
+// Unlike the store endpoints this has no success envelope, and data is null when nothing matches.
+type AuditEventsResponse = {
+  data: AuditEventResponse[] | null;
+  total: number;
+};
+
+type TenantListResponse = {
+  data: { tenant_uuid: string; full_name: string; short_name?: string | null }[] | null;
+  total: number;
+};
+
+const TENANT_PAGE_SIZE = 100;
+// Guards the tenant loop against a server that never reports a consistent total.
+const MAX_TENANT_PAGES = 50;
+
+function mapAuditEvent(event: AuditEventResponse): AuditEvent {
+  return {
+    id: event.id ?? event._id ?? '',
+    key: event.key ?? '',
+    tenantId: event.tenantId ?? '',
+    eventName: event.eventName,
+    isProcessed: event.isProcessed === true,
+    parentNames: event.parentNames ?? [],
+    payload: event.payload ?? null,
+    ipAddress: event.ipAddressAOccurredFrom || undefined,
+    adminId: event.adminId || undefined,
+    occurredAt: event.occurredAt,
+  };
+}
+
+// The server casts from/to to a timestamp without a time zone and rejects anything else
+// with a 500, so send plain local date-times covering the whole of each chosen day.
+function auditEventParams(
+  filters: AuditEventFilters,
+  page: number,
+  limit: number,
+) {
+  return {
+    page,
+    limit,
+    ...(filters.tenantUuid ? { tenant_uuid: filters.tenantUuid } : {}),
+    ...(filters.type ? { type: filters.type } : {}),
+    ...(filters.from ? { from: `${filters.from}T00:00:00` } : {}),
+    ...(filters.to ? { to: `${filters.to}T23:59:59` } : {}),
+  };
+}
+
 // Keep the sample-data notice and service requests on the same opt-in setting.
 export function isAdminDataSample(): boolean {
   return process.env.NEXT_PUBLIC_USE_MOCK_ADMIN === 'true';
@@ -310,6 +377,48 @@ export const adminService = {
       StorePageResponse<StoreLedgerResponse>
     >('/admin/store/ledger', { params });
     return mapPage(response.data, mapLedgerEntry);
+  },
+
+  getAuditEvents: async (
+    filters: AuditEventFilters = {},
+    page = 1,
+    limit = 20,
+  ): Promise<AuditEventsPage> => {
+    const params = normalizePagination(page, limit);
+    if (isAdminDataSample())
+      return mockGetAuditEvents(filters, params.page, params.limit);
+    const response = await apiClient.get<AuditEventsResponse>('/admin/events', {
+      params: auditEventParams(filters, params.page, params.limit),
+    });
+    const total = response.data.total ?? 0;
+    return {
+      items: (response.data.data ?? []).map(mapAuditEvent),
+      total,
+      // The server echoes the raw page and limit it was sent, so use the normalised ones.
+      page: params.page,
+      limit: params.limit,
+      totalPages: Math.max(1, Math.ceil(total / params.limit)),
+    };
+  },
+
+  getAdminTenants: async (): Promise<AdminTenantOption[]> => {
+    if (isAdminDataSample()) return mockGetAdminTenants();
+    const tenants: AdminTenantOption[] = [];
+    for (let page = 1; page <= MAX_TENANT_PAGES; page += 1) {
+      const response = await apiClient.get<TenantListResponse>('/admin/tenants', {
+        params: { page, limit: TENANT_PAGE_SIZE },
+      });
+      const batch = response.data.data ?? [];
+      tenants.push(
+        ...batch.map((tenant) => ({
+          tenantUuid: tenant.tenant_uuid,
+          name: tenant.short_name?.trim() || tenant.full_name,
+        })),
+      );
+      if (batch.length < TENANT_PAGE_SIZE || tenants.length >= response.data.total)
+        break;
+    }
+    return tenants;
   },
 
   reverseLedgerEntry: async (ledgerId: string): Promise<void> => {

@@ -97,6 +97,13 @@ export const selectAdminUser = (state: RootState): SessionUser | null =>
 export const selectIsAdmin = (state: RootState): boolean =>
   state.session.admin?.role === 'admin';
 
+// The audit log (GET /admin/events) and tenant list are limited to super admins. A session
+// without a role (sample data mode) is allowed; MainServer enforces it on every request.
+export const selectIsSuperAdmin = (state: RootState): boolean => {
+  const adminRole = state.session.admin?.adminRole;
+  return adminRole === undefined || adminRole === 'super_admin';
+};
+
 // MainServer only lets these roles read store data (analytics, customers, ledger).
 const STORE_DATA_ROLES = ['super_admin', 'manager'];
 
