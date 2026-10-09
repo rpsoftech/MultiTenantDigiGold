@@ -1,5 +1,8 @@
+import { sizeCounterTrade } from './counterTrade.utils';
 import type {
   AdminLedgerEntry,
+  CounterTradePayload,
+  CounterTradeReceipt,
   AdminStats,
   AdminUserSummary,
   StorePage,
@@ -156,4 +159,37 @@ export async function mockReverseLedgerEntry(ledgerId: string): Promise<void> {
     };
   }
   entry.isReversed = true;
+}
+
+export async function mockCreateCounterTrade(
+  payload: CounterTradePayload,
+): Promise<CounterTradeReceipt> {
+  const user = MOCK_USERS.find((candidate) => candidate.userId === payload.userId);
+  if (!user) throw new Error(`Unknown store customer: ${payload.userId}`);
+  const sized = sizeCounterTrade(payload.ratePerGram, {
+    weightGrams: payload.weightGrams,
+    amountInr: payload.amountInr,
+  });
+  if (!sized) {
+    throw {
+      message: 'must specify a positive weight_grams or total_amount_inr',
+      code: 'INVALID_PAYLOAD',
+      status: 400,
+    };
+  }
+  user.goldBalanceGrams =
+    Math.round((user.goldBalanceGrams + sized.weightGrams) * 10000) / 10000;
+  return {
+    id: `GL-${Date.now()}`,
+    eventType: 'GOLD_PURCHASE',
+    paymentMode: payload.paymentMode,
+    weightGrams: sized.weightGrams,
+    amountInr: sized.amountInr,
+    ratePerGram: payload.ratePerGram,
+    mcxBaseRate: Math.round(payload.ratePerGram / 1.0609),
+    marginInr: 100,
+    gstInr: Math.round(payload.ratePerGram - payload.ratePerGram / 1.03),
+    runningGoldBalanceGrams: user.goldBalanceGrams,
+    createdAt: new Date().toISOString(),
+  };
 }
