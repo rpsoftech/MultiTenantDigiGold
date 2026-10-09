@@ -1,7 +1,16 @@
+import { sizeCounterTrade } from './counterTrade.utils';
 import type {
   AdminLedgerEntry,
+  AdminTenantOption,
+  AuditEvent,
+  AuditEventFilters,
+  AuditEventsPage,
+  CounterTradePayload,
+  CounterTradeReceipt,
   AdminStats,
   AdminUserSummary,
+  PendingKycSubmission,
+  PendingRedemption,
   StorePage,
 } from './admin.types';
 
@@ -123,6 +132,141 @@ export async function mockGetAdminUsers(
   );
 }
 
+const MOCK_KYC_DOCUMENTS: Record<string, PendingKycSubmission['documents']> = {
+  'USR-102': { panNumber: 'ABCDE1234F', aadhaarLast4: '4821', other: [] },
+};
+
+export async function mockGetPendingKyc(
+  page = 1,
+  limit = 20,
+): Promise<StorePage<PendingKycSubmission>> {
+  const pending = MOCK_USERS.filter(
+    (user) => user.kycStatus === 'pending' && MOCK_KYC_DOCUMENTS[user.userId],
+  ).map(
+    (user): PendingKycSubmission => ({
+      userId: user.userId,
+      name: user.name,
+      mobileNumber: user.mobileNumber,
+      email: user.email,
+      goldBalanceGrams: user.goldBalanceGrams,
+      documents: MOCK_KYC_DOCUMENTS[user.userId],
+    }),
+  );
+  return paginate(pending, page, limit);
+}
+
+type MockRedemption = PendingRedemption & {
+  status: 'PENDING' | 'COLLECTED' | 'CANCELLED';
+  // Real pickup codes never reach staff; the sample data keeps them here so the screen can be
+  // tried without a server. Aarav: 482915 and 159037, Priya: 730264.
+  pickupCode: string;
+};
+
+const MOCK_REDEMPTIONS: MockRedemption[] = [
+  {
+    id: 'RDM-201',
+    ledgerId: 'GL-9941',
+    weightGrams: 5,
+    requestedAt: '2026-10-08T09:30:00.000Z',
+    customerName: 'Aarav Sharma',
+    customerPhone: '9876543210',
+    status: 'PENDING',
+    pickupCode: '482915',
+  },
+  {
+    id: 'RDM-202',
+    ledgerId: 'GL-9942',
+    weightGrams: 2.5,
+    requestedAt: '2026-10-08T11:05:00.000Z',
+    customerName: 'Priya Patel',
+    customerPhone: '9123456789',
+    status: 'PENDING',
+    pickupCode: '730264',
+  },
+  {
+    id: 'RDM-203',
+    ledgerId: 'GL-9943',
+    weightGrams: 1.25,
+    requestedAt: '2026-10-09T08:15:00.000Z',
+    customerName: 'Aarav Sharma',
+    customerPhone: '9876543210',
+    status: 'PENDING',
+    pickupCode: '159037',
+  },
+];
+
+// Same shape the API client produces for a MainServer error response.
+function redemptionError(status: number, code: string, message: string) {
+  return { status, code, message };
+}
+
+function findPendingRedemption(id: string): MockRedemption {
+  const redemption = MOCK_REDEMPTIONS.find((candidate) => candidate.id === id);
+  if (!redemption) {
+    throw redemptionError(
+      404,
+      'REDEMPTION_NOT_FOUND',
+      'Redemption request not found.',
+    );
+  }
+  if (redemption.status !== 'PENDING') {
+    throw redemptionError(
+      409,
+      'REDEMPTION_NOT_PENDING',
+      'Redemption is no longer pending.',
+    );
+  }
+  return redemption;
+}
+
+export async function mockGetPendingRedemptions(
+  page = 1,
+  limit = 20,
+  phone = '',
+): Promise<StorePage<PendingRedemption>> {
+  const pending = MOCK_REDEMPTIONS.filter(
+    (redemption) =>
+      redemption.status === 'PENDING' &&
+      (!phone || redemption.customerPhone === phone),
+  ).map(
+    ({
+      id,
+      ledgerId,
+      weightGrams,
+      requestedAt,
+      customerName,
+      customerPhone,
+    }) => ({
+      id,
+      ledgerId,
+      weightGrams,
+      requestedAt,
+      customerName,
+      customerPhone,
+    }),
+  );
+  return paginate(pending, page, limit);
+}
+
+export async function mockCollectRedemption(
+  id: string,
+  pickupCode: string,
+): Promise<void> {
+  const redemption = findPendingRedemption(id);
+  if (redemption.pickupCode !== pickupCode) {
+    throw redemptionError(
+      400,
+      'INVALID_PICKUP_CODE',
+      'Pickup code does not match.',
+    );
+  }
+  redemption.status = 'COLLECTED';
+}
+
+export async function mockCancelRedemption(id: string): Promise<void> {
+  findPendingRedemption(id).status = 'CANCELLED';
+}
+
 export async function mockGetStoreLedger(
   page = 1,
   limit = 20,
@@ -134,6 +278,109 @@ export async function mockGetStoreLedger(
   );
 }
 
+const MOCK_TENANT_UUID = '11111111-1111-4111-8111-111111111111';
+
+export const MOCK_TENANTS: AdminTenantOption[] = [
+  { tenantUuid: MOCK_TENANT_UUID, name: 'DigiGold' },
+  { tenantUuid: '22222222-2222-4222-8222-222222222222', name: 'Sample Jewellers' },
+];
+
+const MOCK_AUDIT_EVENTS: AuditEvent[] = [
+  {
+    id: 'evt-1006',
+    key: 'key-1006',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'OTPVerifyEvent',
+    isProcessed: true,
+    parentNames: [],
+    payload: { phone: '9876543210', otp: '123456', verified: true },
+    ipAddress: '203.0.113.9',
+    occurredAt: '2026-10-08T11:20:00.000Z',
+  },
+  {
+    id: 'evt-1005',
+    key: 'key-1005',
+    tenantId: '7',
+    eventName: 'ADMIN_LOGGED_IN',
+    isProcessed: true,
+    parentNames: [],
+    payload: { role: 'super_admin', ip: '203.0.113.4' },
+    ipAddress: '203.0.113.4',
+    adminId: 'adm-001',
+    occurredAt: '2026-10-08T09:05:00.000Z',
+  },
+  {
+    id: 'evt-1004',
+    key: 'key-1004',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'MARGIN_UPDATED',
+    isProcessed: false,
+    parentNames: ['TenantConfigUpdated'],
+    payload: { oldMargin: 2.5, newMargin: 3.1 },
+    adminId: 'adm-001',
+    occurredAt: '2026-10-07T15:40:00.000Z',
+  },
+  {
+    id: 'evt-1003',
+    key: 'key-1003',
+    tenantId: '22222222-2222-4222-8222-222222222222',
+    eventName: 'KYC_DOC_VERIFIED',
+    isProcessed: true,
+    parentNames: [],
+    payload: { userUuid: 'USR-102', status: 'verified' },
+    occurredAt: '2026-10-05T12:00:00.000Z',
+  },
+  {
+    id: 'evt-1002',
+    key: 'key-1002',
+    tenantId: '7',
+    eventName: 'TRADE_GOLD_PURCHASE',
+    isProcessed: true,
+    parentNames: [],
+    payload: { weightGrams: 1.2, amountInr: 8672.47, nested: { ref: 'pay_demo_9931' } },
+    occurredAt: '2026-10-02T09:15:00.000Z',
+  },
+  {
+    id: 'evt-1001',
+    key: 'key-1001',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'TENANT_UI_LAYOUT_UPDATED',
+    isProcessed: true,
+    parentNames: [],
+    payload: null,
+    occurredAt: '2026-09-28T08:00:00.000Z',
+  },
+];
+
+export async function mockGetAuditEvents(
+  filters: AuditEventFilters,
+  page = 1,
+  limit = 20,
+): Promise<AuditEventsPage> {
+  const from = filters.from ? new Date(`${filters.from}T00:00:00`).getTime() : null;
+  const to = filters.to ? new Date(`${filters.to}T23:59:59`).getTime() : null;
+  const matching = MOCK_AUDIT_EVENTS.filter((event) => {
+    const time = new Date(event.occurredAt).getTime();
+    return (
+      (!filters.tenantUuid || event.tenantId === filters.tenantUuid) &&
+      (!filters.type || event.eventName === filters.type) &&
+      (from === null || time >= from) &&
+      (to === null || time <= to)
+    );
+  });
+  return {
+    items: matching.slice((page - 1) * limit, page * limit),
+    total: matching.length,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(matching.length / limit)),
+  };
+}
+
+export async function mockGetAdminTenants(): Promise<AdminTenantOption[]> {
+  return MOCK_TENANTS.map((tenant) => ({ ...tenant }));
+}
+
 export async function mockUpdateKycStatus(
   userId: string,
   kycStatus: AdminUserSummary['kycStatus'],
@@ -141,4 +388,52 @@ export async function mockUpdateKycStatus(
   const user = MOCK_USERS.find((candidate) => candidate.userId === userId);
   if (!user) throw new Error(`Unknown store customer: ${userId}`);
   user.kycStatus = kycStatus;
+}
+
+export async function mockReverseLedgerEntry(ledgerId: string): Promise<void> {
+  const entry = MOCK_LEDGER.find((candidate) => candidate.id === ledgerId);
+  if (!entry) throw new Error(`Unknown ledger entry: ${ledgerId}`);
+  if (entry.isReversed || entry.eventType === 'SYSTEM_REVERSAL') {
+    throw {
+      message: entry.isReversed
+        ? 'ledger entry is already reversed'
+        : 'ledger entry cannot be reversed',
+      code: 'ERROR_LEDGER_REVERSAL',
+      status: 409,
+    };
+  }
+  entry.isReversed = true;
+}
+
+export async function mockCreateCounterTrade(
+  payload: CounterTradePayload,
+): Promise<CounterTradeReceipt> {
+  const user = MOCK_USERS.find((candidate) => candidate.userId === payload.userId);
+  if (!user) throw new Error(`Unknown store customer: ${payload.userId}`);
+  const sized = sizeCounterTrade(payload.ratePerGram, {
+    weightGrams: payload.weightGrams,
+    amountInr: payload.amountInr,
+  });
+  if (!sized) {
+    throw {
+      message: 'must specify a positive weight_grams or total_amount_inr',
+      code: 'INVALID_PAYLOAD',
+      status: 400,
+    };
+  }
+  user.goldBalanceGrams =
+    Math.round((user.goldBalanceGrams + sized.weightGrams) * 10000) / 10000;
+  return {
+    id: `GL-${Date.now()}`,
+    eventType: 'GOLD_PURCHASE',
+    paymentMode: payload.paymentMode,
+    weightGrams: sized.weightGrams,
+    amountInr: sized.amountInr,
+    ratePerGram: payload.ratePerGram,
+    mcxBaseRate: Math.round(payload.ratePerGram / 1.0609),
+    marginInr: 100,
+    gstInr: Math.round(payload.ratePerGram - payload.ratePerGram / 1.03),
+    runningGoldBalanceGrams: user.goldBalanceGrams,
+    createdAt: new Date().toISOString(),
+  };
 }
