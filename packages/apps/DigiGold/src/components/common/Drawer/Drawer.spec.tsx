@@ -6,7 +6,12 @@ afterEach(cleanup);
 describe('Drawer', () => {
   it('renders its title, description and content when open', () => {
     render(
-      <Drawer open onOpenChange={jest.fn()} title="Details" description="About it">
+      <Drawer
+        open
+        onOpenChange={jest.fn()}
+        title="Details"
+        description="About it"
+      >
         <p>body</p>
       </Drawer>,
     );

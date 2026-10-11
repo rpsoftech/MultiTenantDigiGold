@@ -289,7 +289,9 @@ type AuditEventsResponse = {
 };
 
 type TenantListResponse = {
-  data: { tenant_uuid: string; full_name: string; short_name?: string | null }[] | null;
+  data:
+    | { tenant_uuid: string; full_name: string; short_name?: string | null }[]
+    | null;
   total: number;
 };
 
@@ -312,8 +314,8 @@ function mapAuditEvent(event: AuditEventResponse): AuditEvent {
   };
 }
 
-// The server casts from/to to a timestamp without a time zone and rejects anything else
-// with a 500, so send plain local date-times covering the whole of each chosen day.
+// The chosen days are Indian calendar days, so send them with the IST offset: from the
+// first to the last millisecond of each day.
 function auditEventParams(
   filters: AuditEventFilters,
   page: number,
@@ -324,8 +326,8 @@ function auditEventParams(
     limit,
     ...(filters.tenantUuid ? { tenant_uuid: filters.tenantUuid } : {}),
     ...(filters.type ? { type: filters.type } : {}),
-    ...(filters.from ? { from: `${filters.from}T00:00:00` } : {}),
-    ...(filters.to ? { to: `${filters.to}T23:59:59` } : {}),
+    ...(filters.from ? { from: `${filters.from}T00:00:00+05:30` } : {}),
+    ...(filters.to ? { to: `${filters.to}T23:59:59.999+05:30` } : {}),
   };
 }
 
@@ -473,9 +475,12 @@ export const adminService = {
     if (isAdminDataSample()) return mockGetAdminTenants();
     const tenants: AdminTenantOption[] = [];
     for (let page = 1; page <= MAX_TENANT_PAGES; page += 1) {
-      const response = await apiClient.get<TenantListResponse>('/admin/tenants', {
-        params: { page, limit: TENANT_PAGE_SIZE },
-      });
+      const response = await apiClient.get<TenantListResponse>(
+        '/admin/tenants',
+        {
+          params: { page, limit: TENANT_PAGE_SIZE },
+        },
+      );
       const batch = response.data.data ?? [];
       tenants.push(
         ...batch.map((tenant) => ({
@@ -483,7 +488,10 @@ export const adminService = {
           name: tenant.short_name?.trim() || tenant.full_name,
         })),
       );
-      if (batch.length < TENANT_PAGE_SIZE || tenants.length >= response.data.total)
+      if (
+        batch.length < TENANT_PAGE_SIZE ||
+        tenants.length >= response.data.total
+      )
         break;
     }
     return tenants;

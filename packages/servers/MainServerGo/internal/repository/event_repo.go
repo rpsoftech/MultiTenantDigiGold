@@ -105,20 +105,34 @@ func GetEventRepository() *EventRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare FetchUnprocessedEvents: %v", err))
 		}
 
+		// Events record their tenant either as its UUID or, for trades, redemptions, refunds
+		// and admin logins, as its internal numeric ID. A tenant filter ($1, a UUID) matches
+		// both, and every row is returned with the UUID so callers can name the tenant. From
+		// and to ($3, $4) are timestamps with a zone offset.
+		eventFilter := fmt.Sprintf(`
+			WHERE ($1 = '' OR e.%[1]s = $1
+			       OR e.%[1]s = (SELECT t.%[4]s::text FROM %[5]s t WHERE t.%[6]s::text = $1))
+			  AND ($2 = '' OR e.%[2]s = $2)
+			  AND ($3 = '' OR e.%[3]s >= cast(nullif($3, '') as timestamptz))
+			  AND ($4 = '' OR e.%[3]s <= cast(nullif($4, '') as timestamptz))`,
+			schema.ColTenantId, schema.ColEventName, schema.ColOccurredAt,
+			schema.ColTenantID, schema.TableTenants, schema.ColTenantUUID,
+		)
+
 		queryGetEvents := fmt.Sprintf(`
-			SELECT 
-				%s, %s, %s, %s, %s, %s, %s, %s, %s 
-			FROM %s 
-			WHERE ($1 = '' OR %s = $1) 
-			  AND ($2 = '' OR %s = $2)
-			  AND ($3 = '' OR %s >= cast(nullif($3, '') as timestamp))
-			  AND ($4 = '' OR %s <= cast(nullif($4, '') as timestamp))
-			ORDER BY %s DESC 
+			SELECT
+				e.%s, e.%s, COALESCE(tn.%s::text, e.%s), e.%s, e.%s, e.%s, e.%s, e.%s, e.%s
+			FROM %s e
+			LEFT JOIN %s tn ON tn.%s::text = e.%s
+			%s
+			ORDER BY e.%s DESC, e.%s DESC
 			LIMIT $5 OFFSET $6`,
-			schema.ColEventId, schema.ColKeyId, schema.ColTenantId, schema.ColEventName, schema.ColParentNames,
-			schema.ColPayload, schema.ColIpAddressOccurredFrom, schema.ColAdminId, schema.ColOccurredAt,
+			schema.ColEventId, schema.ColKeyId, schema.ColTenantUUID, schema.ColTenantId, schema.ColEventName,
+			schema.ColParentNames, schema.ColPayload, schema.ColIpAddressOccurredFrom, schema.ColAdminId, schema.ColOccurredAt,
 			schema.TableSystemEvents,
-			schema.ColTenantId, schema.ColEventName, schema.ColOccurredAt, schema.ColOccurredAt, schema.ColOccurredAt,
+			schema.TableTenants, schema.ColTenantID, schema.ColTenantId,
+			eventFilter,
+			schema.ColOccurredAt, schema.ColEventId,
 		)
 
 		stmtGetEvents, err := db.Db.Prepare(queryGetEvents)
@@ -128,13 +142,9 @@ func GetEventRepository() *EventRepository {
 
 		queryCountEvents := fmt.Sprintf(`
 			SELECT COUNT(*)
-			FROM %s 
-			WHERE ($1 = '' OR %s = $1) 
-			  AND ($2 = '' OR %s = $2)
-			  AND ($3 = '' OR %s >= cast(nullif($3, '') as timestamp))
-			  AND ($4 = '' OR %s <= cast(nullif($4, '') as timestamp))`,
-			schema.TableSystemEvents,
-			schema.ColTenantId, schema.ColEventName, schema.ColOccurredAt, schema.ColOccurredAt,
+			FROM %s e
+			%s`,
+			schema.TableSystemEvents, eventFilter,
 		)
 
 		stmtCountEvents, err := db.Db.Prepare(queryCountEvents)
@@ -375,7 +385,8 @@ func (r *EventRepository) GetEventsPaginated(ctx context.Context, tenantUUID, ev
 	}
 	defer rows.Close()
 
-	var pagedEvents []*events.BaseEvent
+	// Non-nil so an empty page marshals as [] rather than null.
+	pagedEvents := []*events.BaseEvent{}
 	for rows.Next() {
 		var evt events.BaseEvent
 		var payloadBytes []byte

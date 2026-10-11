@@ -25,12 +25,38 @@ function adminSession(adminRole?: string): Partial<RootState> {
 }
 
 describe('AuditAccessGate', () => {
-  it.each(['super_admin', undefined])('shows the audit log to role %s', (role) => {
+  it('shows the audit log to a super admin', () => {
     renderWithProviders(<AuditAccessGate>audit panel</AuditAccessGate>, {
       user: null,
-      preloaded: adminSession(role),
+      preloaded: adminSession('super_admin'),
     });
     expect(screen.getByText('audit panel')).toBeTruthy();
+  });
+
+  describe('a session without a role', () => {
+    const original = process.env.NEXT_PUBLIC_USE_MOCK_ADMIN;
+    afterEach(() => {
+      if (original === undefined) delete process.env.NEXT_PUBLIC_USE_MOCK_ADMIN;
+      else process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = original;
+    });
+
+    it('is let in only in sample data mode', () => {
+      process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
+      renderWithProviders(<AuditAccessGate>audit panel</AuditAccessGate>, {
+        user: null,
+        preloaded: adminSession(undefined),
+      });
+      expect(screen.getByText('audit panel')).toBeTruthy();
+    });
+
+    it('is refused against the real server', () => {
+      delete process.env.NEXT_PUBLIC_USE_MOCK_ADMIN;
+      renderWithProviders(<AuditAccessGate>audit panel</AuditAccessGate>, {
+        user: null,
+        preloaded: adminSession(undefined),
+      });
+      expect(screen.queryByText('audit panel')).toBeNull();
+    });
   });
 
   it.each(['manager', 'custom', 'auditor'])(

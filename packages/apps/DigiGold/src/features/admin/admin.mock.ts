@@ -345,7 +345,10 @@ const MOCK_TENANT_UUID = '11111111-1111-4111-8111-111111111111';
 
 export const MOCK_TENANTS: AdminTenantOption[] = [
   { tenantUuid: MOCK_TENANT_UUID, name: 'DigiGold' },
-  { tenantUuid: '22222222-2222-4222-8222-222222222222', name: 'Sample Jewellers' },
+  {
+    tenantUuid: '22222222-2222-4222-8222-222222222222',
+    name: 'Sample Jewellers',
+  },
 ];
 
 const MOCK_AUDIT_EVENTS: AuditEvent[] = [
@@ -400,7 +403,11 @@ const MOCK_AUDIT_EVENTS: AuditEvent[] = [
     eventName: 'TRADE_GOLD_PURCHASE',
     isProcessed: true,
     parentNames: [],
-    payload: { weightGrams: 1.2, amountInr: 8672.47, nested: { ref: 'pay_demo_9931' } },
+    payload: {
+      weightGrams: 1.2,
+      amountInr: 8672.47,
+      nested: { ref: 'pay_demo_9931' },
+    },
     occurredAt: '2026-10-02T09:15:00.000Z',
   },
   {
@@ -420,7 +427,9 @@ export async function mockGetAuditEvents(
   page = 1,
   limit = 20,
 ): Promise<AuditEventsPage> {
-  const from = filters.from ? new Date(`${filters.from}T00:00:00`).getTime() : null;
+  const from = filters.from
+    ? new Date(`${filters.from}T00:00:00`).getTime()
+    : null;
   const to = filters.to ? new Date(`${filters.to}T23:59:59`).getTime() : null;
   const matching = MOCK_AUDIT_EVENTS.filter((event) => {
     const time = new Date(event.occurredAt).getTime();

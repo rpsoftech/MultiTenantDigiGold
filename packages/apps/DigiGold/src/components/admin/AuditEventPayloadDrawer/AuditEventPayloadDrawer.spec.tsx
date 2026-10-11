@@ -33,12 +33,16 @@ function setClipboard(writeText: jest.Mock) {
 
 describe('AuditEventPayloadDrawer', () => {
   it('stays closed without an event', () => {
-    renderWithProviders(<AuditEventPayloadDrawer event={null} onClose={jest.fn()} />);
+    renderWithProviders(
+      <AuditEventPayloadDrawer event={null} onClose={jest.fn()} />,
+    );
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('shows the metadata and pretty-printed payload', () => {
-    renderWithProviders(<AuditEventPayloadDrawer event={event} onClose={jest.fn()} />);
+    renderWithProviders(
+      <AuditEventPayloadDrawer event={event} onClose={jest.fn()} />,
+    );
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByText('adm-1')).toBeTruthy();
     expect(screen.getByText('1.2.3.4')).toBeTruthy();
@@ -63,43 +67,80 @@ describe('AuditEventPayloadDrawer', () => {
         onClose={jest.fn()}
       />,
     );
-    expect(screen.getByLabelText('Event payload').textContent).toBe('No payload');
+    expect(screen.getByLabelText('Event payload').textContent).toBe(
+      'No payload',
+    );
     expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
     expect(screen.getByText('Pending')).toBeTruthy();
   });
 
   it('renders primitive payloads', () => {
     renderWithProviders(
-      <AuditEventPayloadDrawer event={{ ...event, payload: 'plain text' }} onClose={jest.fn()} />,
+      <AuditEventPayloadDrawer
+        event={{ ...event, payload: 'plain text' }}
+        onClose={jest.fn()}
+      />,
     );
-    expect(screen.getByLabelText('Event payload').textContent).toBe('"plain text"');
+    expect(screen.getByLabelText('Event payload').textContent).toBe(
+      '"plain text"',
+    );
   });
 
   it('copies the payload to the clipboard', async () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
     setClipboard(writeText);
-    renderWithProviders(<AuditEventPayloadDrawer event={event} onClose={jest.fn()} />);
+    renderWithProviders(
+      <AuditEventPayloadDrawer event={event} onClose={jest.fn()} />,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
 
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith(JSON.stringify(event.payload, null, 2)),
+      expect(writeText).toHaveBeenCalledWith(
+        JSON.stringify(event.payload, null, 2),
+      ),
     );
     expect(await screen.findByText('Payload copied')).toBeTruthy();
   });
 
   it('reports when copying fails', async () => {
     setClipboard(jest.fn().mockRejectedValue(new Error('denied')));
-    renderWithProviders(<AuditEventPayloadDrawer event={event} onClose={jest.fn()} />);
+    renderWithProviders(
+      <AuditEventPayloadDrawer event={event} onClose={jest.fn()} />,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
 
     expect(await screen.findByText('Couldn’t copy the payload')).toBeTruthy();
   });
 
+  it('never shows or copies a secret, even if the server sent one', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    setClipboard(writeText);
+    renderWithProviders(
+      <AuditEventPayloadDrawer
+        event={{
+          ...event,
+          eventName: 'OTPReqEvent',
+          payload: { otpCode: '482915', phone: '9876543210' },
+        }}
+        onClose={jest.fn()}
+      />,
+    );
+
+    const shown = screen.getByLabelText('Event payload').textContent ?? '';
+    expect(shown).not.toContain('482915');
+    expect(shown).toContain('[redacted]');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0][0]).not.toContain('482915');
+  });
+
   it('calls onClose when dismissed', () => {
     const onClose = jest.fn();
-    renderWithProviders(<AuditEventPayloadDrawer event={event} onClose={onClose} />);
+    renderWithProviders(
+      <AuditEventPayloadDrawer event={event} onClose={onClose} />,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalled();
   });

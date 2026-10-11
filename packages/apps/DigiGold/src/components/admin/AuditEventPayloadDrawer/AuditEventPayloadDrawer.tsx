@@ -5,8 +5,9 @@ import { Button } from '@/components/common/Button/Button';
 import { Drawer } from '@/components/common/Drawer/Drawer';
 import { useToast } from '@/components/common/Toast/Toast';
 import {
-  auditEventLabel,
+  auditEventTitle,
   formatAuditTimestamp,
+  redactAuditPayload,
 } from '@/features/admin/audit.constants';
 import type { AuditEvent } from '@/features/admin/admin.types';
 import styles from './AuditEventPayloadDrawer.module.scss';
@@ -28,7 +29,10 @@ export function AuditEventPayloadDrawer({
   onClose: () => void;
 }) {
   const { showToast } = useToast();
-  const payloadText = event ? formatPayload(event.payload) : '';
+  // Shown and copied with secrets masked (MainServer masks them too).
+  const payloadText = event
+    ? formatPayload(redactAuditPayload(event.payload))
+    : '';
   const hasPayload = event?.payload !== null && event?.payload !== undefined;
 
   async function copyPayload() {
@@ -50,7 +54,7 @@ export function AuditEventPayloadDrawer({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={event ? auditEventLabel(event.eventName) : 'Event details'}
+      title={event ? auditEventTitle(event) : 'Event details'}
       description={event?.eventName}
     >
       {event && (
@@ -110,7 +114,11 @@ export function AuditEventPayloadDrawer({
               </Button>
             )}
           </div>
-          <pre className={styles.payload} tabIndex={0} aria-label="Event payload">
+          <pre
+            className={styles.payload}
+            tabIndex={0}
+            aria-label="Event payload"
+          >
             {payloadText}
           </pre>
         </>

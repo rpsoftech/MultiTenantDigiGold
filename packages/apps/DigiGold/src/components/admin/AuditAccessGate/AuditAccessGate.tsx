@@ -14,7 +14,9 @@ export function AuditAccessGate({ children }: { children: ReactNode }) {
 
   return (
     <Card className={styles.notice}>
-      <h2 className={styles.title}>The audit log isn’t available for your role</h2>
+      <h2 className={styles.title}>
+        The audit log isn’t available for your role
+      </h2>
       <p className={styles.message}>
         The audit log is limited to super admins. Ask one of them if you need
         access.

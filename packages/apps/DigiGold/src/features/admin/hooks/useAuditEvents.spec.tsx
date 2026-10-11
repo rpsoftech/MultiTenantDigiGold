@@ -25,7 +25,9 @@ describe('useAuditEvents', () => {
   it('loads the requested filters and page under their own query key', async () => {
     const filters = { tenantUuid: 't-1', type: 'MARGIN_UPDATED' };
     const page = { items: [], total: 0, page: 2, limit: 50, totalPages: 1 };
-    const spy = jest.spyOn(adminService, 'getAuditEvents').mockResolvedValue(page);
+    const spy = jest
+      .spyOn(adminService, 'getAuditEvents')
+      .mockResolvedValue(page);
     const { client, wrapper } = setup();
 
     const { result, unmount } = renderHook(
@@ -75,7 +77,9 @@ describe('useAdminTenants', () => {
     jest.spyOn(adminService, 'getAdminTenants').mockResolvedValue(tenants);
     const { client, wrapper } = setup();
 
-    const { result, unmount } = renderHook(() => useAdminTenants(), { wrapper });
+    const { result, unmount } = renderHook(() => useAdminTenants(), {
+      wrapper,
+    });
 
     await waitFor(() => expect(result.current.data).toEqual(tenants));
     expect(client.getQueryData(adminQueryKeys.auditTenants)).toEqual(tenants);

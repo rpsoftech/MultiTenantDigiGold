@@ -44,7 +44,7 @@ export type StorePage<T> = {
 export type AuditEvent = {
   id: string;
   key: string;
-  // A tenant UUID for most events, but logins and trades are stored under the numeric tenant ID.
+  // The tenant's UUID. MainServer resolves events stored under the numeric tenant ID to it.
   tenantId: string;
   eventName: string;
   isProcessed: boolean;

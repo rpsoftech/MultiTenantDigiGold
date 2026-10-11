@@ -72,7 +72,7 @@ describe('adminService audit events', () => {
     });
   });
 
-  it('sends only the filters that are set, covering whole days for from and to', async () => {
+  it('sends only the filters that are set, covering whole Indian days for from and to', async () => {
     const get = jest.spyOn(apiClient, 'get').mockResolvedValue({
       data: { data: [], total: 0 },
     });
@@ -94,8 +94,8 @@ describe('adminService audit events', () => {
         limit: 50,
         tenant_uuid: 'tenant-uuid',
         type: 'MARGIN_UPDATED',
-        from: '2026-10-01T00:00:00',
-        to: '2026-10-09T23:59:59',
+        from: '2026-10-01T00:00:00+05:30',
+        to: '2026-10-09T23:59:59.999+05:30',
       },
     });
   });
@@ -118,7 +118,9 @@ describe('adminService audit events', () => {
   it('tolerates events without optional fields', async () => {
     jest.spyOn(apiClient, 'get').mockResolvedValue({
       data: {
-        data: [{ eventName: 'TenantCreated', occurredAt: '2026-10-09T10:00:00Z' }],
+        data: [
+          { eventName: 'TenantCreated', occurredAt: '2026-10-09T10:00:00Z' },
+        ],
         total: 1,
       },
     });
@@ -141,8 +143,12 @@ describe('adminService audit events', () => {
     const get = jest.spyOn(apiClient, 'get');
 
     const all = await adminService.getAuditEvents();
-    const margin = await adminService.getAuditEvents({ type: 'MARGIN_UPDATED' });
-    const outOfRange = await adminService.getAuditEvents({ from: '2030-01-01' });
+    const margin = await adminService.getAuditEvents({
+      type: 'MARGIN_UPDATED',
+    });
+    const outOfRange = await adminService.getAuditEvents({
+      from: '2030-01-01',
+    });
 
     expect(all.total).toBeGreaterThan(1);
     expect(margin.items.map((event) => event.eventName)).toEqual([
@@ -162,7 +168,9 @@ describe('adminService audit events', () => {
     const get = jest
       .spyOn(apiClient, 'get')
       .mockResolvedValueOnce({ data: { data: firstPage, total: 101 } })
-      .mockResolvedValueOnce({ data: { data: [tenant(100, 'Short')], total: 101 } });
+      .mockResolvedValueOnce({
+        data: { data: [tenant(100, 'Short')], total: 101 },
+      });
 
     const tenants = await adminService.getAdminTenants();
 
