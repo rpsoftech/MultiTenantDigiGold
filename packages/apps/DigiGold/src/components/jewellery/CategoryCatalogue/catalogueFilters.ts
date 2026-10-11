@@ -109,31 +109,47 @@ const compareLabels = (a: string, b: string) =>
 // match some design.
 export function buildFilterGroups(products: Product[]): FilterGroup[] {
   const rangeGroups: FilterGroup[] = [
-    { key: 'weight', label: 'Weight', options: WEIGHT_BUCKETS, collapsible: false },
-    { key: 'price', label: 'Price', options: PRICE_BUCKETS, collapsible: false },
+    {
+      key: 'weight',
+      label: 'Weight',
+      options: WEIGHT_BUCKETS,
+      collapsible: false,
+    },
+    {
+      key: 'price',
+      label: 'Price',
+      options: PRICE_BUCKETS,
+      collapsible: false,
+    },
   ];
   const ranges = rangeGroups.map((group) => ({
     ...group,
     options: group.options.filter((option) => products.some(option.test)),
   }));
 
-  const attributes: FilterGroup[] = ATTRIBUTE_GROUPS.map(({ key, label, collapsible }) => {
-    const values = [
-      ...new Set(products.map((product) => product[key].trim()).filter(Boolean)),
-    ].sort(compareLabels);
-    return {
-      key,
-      label,
-      collapsible,
-      options: values.map((value) => ({
-        label: value,
-        value,
-        test: (product: Product) => product[key].trim() === value,
-      })),
-    };
-  });
+  const attributes: FilterGroup[] = ATTRIBUTE_GROUPS.map(
+    ({ key, label, collapsible }) => {
+      const values = [
+        ...new Set(
+          products.map((product) => product[key].trim()).filter(Boolean),
+        ),
+      ].sort(compareLabels);
+      return {
+        key,
+        label,
+        collapsible,
+        options: values.map((value) => ({
+          label: value,
+          value,
+          test: (product: Product) => product[key].trim() === value,
+        })),
+      };
+    },
+  );
 
-  return [...ranges, ...attributes].filter((group) => group.options.length >= 2);
+  return [...ranges, ...attributes].filter(
+    (group) => group.options.length >= 2,
+  );
 }
 
 // A design passes when, in every group with a selection, it matches one of the selected
@@ -148,7 +164,9 @@ export function applyFilters(
       const active = group.options.filter((option) =>
         selected[group.key]?.includes(option.value),
       );
-      return active.length === 0 || active.some((option) => option.test(product));
+      return (
+        active.length === 0 || active.some((option) => option.test(product))
+      );
     }),
   );
 }
@@ -172,7 +190,8 @@ export function sortProducts(products: Product[], sort: SortValue): Product[] {
   const sorted = [...products];
   if (sort === 'price-low') sorted.sort((a, b) => a.price - b.price);
   if (sort === 'price-high') sorted.sort((a, b) => b.price - a.price);
-  if (sort === 'newest') sorted.sort((a, b) => Number(b.isNew) - Number(a.isNew));
+  if (sort === 'newest')
+    sorted.sort((a, b) => Number(b.isNew) - Number(a.isNew));
   return sorted;
 }
 
@@ -180,7 +199,9 @@ export function sortProducts(products: Product[], sort: SortValue): Product[] {
 export function purityList(products: Product[]): string[] {
   return [
     ...new Set(
-      products.map((product) => product.carat.replace(/\s*gold\s*$/i, '').trim()).filter(Boolean),
+      products
+        .map((product) => product.carat.replace(/\s*gold\s*$/i, '').trim())
+        .filter(Boolean),
     ),
   ].sort(compareLabels);
 }
@@ -194,7 +215,10 @@ export function selectedFromParams(params: URLSearchParams): SelectedFilters {
   return selected;
 }
 
-export function paramsFromState(selected: SelectedFilters, sort: SortValue): URLSearchParams {
+export function paramsFromState(
+  selected: SelectedFilters,
+  sort: SortValue,
+): URLSearchParams {
   const params = new URLSearchParams();
   for (const key of FILTER_KEYS) {
     for (const value of selected[key] ?? []) params.append(key, value);

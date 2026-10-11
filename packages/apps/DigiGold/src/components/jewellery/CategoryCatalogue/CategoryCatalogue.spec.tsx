@@ -117,7 +117,11 @@ describe('CategoryCatalogue', () => {
 
   it('keeps the catalogue order by default and sorts with the native select', async () => {
     await renderLoaded();
-    expect(titlesInOrder()).toEqual(['Mid Bangle', 'Cheap Bangle', 'Premium Bangle']);
+    expect(titlesInOrder()).toEqual([
+      'Mid Bangle',
+      'Cheap Bangle',
+      'Premium Bangle',
+    ]);
 
     fireEvent.change(screen.getByLabelText('Sort by'), {
       target: { value: 'price-low' },
@@ -151,8 +155,12 @@ describe('CategoryCatalogue', () => {
     await renderLoaded();
 
     expect(titlesInOrder()).toEqual(['Premium Bangle', 'Mid Bangle']);
-    expect((screen.getByLabelText('18KT Gold') as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByLabelText('22KT Gold') as HTMLInputElement).checked).toBe(true);
+    expect(
+      (screen.getByLabelText('18KT Gold') as HTMLInputElement).checked,
+    ).toBe(false);
+    expect(
+      (screen.getByLabelText('22KT Gold') as HTMLInputElement).checked,
+    ).toBe(true);
     expect(mockReplace).not.toHaveBeenCalled();
   });
 

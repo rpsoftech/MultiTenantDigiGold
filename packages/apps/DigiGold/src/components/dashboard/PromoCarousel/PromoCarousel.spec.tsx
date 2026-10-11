@@ -190,14 +190,14 @@ describe('PromoCarousel', () => {
     it('hides a slide whose module is switched off and keeps the rest', () => {
       mockTenantConfig = {
         ...DEFAULT_TENANT_CONFIG,
-        activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, ecommerce: false },
+        activeModules: {
+          ...DEFAULT_TENANT_CONFIG.activeModules,
+          ecommerce: false,
+        },
       };
       mockedConfig.mockReturnValue({
         autoplayIntervalMs: 3000,
-        slides: [
-          { ...slides[0], module: 'ecommerce' as const },
-          slides[1],
-        ],
+        slides: [{ ...slides[0], module: 'ecommerce' as const }, slides[1]],
       });
       render(<PromoCarousel />);
 

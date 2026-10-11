@@ -86,7 +86,9 @@ describe('navigation links', () => {
       'promo slide',
       promoConfig.slides
         .filter((slide) => slide.enabled)
-        .flatMap((slide) => ('linkUrl' in slide && slide.linkUrl ? [slide.linkUrl] : [])),
+        .flatMap((slide) =>
+          'linkUrl' in slide && slide.linkUrl ? [slide.linkUrl] : [],
+        ),
     ],
     ['trending "View All"', [trendingConfig.viewAllUrl]],
   ])('every enabled %s link leads to an existing page', (_, urls) => {

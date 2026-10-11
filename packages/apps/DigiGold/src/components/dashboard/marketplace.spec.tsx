@@ -98,9 +98,11 @@ describe.each([
       status: null,
     });
     render(
-      withStore(<QueryClientProvider client={queryClient}>
-        <Component />
-      </QueryClientProvider>),
+      withStore(
+        <QueryClientProvider client={queryClient}>
+          <Component />
+        </QueryClientProvider>,
+      ),
     );
 
     const alert = await screen.findByRole('alert');
@@ -120,9 +122,11 @@ describe.each([
   it('shows the empty state for a successful response with no items', async () => {
     mockRequest(true);
     render(
-      withStore(<QueryClientProvider client={queryClient}>
-        <Component />
-      </QueryClientProvider>),
+      withStore(
+        <QueryClientProvider client={queryClient}>
+          <Component />
+        </QueryClientProvider>,
+      ),
     );
 
     expect(await screen.findByText(emptyText)).toBeTruthy();

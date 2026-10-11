@@ -1,4 +1,8 @@
-import { createSelector, createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import {
+  createSelector,
+  createSlice,
+  type PayloadAction,
+} from '@reduxjs/toolkit';
 import { applyBuildSwitches } from '@/features/tenant/buildSwitches';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
 import type { RootState } from '@/store';
