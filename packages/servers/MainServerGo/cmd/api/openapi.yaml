@@ -1857,21 +1857,46 @@ paths:
       operationId: getAdminEvents
       tags: [Admin Events]
       summary: Audit event log
+      description: >-
+        Platform super admins only. Secret payload fields (OTP codes, gateway and WhatsApp
+        credentials, tokens, passwords) are returned as `[redacted]`. Every event carries
+        its tenant's UUID in `tenantId`, including trades, redemptions, refunds and logins,
+        which are stored under the tenant's internal ID.
       security: [{ AdminToken: [] }]
       parameters:
         - $ref: '#/components/parameters/TenantId'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
-        - { name: tenant_uuid, in: query, schema: { type: string } }
+        - {
+            name: tenant_uuid,
+            in: query,
+            description: Events of this tenant, however the tenant was recorded.,
+            schema: { type: string, format: uuid },
+          }
         - {
             name: type,
             in: query,
             description: Event name filter.,
             schema: { type: string },
           }
-        - { name: from, in: query, schema: { type: string, format: date-time } }
-        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - {
+            name: from,
+            in: query,
+            description: RFC 3339, or a date or date-time without offset read as IST.,
+            schema: { type: string },
+          }
+        - {
+            name: to,
+            in: query,
+            description: Inclusive. RFC 3339, or a date or date-time read as IST.,
+            schema: { type: string },
+          }
       responses:
+        '400':
+          description: Unreadable from/to.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '200':
           description: Events, newest first.
           content:

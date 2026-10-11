@@ -22,6 +22,8 @@ export type PagedTableText = {
   emptyPageDetail: string;
   // Plural noun for the pagination summary, e.g. "customers".
   noun: string;
+  // Singular noun for a total of one, e.g. "customer"; only used with total.
+  nounOne?: string;
   paginationLabel: string;
 };
 
@@ -36,6 +38,10 @@ type PagedTableProps = {
   // Shows the rows-per-page select; followed by onPageChange(1), since a new page size
   // starts again from the first page. Leave it out for a fixed page size.
   onLimitChange?: (limit: number) => void;
+  // The choices in the rows-per-page select.
+  pageSizes?: number[];
+  // For endpoints that report a total: the summary reads "Page 2 of 7 · 134 events".
+  total?: number;
   // Extra controls on the right of the title, e.g. a refresh button.
   actions?: ReactNode;
   // Shown between the title and the table, e.g. a search form.
@@ -55,7 +61,7 @@ type PagedTableProps = {
   children: ReactNode;
 };
 
-const PAGE_SIZES = [20, 50, 100];
+const DEFAULT_PAGE_SIZES = [20, 50, 100];
 
 // The frame shared by the admin's paged tables: title, rows per page, loading, error and
 // empty states, and previous/next pagination for MainServer's page-and-limit endpoints.
@@ -68,6 +74,8 @@ export function PagedTable({
   limit,
   onPageChange,
   onLimitChange,
+  pageSizes = DEFAULT_PAGE_SIZES,
+  total,
   actions,
   toolbar,
   emptyState,
@@ -82,6 +90,8 @@ export function PagedTable({
   children,
 }: PagedTableProps) {
   const firstItem = (page - 1) * limit + 1;
+  const totalPages =
+    total === undefined ? null : Math.max(1, Math.ceil(total / limit));
 
   return (
     <section aria-labelledby={titleId}>
@@ -104,7 +114,7 @@ export function PagedTable({
                 onPageChange(1);
               }}
             >
-              {PAGE_SIZES.map((size) => (
+              {pageSizes.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>
@@ -154,15 +164,28 @@ export function PagedTable({
         )}
 
         <nav className={styles.pagination} aria-label={text.paginationLabel}>
-          <span className={styles.pageSummary} aria-live="polite">
-            {isFetching
-              ? `Loading ${text.noun}…`
-              : isError
-                ? `Page ${page}`
-                : itemCount
-                  ? `Showing ${firstItem}–${firstItem + itemCount - 1} ${text.noun}`
-                  : `0 ${text.noun} on this page`}
-          </span>
+          {totalPages !== null ? (
+            <span className={styles.pageSummary} aria-live="polite">
+              Page {page} of {totalPages}
+              {!isLoading && !isError && (
+                <span>
+                  {' '}
+                  · {total}{' '}
+                  {total === 1 ? (text.nounOne ?? text.noun) : text.noun}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className={styles.pageSummary} aria-live="polite">
+              {isFetching
+                ? `Loading ${text.noun}…`
+                : isError
+                  ? `Page ${page}`
+                  : itemCount
+                    ? `Showing ${firstItem}–${firstItem + itemCount - 1} ${text.noun}`
+                    : `0 ${text.noun} on this page`}
+            </span>
+          )}
           <div className={styles.pageControls}>
             <Button
               variant="outlined"
@@ -172,7 +195,9 @@ export function PagedTable({
             >
               Previous
             </Button>
-            <span className={styles.pageNumber}>Page {page}</span>
+            {totalPages === null && (
+              <span className={styles.pageNumber}>Page {page}</span>
+            )}
             <Button
               variant="outlined"
               className={styles.pageButton}

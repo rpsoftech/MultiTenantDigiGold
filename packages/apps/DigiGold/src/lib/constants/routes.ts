@@ -23,6 +23,7 @@ export const ROUTES = {
   adminKycReview: '/admin/kyc-review',
   adminLedger: '/admin/ledger',
   adminPickups: '/admin/pickups',
+  adminAuditEvents: '/admin/audit-events',
   adminCounterSale: '/admin/counter-sale',
   adminProfile: '/admin/profile',
   adminUpdatePassword: '/admin/update-password',

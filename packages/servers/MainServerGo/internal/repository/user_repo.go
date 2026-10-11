@@ -335,17 +335,17 @@ func (r *UserRepository) GetUsersByTenant(ctx context.Context, tenantID int64, l
 const kycAwaitingReviewCondition = `user_kyc_status = 'pending'
 	AND user_document_json IS NOT NULL AND user_document_json NOT IN ('{}'::jsonb, 'null'::jsonb)`
 
-// DecideKYC approves or rejects the customer's KYC submission and records which staff
-// login decided (adminUUID) and when. The state is checked in the UPDATE itself, so of two
-// admins deciding the same submission only the first wins, and a customer who never
+// DecideKYCWithTX approves or rejects the customer's KYC submission in tx and records which
+// staff login decided (adminUUID) and when. The state is checked in the UPDATE itself, so
+// of two admins deciding the same submission only the first wins, and a customer who never
 // submitted (or was already decided) can't be approved. Returns false when the customer
-// had no submission waiting for review.
-func (r *UserRepository) DecideKYC(ctx context.Context, u *models.User, status string, adminUUID string) (bool, error) {
+// had no submission waiting for review. After committing, call InvalidateUserCaches.
+func (r *UserRepository) DecideKYCWithTX(ctx context.Context, tx *sql.Tx, u *models.User, status string, adminUUID string) (bool, error) {
 	query := `UPDATE users SET user_kyc_status = $1,
 			user_status_approved_by = (SELECT tu_id FROM tenant_user_logins WHERE tu_uuid::text = $2),
 			user_kyc_decided_at = CURRENT_TIMESTAMP
 		WHERE user_id = $3 AND ` + kycAwaitingReviewCondition
-	res, err := r.DB.Db.ExecContext(ctx, query, status, adminUUID, u.ID)
+	res, err := tx.ExecContext(ctx, query, status, adminUUID, u.ID)
 	if err != nil {
 		return false, fmt.Errorf("failed to update user kyc status: %w", err)
 	}
@@ -353,11 +353,13 @@ func (r *UserRepository) DecideKYC(ctx context.Context, u *models.User, status s
 	if err != nil {
 		return false, fmt.Errorf("failed to read kyc decision result: %w", err)
 	}
-	// Synchronous, unlike the profile-update paths: the cached row is what InitiateBuy and
-	// GET /user/kyc read, so a stale entry would keep a just-approved customer blocked from
-	// KYC-gated purchases for the full cache TTL.
-	r.invalidateUserCaches(ctx, u)
 	return updated == 1, nil
+}
+
+// InvalidateUserCaches drops the cached copies of u, synchronously. Call it after a
+// committed change that KYC-gated purchases or GET /user/kyc must see at once.
+func (r *UserRepository) InvalidateUserCaches(ctx context.Context, u *models.User) {
+	r.invalidateUserCaches(ctx, u)
 }
 
 // kycResubmittableCondition mirrors models.User.CanSubmitKYC in SQL: never submitted

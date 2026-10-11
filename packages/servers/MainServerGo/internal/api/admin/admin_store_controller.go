@@ -246,7 +246,8 @@ func (ac *AdminStoreController) decideKYC(c fiber.Ctx, status, message string) e
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user not found in tenant"})
 	}
 
-	decided, err := ac.UserService.UserRepo.DecideKYC(c.Context(), user, status, middleware.GetAdminUUID(c))
+	decided, err := ac.UserService.DecideKYC(c.Context(), user, status,
+		middleware.GetTenantUUID(c), middleware.GetAdminUUID(c), c.IP())
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to save kyc decision"})
 	}
