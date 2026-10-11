@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import { stubMatchMedia } from '@/components/vault/Redemptions/testUtils';
 import { StoreLedgerPanel } from './StoreLedgerPanel';
 
@@ -162,6 +168,10 @@ describe('StoreLedgerPanel', () => {
       expect(
         within(dialog).getByText('Reverse this ledger entry?'),
       ).toBeTruthy();
+      // What is being reversed, not just an id.
+      expect(within(dialog).getByText('Gold purchase')).toBeTruthy();
+      expect(within(dialog).getByText(/02 Jan 2026/)).toBeTruthy();
+      expect(within(dialog).getByText('1.2500 g')).toBeTruthy();
       expect(within(dialog).getByText('ledger-purchase')).toBeTruthy();
       expect(mockMutate).not.toHaveBeenCalled();
 
@@ -203,12 +213,13 @@ describe('StoreLedgerPanel', () => {
       expect(screen.queryByRole('alert')).toBeNull();
       expect(mockShowToast).toHaveBeenCalledWith({
         title: 'Entry can’t be reversed',
-        description: 'Redemption is no longer pending. The ledger has been refreshed.',
+        description:
+          'Redemption is no longer pending. The ledger has been refreshed.',
         variant: 'danger',
       });
     });
 
-    it('keeps the dialog open when the customer no longer holds the gold', () => {
+    it('explains that the gold is gone and offers no retry that would fail again', () => {
       mockMutate.mockImplementation((_id, options) =>
         options.onError({
           status: 400,
@@ -224,9 +235,38 @@ describe('StoreLedgerPanel', () => {
 
       expect(screen.getByRole('dialog')).toBeTruthy();
       expect(within(dialog).getByRole('alert').textContent).toBe(
-        'Insufficient gold balance for this transaction.',
+        'The customer no longer holds this gold (some of it has since been sold or redeemed), so this entry can’t be reversed.',
       );
+      expect(
+        within(dialog).queryByRole('button', { name: 'Reverse entry' }),
+      ).toBeNull();
       expect(mockShowToast).not.toHaveBeenCalled();
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'OK' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('keeps Retry for a failure that may pass next time', () => {
+      mockMutate.mockImplementation((_id, options) =>
+        options.onError({
+          status: 500,
+          code: 'ERR_BAD_RESPONSE',
+          message: 'Unable to reverse right now.',
+        }),
+      );
+      const dialog = openDialog();
+
+      fireEvent.click(
+        within(dialog).getByRole('button', { name: 'Reverse entry' }),
+      );
+
+      expect(within(dialog).getByRole('alert').textContent).toBeTruthy();
+      expect(
+        within(dialog).getByRole('button', { name: 'Reverse entry' }),
+      ).toBeTruthy();
+      expect(
+        within(dialog).getByRole('button', { name: 'Cancel' }),
+      ).toBeTruthy();
     });
 
     it('cannot be dismissed while the request is pending', () => {

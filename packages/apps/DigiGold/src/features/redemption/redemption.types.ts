@@ -10,6 +10,9 @@ export type Redemption = {
   weight_grams: number;
   status: RedemptionStatus;
   pickup_code?: string;
+  // Pending requests only: pickup-code tries left at the counter. 0 = locked after too many
+  // wrong codes; the code no longer works and the request can only be cancelled.
+  code_attempts_left?: number;
   collected_at?: string;
   cancelled_at?: string;
   created_at: string;

@@ -187,6 +187,12 @@ components:
           description: City entered at registration; null for customers who registered earlier.
         kyc_status: { type: string, enum: [pending, verified, rejected] }
         document_json: { description: KYC document payload (JSON). }
+        kyc_submitted_at:
+          {
+            type: string,
+            format: date-time,
+            description: When the KYC was last submitted. Only in the pending KYC queue.,
+          }
         erp_unique_id: { type: string, nullable: true }
         total_vault_balance:
           { type: number, description: Gold balance in grams. }
@@ -332,6 +338,13 @@ components:
         created_at: { type: string, format: date-time }
         customer_name: { type: string, description: Staff listings only. }
         customer_phone: { type: string, description: Staff listings only. }
+        code_attempts_left:
+          type: integer
+          description: >-
+            Pickup-code tries left before the request locks (0 = locked; it can only be
+            cancelled). On pending requests in the staff and customer listings.
+        collected_by:
+          { type: string, description: Staff username who handed it over. Collected listing only. }
 
     SystemEvent:
       type: object
@@ -1081,11 +1094,18 @@ paths:
                       total_margin_earned: { type: number }
                       total_transactions: { type: integer }
 
-  /admin/store/trade/counter:
+  /admin/store/trade/counter/quote:
     post:
-      operationId: postAdminStoreTradeCounter
+      operationId: postAdminStoreTradeCounterQuote
       tags: [Admin Store]
-      summary: Record an in-store (counter) trade
+      summary: Price an in-store (counter) sale at the store's own rate
+      description: >-
+        Prices the sale at the live rate with the store's margin and GST and holds the price
+        for 5 minutes. The cashier collects exactly `total_amount_inr`, then confirms the
+        quote with POST /admin/store/trade/counter. Send `weight_grams` or
+        `total_amount_inr` (weight wins when both are positive). A cash sale is refused when
+        the customer's cash paid at the counter today (IST) would reach 2,00,000 INR
+        (Income Tax Act s.269ST).
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1093,26 +1113,76 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/TradeRequest'
-                - type: object
-                  required: [user_uuid]
-                  properties:
-                    user_uuid:
-                      {
-                        type: string,
-                        format: uuid,
-                        description: Customer of this tenant.,
-                      }
-                    payment_mode:
-                      {
-                        type: string,
-                        enum: [COUNTER_CASH, COUNTER_UPI],
-                        default: COUNTER_CASH,
-                      }
+              type: object
+              required: [user_uuid]
+              properties:
+                user_uuid:
+                  { type: string, format: uuid, description: Customer of this tenant. }
+                weight_grams: { type: number }
+                total_amount_inr: { type: number }
+                payment_mode:
+                  {
+                    type: string,
+                    enum: [COUNTER_CASH, COUNTER_UPI],
+                    default: COUNTER_CASH,
+                  }
       responses:
         '200':
-          description: Trade executed.
+          description: Sale priced and held.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  quote:
+                    type: object
+                    properties:
+                      quote_id: { type: string, format: uuid }
+                      payment_mode: { type: string }
+                      weight_grams: { type: number }
+                      total_amount_inr: { type: number }
+                      final_rate_per_gram: { type: number }
+                      mcx_base_rate: { type: number }
+                      tenant_margin_applied:
+                        { type: number, description: Margin per gram (INR). }
+                      gst_applied: { type: number, description: GST per gram (INR). }
+                      expires_at: { type: integer, description: Unix seconds. }
+        '400':
+          description: >-
+            Invalid size or payment mode, or CASH_LIMIT_EXCEEDED.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: CREDIT_LIMIT_EXCEEDED (the store's gold credit cannot cover it).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /admin/store/trade/counter:
+    post:
+      operationId: postAdminStoreTradeCounter
+      tags: [Admin Store]
+      summary: Record an in-store (counter) sale priced by the quote endpoint
+      description: >-
+        Records the quoted sale, once. Confirming the same quote again (for example after a
+        lost reply) returns the sale already recorded with `already_recorded: true` instead
+        of selling the gold twice.
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quote_id]
+              properties:
+                quote_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Sale recorded, now or by an earlier confirmation of the same quote.
           content:
             application/json:
               schema:
@@ -1120,10 +1190,17 @@ paths:
                 properties:
                   success: { type: boolean }
                   trade: { $ref: '#/components/schemas/LedgerEntry' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+                  already_recorded: { type: boolean }
+        '400':
+          description: Missing quote_id, or CASH_LIMIT_EXCEEDED.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: Slippage exceeded.
+          description: >-
+            COUNTER_QUOTE_EXPIRED (quote expired or unknown) or COUNTER_SALE_IN_PROGRESS
+            (another confirmation of this quote is running; retry to get its result).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1140,7 +1217,9 @@ paths:
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Customers with `kyc_status = pending`.
+          description: >-
+            Customers with a KYC submission waiting for review (pending with documents),
+            oldest submission first. Each row carries `kyc_submitted_at`.
           content:
             application/json:
               schema:
@@ -1157,6 +1236,10 @@ paths:
       operationId: postAdminStoreKycApprove
       tags: [Admin Store]
       summary: Approve customer KYC
+      description: >-
+        Decides a submission waiting for review and records which staff login decided and
+        when. A customer with no submission waiting (never submitted, or already decided by
+        another admin) gets 409 KYC_NOT_AWAITING_REVIEW; the earlier decision stands.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1183,12 +1266,21 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: KYC_NOT_AWAITING_REVIEW.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/store/kyc/reject:
     post:
       operationId: postAdminStoreKycReject
       tags: [Admin Store]
       summary: Reject customer KYC
+      description: >-
+        Decides a submission waiting for review and records which staff login decided and
+        when. A customer with no submission waiting (never submitted, or already decided by
+        another admin) gets 409 KYC_NOT_AWAITING_REVIEW; the earlier decision stands.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1215,6 +1307,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: KYC_NOT_AWAITING_REVIEW.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/store/redemptions/pending:
     get:
@@ -1242,12 +1339,43 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/Redemption' }
 
+  /admin/store/redemptions/collected:
+    get:
+      operationId: getAdminStoreRedemptionsCollected
+      tags: [Admin Store]
+      summary: Pickups handed over today
+      description: >-
+        Requests collected at this store's counter today (IST), newest first, with the
+        customer and the staff member who handed each one over. Pickup codes are not returned.
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Collected redemptions, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Redemption' }
+
   /admin/store/redemptions/collect:
     post:
       operationId: postAdminStoreRedemptionsCollect
       tags: [Admin Store]
       summary: Hand physical gold to the customer
-      description: The customer's pickup code must match. Only a `PENDING` request can be collected.
+      description: >-
+        The customer's pickup code must match. Only a `PENDING` request can be collected.
+        Each wrong code counts against the request; after 5 it locks (423
+        `PICKUP_CODE_LOCKED`) and can only be cancelled. Rate limited to 30 attempts a
+        minute per staff login.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1272,13 +1400,25 @@ paths:
                   message: { type: string }
                   redemption: { $ref: '#/components/schemas/Redemption' }
         '400':
-          description: Missing fields or wrong pickup code (`INVALID_PICKUP_CODE`).
+          description: >-
+            Missing fields or wrong pickup code (`INVALID_PICKUP_CODE`, with
+            `extra.attempts_left`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '423':
+          description: Too many wrong codes (`PICKUP_CODE_LOCKED`); cancel the request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Rate limited (`RATE_LIMITED`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

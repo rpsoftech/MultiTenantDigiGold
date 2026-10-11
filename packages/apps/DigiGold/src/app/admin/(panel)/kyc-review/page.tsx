@@ -1,10 +1,10 @@
 import { StoreAccessGate } from '@/components/admin/StoreAccessGate/StoreAccessGate';
-import { UserApprovalsTable } from '@/components/admin/UserApprovalsTable/UserApprovalsTable';
+import { KycReviewQueue } from '@/components/admin/KycReviewQueue/KycReviewQueue';
 
 export default function AdminKycReviewPage() {
   return (
     <StoreAccessGate>
-      <UserApprovalsTable />
+      <KycReviewQueue />
     </StoreAccessGate>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { Badge } from '@/components/common/Badge/Badge';
 import { Button } from '@/components/common/Button/Button';
@@ -11,17 +11,20 @@ import { useToast } from '@/components/common/Toast/Toast';
 import { CustomerPicker } from './CustomerPicker';
 import { Stepper } from './Stepper';
 import { useLiveRate } from '@/features/market/hooks/useLiveRate';
+import { useCounterQuote } from '@/features/admin/hooks/useCounterQuote';
 import { useCounterTrade } from '@/features/admin/hooks/useCounterTrade';
 import {
+  COUNTER_CASH_LIMIT_INR,
   COUNTER_MAX_GRAMS_DECIMALS,
   COUNTER_MAX_INR_DECIMALS,
-  COUNTER_RATE_TOLERANCE_INR,
   decimalPlaces,
   sizeCounterTrade,
 } from '@/features/admin/counterTrade.utils';
 import type {
   AdminUserSummary,
   CounterPaymentMode,
+  CounterQuote,
+  CounterQuoteRequest,
   CounterTradeReceipt,
 } from '@/features/admin/admin.types';
 import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
@@ -50,13 +53,10 @@ const PAYMENT_LABEL: Record<string, string> = {
   COUNTER_UPI: 'UPI',
 };
 
-type Review = {
-  // The rate is frozen when the cashier reviews the sale, so the amount they confirm is the
-  // amount that is sent even if the live feed ticks in the meantime.
-  rate: number;
-  weightGrams: number;
-  amountInr: number;
-};
+// The request may have reached MainServer and recorded the sale. Confirming the same quote
+// again is safe: MainServer returns the sale it already recorded instead of a second one.
+const NO_REPLY_MESSAGE =
+  'No reply from the server, so the sale may already be recorded. Confirm again to find out: the same sale is never recorded twice.';
 
 const QUICK_ADD_INR = [500, 1000, 5000, 10000];
 const QUICK_ADD_GRAMS = [0.5, 1, 5, 10];
@@ -72,9 +72,22 @@ function formatGrams(value: number) {
   return `${value.toFixed(4)} g`;
 }
 
+function formatIstTime(epochMs: number) {
+  return new Date(epochMs).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+function asApiError(error: unknown) {
+  return isNormalizedApiError(error) ? error : null;
+}
+
 export function CounterSalePanel() {
   const { data: liveRate, status: rateStatus } = useLiveRate();
   const { showToast } = useToast();
+  const counterQuote = useCounterQuote();
   const counterTrade = useCounterTrade();
 
   const [step, setStep] = useState(1);
@@ -83,7 +96,12 @@ export function CounterSalePanel() {
   const [value, setValue] = useState('');
   const [paymentMode, setPaymentMode] =
     useState<CounterPaymentMode>('COUNTER_CASH');
-  const [review, setReview] = useState<Review | null>(null);
+  // The server's price for the sale; the confirm dialog is open while there is one.
+  const [quote, setQuote] = useState<CounterQuote | null>(null);
+  const [quoteRequest, setQuoteRequest] = useState<CounterQuoteRequest | null>(
+    null,
+  );
+  const [quoteExpired, setQuoteExpired] = useState(false);
   const [errors, setErrors] = useState<{ customer?: string; value?: string }>(
     {},
   );
@@ -94,22 +112,31 @@ export function CounterSalePanel() {
     customer: AdminUserSummary;
   } | null>(null);
 
+  // A held price can't be confirmed after it expires; say so the moment it does.
+  useEffect(() => {
+    if (!quote) return;
+    const remaining = quote.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setQuoteExpired(true);
+      return;
+    }
+    const timer = setTimeout(() => setQuoteExpired(true), remaining);
+    return () => clearTimeout(timer);
+  }, [quote]);
+
   const liveRatePerGram = liveRate?.pricePerGramInr ?? null;
   // The feed keeps the last tick after a disconnect; selling against it would be guessing.
   const rateUnavailable =
     liveRatePerGram === null ||
     rateStatus === 'closed' ||
     rateStatus === 'error';
-  const rateDrifted =
-    review !== null &&
-    liveRatePerGram !== null &&
-    Math.abs(liveRatePerGram - review.rate) > COUNTER_RATE_TOLERANCE_INR;
 
   const isGrams = entryMode === 'grams';
   const valueEntered = Number(value) > 0;
   const maxDecimals = isGrams
     ? COUNTER_MAX_GRAMS_DECIMALS
     : COUNTER_MAX_INR_DECIMALS;
+  // An estimate from the market feed; the confirm dialog shows the store's exact price.
   const preview =
     liveRatePerGram !== null && Number(value) > 0
       ? sizeCounterTrade(
@@ -127,7 +154,8 @@ export function CounterSalePanel() {
     setErrors((current) => ({ ...current, value: undefined }));
   }
 
-  function validate(): Review | null {
+  // Checks the form and returns what to price, or null with the problems shown.
+  function validate(): CounterQuoteRequest | null {
     const next: { customer?: string; value?: string } = {};
     if (!customer) next.customer = 'Select the customer buying gold.';
 
@@ -139,34 +167,23 @@ export function CounterSalePanel() {
       next.value = isGrams
         ? `Grams can have at most ${maxDecimals} decimal places.`
         : 'Amounts can have at most 2 decimal places.';
-    }
-
-    let built: Review | null = null;
-    if (!next.value && liveRatePerGram !== null) {
-      const rate = Math.round(liveRatePerGram * 100) / 100;
-      const sized = sizeCounterTrade(
-        rate,
+    } else if (
+      liveRatePerGram !== null &&
+      !sizeCounterTrade(
+        liveRatePerGram,
         isGrams ? { weightGrams: numeric } : { amountInr: numeric },
-      );
-      if (sized) built = { rate, ...sized };
-      else
-        next.value = 'That is too small to buy any gold at the current rate.';
+      )
+    ) {
+      // Without a rate yet, the server makes this check when it prices the sale.
+      next.value = 'That is too small to buy any gold at the current rate.';
     }
     setErrors(next);
-    return Object.keys(next).length === 0 ? built : null;
-  }
-
-  function reviewSale() {
-    setFormAlert(null);
-    if (rateUnavailable) return;
-    const built = validate();
-    if (!built) {
-      // Send the cashier back to the first step that needs attention.
-      setStep(customer ? 2 : 1);
-      return;
-    }
-    setDialogError(null);
-    setReview(built);
+    if (Object.keys(next).length > 0 || !customer) return null;
+    return {
+      userId: customer.userId,
+      paymentMode,
+      ...(isGrams ? { weightGrams: numeric } : { amountInr: numeric }),
+    };
   }
 
   function goNext() {
@@ -189,73 +206,117 @@ export function CounterSalePanel() {
     else reviewSale();
   }
 
-  function refreshRate() {
-    if (!review || liveRatePerGram === null) return;
-    const rate = Math.round(liveRatePerGram * 100) / 100;
-    const sized = sizeCounterTrade(
-      rate,
-      isGrams
-        ? { weightGrams: review.weightGrams }
-        : { amountInr: review.amountInr },
+  // The customer vanished from this store (404): start over from the customer step.
+  function customerGone() {
+    setQuote(null);
+    setCustomer(null);
+    setStep(1);
+    setFormAlert(
+      'That customer could not be found in this store. Select them again.',
     );
-    if (sized) setReview({ rate, ...sized });
+  }
+
+  // Too much cash for one customer today: back to the payment step to take UPI instead.
+  function cashLimitReached(message: string) {
+    setQuote(null);
+    setStep(3);
+    setFormAlert(message);
+  }
+
+  function requestQuote(request: CounterQuoteRequest) {
+    setFormAlert(null);
+    setDialogError(null);
+    setQuoteRequest(request);
+    counterQuote.mutate(request, {
+      onSuccess: (next) => {
+        setQuoteExpired(false);
+        setQuote(next);
+      },
+      onError: (error) => {
+        const apiError = asApiError(error);
+        if (apiError?.code === 'CASH_LIMIT_EXCEEDED') {
+          cashLimitReached(apiError.message);
+          return;
+        }
+        if (apiError?.status === 404) {
+          customerGone();
+          return;
+        }
+        const message =
+          describeApiError(error) ??
+          'The sale could not be priced. Please try again.';
+        // A refreshed price failed while the dialog is open: show it there.
+        if (quote) setDialogError(message);
+        else setFormAlert(message);
+      },
+    });
+  }
+
+  function reviewSale() {
+    setFormAlert(null);
+    if (rateUnavailable || counterQuote.isPending) return;
+    const request = validate();
+    if (!request) {
+      // Send the cashier back to the first step that needs attention.
+      setStep(customer ? 2 : 1);
+      return;
+    }
+    requestQuote(request);
   }
 
   function closeReview(open: boolean) {
     // Keep the dialog up while the request is in flight so it cannot be dismissed mid-sale.
     if (open || counterTrade.isPending) return;
-    setReview(null);
+    setQuote(null);
     setDialogError(null);
   }
 
   function confirmSale() {
-    if (!review || !customer || counterTrade.isPending || rateDrifted) return;
+    if (!quote || !customer || counterTrade.isPending || quoteExpired) return;
     const sale = customer;
-    // Send only what the cashier typed; the server sizes the other side at its own rate.
-    counterTrade.mutate(
-      {
-        userId: sale.userId,
-        ratePerGram: review.rate,
-        paymentMode,
-        ...(isGrams
-          ? { weightGrams: Number(value) }
-          : { amountInr: Number(value) }),
+    setDialogError(null);
+    counterTrade.mutate(quote.quoteId, {
+      onSuccess: (trade) => {
+        setQuote(null);
+        setReceipt({ trade, customer: sale });
+        showToast(
+          trade.alreadyRecorded
+            ? {
+                title: 'Sale was already recorded',
+                description: 'Nothing was recorded twice.',
+                variant: 'success',
+              }
+            : {
+                title: 'Counter sale recorded',
+                description: `${formatGrams(trade.weightGrams)} added to ${sale.name}’s vault.`,
+                variant: 'success',
+              },
+        );
       },
-      {
-        onSuccess: (trade) => {
-          setReview(null);
-          setReceipt({ trade, customer: sale });
-          showToast({
-            title: 'Counter sale recorded',
-            description: `${formatGrams(trade.weightGrams)} added to ${sale.name}’s vault.`,
-            variant: 'success',
-          });
-        },
-        onError: (error) => {
-          const apiError = isNormalizedApiError(error) ? error : null;
-          if (apiError?.code === 'SLIPPAGE_EXCEEDED') {
-            setReview(null);
-            setFormAlert(
-              'The live rate moved away from the price shown, so nothing was recorded. Review the sale again at the latest rate. If this keeps happening, the store’s margin may differ from the default used for this estimate.',
-            );
-            return;
-          }
-          if (apiError?.status === 404) {
-            setReview(null);
-            setCustomer(null);
-            setStep(1);
-            setFormAlert(
-              'That customer could not be found in this store. Select them again.',
-            );
-            return;
-          }
-          setDialogError(
-            describeApiError(error) ??
-              'The sale could not be recorded. Please try again.',
-          );
-        },
+      onError: (error) => {
+        const apiError = asApiError(error);
+        if (apiError?.code === 'COUNTER_QUOTE_EXPIRED') {
+          setQuoteExpired(true);
+          return;
+        }
+        if (apiError?.code === 'CASH_LIMIT_EXCEEDED') {
+          cashLimitReached(apiError.message);
+          return;
+        }
+        if (apiError?.status === 404) {
+          customerGone();
+          return;
+        }
+        if (apiError?.status === null) {
+          setDialogError(NO_REPLY_MESSAGE);
+          return;
+        }
+        setDialogError(
+          describeApiError(error) ??
+            'The sale could not be recorded. Please try again.',
+        );
       },
-    );
+    });
   }
 
   function startNewSale() {
@@ -266,6 +327,8 @@ export function CounterSalePanel() {
     setPaymentMode('COUNTER_CASH');
     setErrors({});
     setFormAlert(null);
+    setQuoteRequest(null);
+    counterQuote.reset();
     counterTrade.reset();
   }
 
@@ -317,13 +380,21 @@ export function CounterSalePanel() {
                     }}
                     error={errors.customer}
                   />
-                  {customer && customer.kycStatus !== 'verified' && (
+                  {customer?.kycStatus === 'rejected' && (
                     <p className={styles.notice} role="note">
-                      This customer’s KYC is not approved. Customers can’t buy
-                      in the app until it is, but a counter sale is still
-                      allowed.
+                      This customer’s KYC was rejected. Check their identity
+                      documents in person before selling to them at the counter.
                     </p>
                   )}
+                  {customer &&
+                    customer.kycStatus !== 'verified' &&
+                    customer.kycStatus !== 'rejected' && (
+                      <p className={styles.notice} role="note">
+                        This customer’s KYC is not approved yet. Customers can’t
+                        buy in the app until it is, but a counter sale is still
+                        allowed.
+                      </p>
+                    )}
                 </>
               )}
 
@@ -437,19 +508,24 @@ export function CounterSalePanel() {
                       </button>
                     ))}
                   </div>
+                  <p className={styles.hint}>
+                    By law, cash from one customer must stay under{' '}
+                    {formatCurrency(COUNTER_CASH_LIMIT_INR, 'INR')} a day; take
+                    the rest by UPI.
+                  </p>
                   <dl className={styles.recap}>
                     <div>
                       <dt>Customer</dt>
                       <dd>{customer?.name}</dd>
                     </div>
                     <div>
-                      <dt>Gold</dt>
+                      <dt>Gold (estimate)</dt>
                       <dd>
                         {preview ? formatGrams(preview.weightGrams) : '—'}
                       </dd>
                     </div>
                     <div>
-                      <dt>Collect</dt>
+                      <dt>Amount (estimate)</dt>
                       <dd>
                         {preview
                           ? formatCurrency(preview.amountInr, 'INR', 2)
@@ -545,25 +621,25 @@ export function CounterSalePanel() {
             fullWidth
             className={styles.cta}
             disabled={rateUnavailable}
+            isLoading={counterQuote.isPending && !quote}
             onClick={reviewSale}
           >
             Review sale
           </Button>
           <p className={styles.hint}>
-            Estimated from the default store margin. The server prices the sale
-            itself and refuses it if the rate is more than{' '}
-            {formatCurrency(COUNTER_RATE_TOLERANCE_INR, 'INR')} off.
+            An estimate at the default store margin. Review sale gets the
+            store’s exact price, which is what you collect.
           </p>
         </Card>
       </div>
 
       <Modal
-        open={review !== null}
+        open={quote !== null}
         onOpenChange={closeReview}
         title="Confirm counter sale"
-        description="Check the details and take the payment before you confirm. Gold is credited to the customer’s vault immediately."
+        description="Collect exactly this amount, then confirm. Gold is credited to the customer’s vault immediately."
       >
-        {review && customer && (
+        {quote && customer && (
           <div className={styles.dialogBody}>
             <dl className={styles.summary}>
               <div>
@@ -572,32 +648,40 @@ export function CounterSalePanel() {
               </div>
               <div>
                 <dt>Rate</dt>
-                <dd>{formatCurrency(review.rate, 'INR', 2)} / g</dd>
+                <dd>{formatCurrency(quote.ratePerGram, 'INR', 2)} / g</dd>
               </div>
               <div>
                 <dt>Gold</dt>
-                <dd>{formatGrams(review.weightGrams)}</dd>
+                <dd>{formatGrams(quote.weightGrams)}</dd>
               </div>
               <div>
                 <dt>Payment</dt>
-                <dd>{PAYMENT_LABEL[paymentMode]}</dd>
+                <dd>{PAYMENT_LABEL[quote.paymentMode]}</dd>
               </div>
               <div className={styles.summaryTotal}>
                 <dt>Collect</dt>
-                <dd>{formatCurrency(review.amountInr, 'INR', 2)}</dd>
+                <dd>{formatCurrency(quote.amountInr, 'INR', 2)}</dd>
               </div>
             </dl>
-            {rateDrifted && (
+            {quoteExpired ? (
               <div className={styles.alert} role="alert">
-                <p>The live rate has moved since you reviewed this sale.</p>
+                <p>
+                  This price has expired. Get a new price before you take the
+                  payment.
+                </p>
                 <Button
                   variant="secondary"
                   className={styles.smallButton}
-                  onClick={refreshRate}
+                  isLoading={counterQuote.isPending}
+                  onClick={() => quoteRequest && requestQuote(quoteRequest)}
                 >
-                  Use latest rate
+                  Get a new price
                 </Button>
               </div>
+            ) : (
+              <p className={styles.hint}>
+                Price held until {formatIstTime(quote.expiresAt)} IST.
+              </p>
             )}
             {dialogError && (
               <p className={styles.alert} role="alert">
@@ -614,7 +698,7 @@ export function CounterSalePanel() {
               </Button>
               <Button
                 isLoading={counterTrade.isPending}
-                disabled={rateDrifted || rateUnavailable}
+                disabled={quoteExpired}
                 onClick={confirmSale}
               >
                 Confirm sale
@@ -656,14 +740,23 @@ function CounterReceipt({
   return (
     <div className={styles.receipt}>
       <Badge variant="success">Sale recorded</Badge>
+      {receipt.alreadyRecorded && (
+        <p className={styles.notice} role="note">
+          This sale had already been recorded; nothing was recorded twice.
+        </p>
+      )}
       <dl className={styles.summary}>
         <div>
           <dt>Receipt no.</dt>
           <dd>{receipt.id}</dd>
         </div>
         <div>
-          <dt>Date</dt>
-          <dd>{new Date(receipt.createdAt).toLocaleString('en-IN')}</dd>
+          <dt>Date (IST)</dt>
+          <dd>
+            {new Date(receipt.createdAt).toLocaleString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+            })}
+          </dd>
         </div>
         <div>
           <dt>Customer</dt>
@@ -685,11 +778,11 @@ function CounterReceipt({
         </div>
         <div>
           <dt>Margin</dt>
-          <dd>{formatCurrency(receipt.marginInr, 'INR', 2)} / g</dd>
+          <dd>{formatCurrency(receipt.marginPerGramInr, 'INR', 2)} / g</dd>
         </div>
         <div>
           <dt>GST</dt>
-          <dd>{formatCurrency(receipt.gstInr, 'INR', 2)} / g</dd>
+          <dd>{formatCurrency(receipt.gstPerGramInr, 'INR', 2)} / g</dd>
         </div>
         <div>
           <dt>Gold credited</dt>

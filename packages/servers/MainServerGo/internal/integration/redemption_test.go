@@ -149,3 +149,78 @@ func TestCustomer_RepeatedRequestsUseTheRightUser(t *testing.T) {
 		verifiedCustomer(t), database.SeedDemoTenantUUID, nil)
 	expectStatus(t, cancel, http.StatusOK)
 }
+
+// findRow returns the listing row with this redemption_uuid, or nil.
+func findRow(r response, redemptionUUID string) map[string]any {
+	rows, _ := r.Body["data"].([]any)
+	for _, item := range rows {
+		if row, ok := item.(map[string]any); ok && str(row["redemption_uuid"]) == redemptionUUID {
+			return row
+		}
+	}
+	return nil
+}
+
+func wrongCode(code string) string {
+	if code == "000000" {
+		return "111111"
+	}
+	return "000000"
+}
+
+// A 6-digit code must not be findable by trying them all: five wrong codes lock the pickup,
+// after which even the right code is refused and the gold can only go back to the vault.
+func TestRedemption_WrongCodesLockThePickup(t *testing.T) {
+	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
+	before := balance(t, database.SeedVerifiedCustomerUUID)
+	rr := requestRedemption(t, verifiedCustomer(t), 0.5)
+	id, code := str(rr["redemption_uuid"]), str(rr["pickup_code"])
+
+	for left := 4; left >= 1; left-- {
+		r := collect(t, id, wrongCode(code))
+		expectError(t, r, http.StatusBadRequest, "INVALID_PICKUP_CODE")
+		extra, _ := r.Body["extra"].(map[string]any)
+		if num(extra["attempts_left"]) != float64(left) {
+			t.Fatalf("attempts_left = %v, want %d", extra["attempts_left"], left)
+		}
+	}
+	expectError(t, collect(t, id, wrongCode(code)), http.StatusLocked, "PICKUP_CODE_LOCKED")
+	expectError(t, collect(t, id, code), http.StatusLocked, "PICKUP_CODE_LOCKED")
+
+	pending := call(t, "GET", "/admin/store/redemptions/pending?phone="+database.SeedVerifiedCustomerPhone,
+		demoManager(t), database.SeedDemoTenantUUID, nil)
+	expectStatus(t, pending, http.StatusOK)
+	if row := findRow(pending, id); row == nil || num(row["code_attempts_left"]) != 0 {
+		t.Fatalf("pending row = %v, want code_attempts_left 0", row)
+	}
+	mine := call(t, "GET", "/trade/redemptions", verifiedCustomer(t), database.SeedDemoTenantUUID, nil)
+	expectStatus(t, mine, http.StatusOK)
+	if row := findRow(mine, id); row == nil || num(row["code_attempts_left"]) != 0 {
+		t.Fatalf("customer's row = %v, want code_attempts_left 0", row)
+	}
+
+	cancel := call(t, "POST", "/admin/store/redemptions/cancel", demoManager(t), database.SeedDemoTenantUUID,
+		map[string]string{"redemption_uuid": id})
+	expectStatus(t, cancel, http.StatusOK)
+	expectGrams(t, "balance after cancelling the locked pickup", balance(t, database.SeedVerifiedCustomerUUID), before)
+}
+
+func TestRedemption_CollectedTodayListsTheHandover(t *testing.T) {
+	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
+	rr := requestRedemption(t, verifiedCustomer(t), 0.25)
+	id := str(rr["redemption_uuid"])
+	expectStatus(t, collect(t, id, str(rr["pickup_code"])), http.StatusOK)
+
+	r := call(t, "GET", "/admin/store/redemptions/collected?limit=100", demoManager(t), database.SeedDemoTenantUUID, nil)
+	expectStatus(t, r, http.StatusOK)
+	row := findRow(r, id)
+	if row == nil {
+		t.Fatalf("collected pickup %s missing from today's list: %v", id, r.Body)
+	}
+	if _, leaked := row["pickup_code"]; leaked {
+		t.Fatal("collected listing must not return pickup codes")
+	}
+	if str(row["collected_by"]) == "" || str(row["collected_at"]) == "" || str(row["customer_phone"]) != database.SeedVerifiedCustomerPhone {
+		t.Fatalf("row = %v, want who handed it over, when, and the customer's phone", row)
+	}
+}

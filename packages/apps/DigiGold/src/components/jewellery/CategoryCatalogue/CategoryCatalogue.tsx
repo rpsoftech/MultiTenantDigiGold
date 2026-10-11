@@ -1,13 +1,14 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/common/Button/Button';
 import { ChevronDownIcon } from '@/components/common/icons/Icons';
 import { Loader } from '@/components/common/Loader/Loader';
 import { JewelleryUnavailable } from '@/components/jewellery/JewelleryUnavailable/JewelleryUnavailable';
+import { ProductImage } from '@/components/jewellery/ProductImage/ProductImage';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import {
   JEWELLERY_CATEGORIES,
@@ -21,193 +22,56 @@ import { describeApiError } from '@/lib/api/client';
 import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils/cn';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
+import {
+  SORT_OPTIONS,
+  applyFilters,
+  buildFilterGroups,
+  isSortValue,
+  paramsFromState,
+  purityList,
+  selectedFromParams,
+  sortProducts,
+  type FilterKey,
+  type SelectedFilters,
+  type SortValue,
+} from './catalogueFilters';
 import styles from './CategoryCatalogue.module.scss';
 
-type FilterKey =
-  | 'weight'
-  | 'price'
-  | 'carat'
-  | 'color'
-  | 'designType'
-  | 'gender'
-  | 'collection'
-  | 'gifts';
-
-type FilterOption = {
-  label: string;
-  value: string;
-  test: (product: Product) => boolean;
-};
-
-type FilterGroup = {
-  key: FilterKey;
-  label: string;
-  options: FilterOption[];
-  collapsible?: boolean;
-};
-
-const valueOptions = (values: string[], field: keyof Product): FilterOption[] =>
-  values.map((value) => ({
-    label: value,
-    value,
-    test: (product) => product[field] === value,
-  }));
-
-// Category is deliberately not a filter: products are loaded per category, so a "Rings"
-// checkbox on the Bangles page could only ever show nothing. Categories are navigation
-// (the list in the sidebar) instead.
-const FILTER_GROUPS: FilterGroup[] = [
-  {
-    key: 'weight',
-    label: 'Weight',
-    options: [
-      {
-        label: '10-20 gm',
-        value: '10-20',
-        test: (p) => p.weight >= 10 && p.weight <= 20,
-      },
-      {
-        label: '20-35 gm',
-        value: '20-35',
-        test: (p) => p.weight > 20 && p.weight <= 35,
-      },
-      {
-        label: '35-50 gm',
-        value: '35-50',
-        test: (p) => p.weight > 35 && p.weight <= 50,
-      },
-      {
-        label: '50-155 gm',
-        value: '50-155',
-        test: (p) => p.weight > 50 && p.weight <= 155,
-      },
-    ],
-  },
-  {
-    key: 'price',
-    label: 'Price',
-    options: [
-      {
-        label: 'Up to 1,00,000',
-        value: '0-100000',
-        test: (p) => p.price < 100000,
-      },
-      {
-        label: '1,00,000 to 3,00,000',
-        value: '100000-300000',
-        test: (p) => p.price >= 100000 && p.price <= 300000,
-      },
-      {
-        label: '3,00,000 to 5,00,000',
-        value: '300000-500000',
-        test: (p) => p.price > 300000 && p.price <= 500000,
-      },
-      {
-        label: '5,00,000 to 8,00,000',
-        value: '500000-800000',
-        test: (p) => p.price > 500000 && p.price <= 800000,
-      },
-      {
-        label: '8,00,000 to 10,00,000',
-        value: '800000-1000000',
-        test: (p) => p.price > 800000 && p.price <= 1000000,
-      },
-      {
-        label: '10,00,000 Above',
-        value: '1000000-plus',
-        test: (p) => p.price > 1000000,
-      },
-    ],
-  },
-  {
-    key: 'carat',
-    label: 'Carat',
-    options: valueOptions(['18KT Gold', '22KT Gold', '9KT Gold'], 'carat'),
-  },
-  {
-    key: 'color',
-    label: 'Color',
-    options: valueOptions(['Rose', 'Yellow'], 'color'),
-  },
-  {
-    key: 'designType',
-    label: 'Design Types',
-    collapsible: true,
-    options: valueOptions(
-      [
-        'Ball Design',
-        'Colour Stone',
-        'Dailywear Collection',
-        'Evil Eyes Collection',
-        'Flower Collection',
-      ],
-      'designType',
-    ),
-  },
-  {
-    key: 'gender',
-    label: 'Gender',
-    options: valueOptions(['Ladies'], 'gender'),
-  },
-  {
-    key: 'collection',
-    label: 'Collection',
-    collapsible: true,
-    options: valueOptions(
-      [
-        'Antique Collection',
-        'Daily Wear Jewellery',
-        'Diamond Jewellery',
-        'Festive',
-        'Italian Collection',
-      ],
-      'collection',
-    ),
-  },
-  {
-    key: 'gifts',
-    label: 'Gifts',
-    options: valueOptions(['For Her', 'For Him'], 'gifts'),
-  },
-];
-
-const SORT_OPTIONS = [
-  { value: 'relevance', label: 'Relevance' },
-  { value: 'newest', label: 'Newest' },
-  { value: 'price-low', label: 'Price: Low to high' },
-  { value: 'price-high', label: 'Price: High to low' },
-];
+// "9KT, 18KT and 22KT"
+function joinWithAnd(items: string[]): string {
+  return items.length <= 1
+    ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
 
 export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
   const tenantConfig = useTenantConfig();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const categoryTitle = jewelleryCategoryLabel(categoryId) ?? categoryId;
-  const [selected, setSelected] = useState<
-    Partial<Record<FilterKey, string[]>>
-  >({});
-  const [sort, setSort] = useState('relevance');
-  const [isSortOpen, setIsSortOpen] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
-  const sortMenuRef = useRef<HTMLDivElement>(null);
   const ecommerceEnabled = tenantConfig?.activeModules.ecommerce ?? true;
 
+  // Filters and sort start from the URL (so Back from a design, or a shared link, restores
+  // them) and are written back to it on every change.
+  const [selected, setSelected] = useState<SelectedFilters>(() =>
+    selectedFromParams(new URLSearchParams(searchParams.toString())),
+  );
+  const [sort, setSort] = useState<SortValue>(() => {
+    const fromUrl = searchParams.get('sort');
+    return isSortValue(fromUrl) ? fromUrl : 'featured';
+  });
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+  // Phones show the categories and filters behind a toggle, above the designs.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   useEffect(() => {
-    if (!isSortOpen) return;
-
-    const closeSortMenu = (event: MouseEvent) => {
-      if (!sortMenuRef.current?.contains(event.target as Node))
-        setIsSortOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsSortOpen(false);
-    };
-
-    document.addEventListener('mousedown', closeSortMenu);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeSortMenu);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [isSortOpen]);
+    const query = paramsFromState(selected, sort).toString();
+    if (query === searchParams.toString()) return;
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  }, [selected, sort, pathname, router, searchParams]);
 
   const {
     data: products = [],
@@ -222,24 +86,12 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
     enabled: ecommerceEnabled,
   });
 
-  const filteredProducts = useMemo(() => {
-    const filtered = products.filter((product) =>
-      FILTER_GROUPS.every((group) => {
-        const values = selected[group.key];
-        if (!values?.length) return true;
-        return values.some((value) =>
-          group.options.find((option) => option.value === value)?.test(product),
-        );
-      }),
-    );
-
-    return [...filtered].sort((first, second) => {
-      if (sort === 'price-low') return first.price - second.price;
-      if (sort === 'price-high') return second.price - first.price;
-      if (sort === 'newest') return Number(second.isNew) - Number(first.isNew);
-      return first.id.localeCompare(second.id);
-    });
-  }, [products, selected, sort]);
+  const filterGroups = useMemo(() => buildFilterGroups(products), [products]);
+  const filteredProducts = useMemo(
+    () => sortProducts(applyFilters(products, filterGroups, selected), sort),
+    [products, filterGroups, selected, sort],
+  );
+  const purities = useMemo(() => purityList(products), [products]);
 
   if (!ecommerceEnabled) return <JewelleryUnavailable />;
 
@@ -261,8 +113,13 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
     );
 
   const clearFilters = () => setSelected({});
-  const activeFilterCount = Object.values(selected).reduce(
-    (count, values) => count + (values?.length ?? 0),
+  // Counts only selections that a current option still knows about.
+  const activeFilterCount = filterGroups.reduce(
+    (count, group) =>
+      count +
+      group.options.filter((option) =>
+        selected[group.key]?.includes(option.value),
+      ).length,
     0,
   );
 
@@ -329,8 +186,8 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
             <div>
               <h1>{categoryTitle}</h1>
               <p>
-                Explore our {categoryTitle.toLowerCase()} designs in 18KT and
-                22KT gold.
+                Explore our {categoryTitle.toLowerCase()} designs
+                {purities.length > 0 && ` in ${joinWithAnd(purities)} gold`}.
               </p>
             </div>
             {!isLoading && !isError && (
@@ -344,7 +201,29 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
       </header>
 
       <div className={styles.content}>
-        <aside className={styles.filters}>
+        <button
+          type="button"
+          className={styles.filtersToggle}
+          aria-expanded={filtersOpen}
+          aria-controls="jewellery-filters"
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          <span>
+            Categories &amp; filters
+            {activeFilterCount > 0 && ` (${activeFilterCount})`}
+          </span>
+          <ChevronDownIcon
+            className={filtersOpen ? styles.chevronOpen : ''}
+            width={16}
+            height={16}
+          />
+        </button>
+
+        <aside
+          id="jewellery-filters"
+          className={styles.filters}
+          data-open={filtersOpen}
+        >
           <nav className={styles.filterGroup} aria-label="Jewellery categories">
             <span className={styles.groupTitle}>Category</span>
             <ul className={styles.categoryList}>
@@ -367,15 +246,17 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
             </ul>
           </nav>
 
-          <div className={styles.filterHeader}>
-            <span>Filters</span>
-            {activeFilterCount > 0 && (
-              <button type="button" onClick={clearFilters}>
-                Clear all
-              </button>
-            )}
-          </div>
-          {FILTER_GROUPS.map((group) => {
+          {filterGroups.length > 0 && (
+            <div className={styles.filterHeader}>
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <button type="button" onClick={clearFilters}>
+                  Clear all
+                </button>
+              )}
+            </div>
+          )}
+          {filterGroups.map((group) => {
             const isExpanded =
               !group.collapsible || expandedGroups.includes(group.key);
             return (
@@ -428,53 +309,23 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
         <section className={styles.results}>
           <div className={styles.toolbar}>
             <span>
-              Showing <strong>{filteredProducts.length}</strong> products
+              Showing <strong>{filteredProducts.length}</strong>{' '}
+              {filteredProducts.length === 1 ? 'design' : 'designs'}
             </span>
-            <div className={styles.sort}>
-              <span>Sort By:</span>
-              <div className={styles.sortMenu} ref={sortMenuRef}>
-                <button
-                  type="button"
-                  className={styles.sortTrigger}
-                  aria-haspopup="listbox"
-                  aria-expanded={isSortOpen}
-                  onClick={() => setIsSortOpen((current) => !current)}
-                >
-                  {SORT_OPTIONS.find((option) => option.value === sort)?.label}
-                  <ChevronDownIcon
-                    className={isSortOpen ? styles.chevronOpen : ''}
-                    width={16}
-                    height={16}
-                  />
-                </button>
-                {isSortOpen && (
-                  <div
-                    className={styles.sortOptions}
-                    role="listbox"
-                    aria-label="Sort products"
-                  >
-                    {SORT_OPTIONS.map((option) => (
-                      <button
-                        type="button"
-                        role="option"
-                        aria-selected={sort === option.value}
-                        className={styles.sortOption}
-                        key={option.value}
-                        onClick={() => {
-                          setSort(option.value);
-                          setIsSortOpen(false);
-                        }}
-                      >
-                        <span>{option.label}</span>
-                        {sort === option.value && (
-                          <span className={styles.sortCheck}>✓</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <label className={styles.sort}>
+              <span>Sort by</span>
+              <select
+                className={styles.sortSelect}
+                value={sort}
+                onChange={(event) => setSort(event.target.value as SortValue)}
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {renderResults()}
@@ -495,10 +346,9 @@ function ProductTile({ product }: { product: Product }) {
           className={styles.imageLink}
           aria-label={`View ${product.title}`}
         >
-          <Image
+          <ProductImage
             src={product.imageUrl}
             alt={product.imageAlt}
-            fill
             sizes="(min-width: 1200px) 24vw, (min-width: 700px) 32vw, 90vw"
           />
         </Link>

@@ -1,5 +1,18 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from '@jest/globals';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { useToast } from '@/components/common/Toast/Toast';
 import { redemptionService } from '@/features/redemption/redemption.service';
 import type { Redemption } from '@/features/redemption/redemption.types';
@@ -33,31 +46,57 @@ async function cancelViaDialog() {
 }
 
 describe('RedemptionCard', () => {
+  it('explains a pickup locked after too many wrong codes, without the dead code', () => {
+    render(
+      withProviders(
+        <RedemptionCard redemption={{ ...PENDING, code_attempts_left: 0 }} />,
+      ),
+    );
+    expect(screen.getByRole('note').textContent).toMatch(/locked/);
+    expect(screen.queryByText('482913')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Cancel redemption' }),
+    ).toBeTruthy();
+  });
+
   it('shows the pickup code and cancel action only while pending', () => {
     const view = render(withProviders(<RedemptionCard redemption={PENDING} />));
     expect(screen.getByText('482913')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Cancel redemption' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Cancel redemption' }),
+    ).toBeTruthy();
 
     view.rerender(
       withProviders(
         <RedemptionCard
-          redemption={{ ...PENDING, status: 'COLLECTED', collected_at: '2026-10-04T12:00:00Z' }}
+          redemption={{
+            ...PENDING,
+            status: 'COLLECTED',
+            collected_at: '2026-10-04T12:00:00Z',
+          }}
         />,
       ),
     );
     expect(screen.queryByText('482913')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Cancel redemption' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Cancel redemption' }),
+    ).toBeNull();
   });
 
   it('cancels after confirmation', async () => {
-    jest.mocked(redemptionService.cancel).mockResolvedValue({ success: true, message: 'ok' });
+    jest
+      .mocked(redemptionService.cancel)
+      .mockResolvedValue({ success: true, message: 'ok' });
     render(withProviders(<RedemptionCard redemption={PENDING} />));
 
     await cancelViaDialog();
 
     await waitFor(() =>
       expect(showToast).toHaveBeenCalledWith(
-        expect.objectContaining({ variant: 'success', title: 'Redemption cancelled' }),
+        expect.objectContaining({
+          variant: 'success',
+          title: 'Redemption cancelled',
+        }),
       ),
     );
     expect(jest.mocked(redemptionService.cancel).mock.calls[0][0]).toBe('r-1');

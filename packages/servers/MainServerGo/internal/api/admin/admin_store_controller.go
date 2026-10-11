@@ -34,6 +34,7 @@ func (ac *AdminStoreController) RegisterRoutes(api fiber.Router) {
 	storeGroup.Get("/ledger", ac.Ledger)
 	storeGroup.Post("/ledger/reverse", ac.ReverseTrade)
 	storeGroup.Get("/analytics", ac.Analytics)
+	storeGroup.Post("/trade/counter/quote", ac.CounterQuote)
 	storeGroup.Post("/trade/counter", ac.CounterTrade)
 
 	kycGroup := storeGroup.Group("/kyc")
@@ -43,7 +44,8 @@ func (ac *AdminStoreController) RegisterRoutes(api fiber.Router) {
 
 	redemptionGroup := storeGroup.Group("/redemptions")
 	redemptionGroup.Get("/pending", ac.PendingRedemptions)
-	redemptionGroup.Post("/collect", ac.CollectRedemption)
+	redemptionGroup.Get("/collected", ac.CollectedRedemptions)
+	redemptionGroup.Post("/collect", middleware.PickupCollectRateLimiter(), ac.CollectRedemption)
 	redemptionGroup.Post("/cancel", ac.CancelRedemption)
 }
 
@@ -99,13 +101,17 @@ func (ac *AdminStoreController) Ledger(c fiber.Ctx) error {
 	})
 }
 
-func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
+// CounterQuote prices a counter sale with the store's own margin and holds the price for a
+// few minutes, so the cashier collects exactly what will be recorded. Send weight_grams or
+// total_amount_inr; weight wins when both are positive.
+func (ac *AdminStoreController) CounterQuote(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
-	adminUUID := middleware.GetAdminUUID(c)
 
 	var body struct {
-		interfaces.TradeExecutionRequest
-		UserUUID string `json:"user_uuid"`
+		UserUUID       string  `json:"user_uuid"`
+		WeightGrams    float64 `json:"weight_grams"`
+		TotalAmountINR float64 `json:"total_amount_inr"`
+		PaymentMode    string  `json:"payment_mode"`
 	}
 	if err := c.Bind().JSON(&body); err != nil {
 		return &interfaces.RequestError{
@@ -114,21 +120,11 @@ func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
 			Message:    "Invalid JSON payload",
 		}
 	}
-	req := body.TradeExecutionRequest
-
-	// Resolve the customer strictly inside the admin's tenant. Internal user IDs
-	// from the request body are never trusted.
-	user, err := ac.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, body.UserUUID)
-	if err != nil {
-		return interfaces.ParseDBError(err)
-	}
-	req.TenantID = tenantID
-	req.UserID = user.ID
 
 	// Counter trades are settled in store; online modes are reserved for the payment gateway.
-	switch req.PaymentMode {
+	switch body.PaymentMode {
 	case "":
-		req.PaymentMode = "COUNTER_CASH"
+		body.PaymentMode = "COUNTER_CASH"
 	case "COUNTER_CASH", "COUNTER_UPI":
 	default:
 		return &interfaces.RequestError{
@@ -138,16 +134,61 @@ func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
 		}
 	}
 
-	ipAddress := c.IP()
+	// Resolve the customer strictly inside the admin's tenant. Internal user IDs
+	// from the request body are never trusted.
+	user, err := ac.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, body.UserUUID)
+	if err != nil {
+		return interfaces.ParseDBError(err)
+	}
 
-	result, err := ac.TradeService.ExecuteTrade(c.Context(), req, ipAddress, adminUUID)
+	quoteID, quote, err := ac.TradeService.QuoteCounterSale(c.Context(), tenantID, user.ID, body.PaymentMode, body.WeightGrams, body.TotalAmountINR)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"trade":   result,
+		"quote": fiber.Map{
+			"quote_id":              quoteID,
+			"payment_mode":          body.PaymentMode,
+			"weight_grams":          quote.WeightGrams,
+			"total_amount_inr":      quote.TotalAmountINR,
+			"final_rate_per_gram":   quote.FinalRatePerGram,
+			"mcx_base_rate":         quote.MCXBaseRate,
+			"tenant_margin_applied": quote.MarginApplied,
+			"gst_applied":           quote.GSTApplied,
+			"expires_at":            quote.ExpiresAt,
+		},
+	})
+}
+
+// CounterTrade records the counter sale priced by CounterQuote. The reference is derived
+// from the quote, never taken from the client, so confirming the same quote again returns
+// the sale already recorded ("already_recorded": true) instead of selling twice.
+func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+	adminUUID := middleware.GetAdminUUID(c)
+
+	var body struct {
+		QuoteID string `json:"quote_id"`
+	}
+	if err := c.Bind().JSON(&body); err != nil || body.QuoteID == "" {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "quote_id is required: price the sale with /admin/store/trade/counter/quote first",
+		}
+	}
+
+	result, alreadyRecorded, err := ac.TradeService.ConfirmCounterSale(c.Context(), tenantID, body.QuoteID, c.IP(), adminUUID)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success":          true,
+		"trade":            result,
+		"already_recorded": alreadyRecorded,
 	})
 }
 func (ac *AdminStoreController) PendingKYC(c fiber.Ctx) error {
@@ -177,31 +218,17 @@ func (ac *AdminStoreController) PendingKYC(c fiber.Ctx) error {
 }
 
 func (ac *AdminStoreController) ApproveKYC(c fiber.Ctx) error {
-	tenantID := middleware.GetTenantIntID(c)
-
-	var payload map[string]string
-	if err := c.Bind().JSON(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid json"})
-	}
-
-	userUUID := payload["user_uuid"]
-	if userUUID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing user_uuid"})
-	}
-
-	user, err := ac.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
-	if err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user not found in tenant"})
-	}
-
-	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user, "verified", nil); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to approve kyc"})
-	}
-
-	return c.JSON(fiber.Map{"success": true, "message": "KYC approved"})
+	return ac.decideKYC(c, "verified", "KYC approved")
 }
 
 func (ac *AdminStoreController) RejectKYC(c fiber.Ctx) error {
+	return ac.decideKYC(c, "rejected", "KYC rejected")
+}
+
+// decideKYC records an admin's decision on a customer's pending KYC submission, and who
+// made it. A customer with no submission waiting (never submitted, or already decided by
+// another admin) gets 409 KYC_NOT_AWAITING_REVIEW instead of being overwritten.
+func (ac *AdminStoreController) decideKYC(c fiber.Ctx, status, message string) error {
 	tenantID := middleware.GetTenantIntID(c)
 
 	var payload map[string]string
@@ -219,11 +246,15 @@ func (ac *AdminStoreController) RejectKYC(c fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user not found in tenant"})
 	}
 
-	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user, "rejected", nil); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to reject kyc"})
+	decided, err := ac.UserService.UserRepo.DecideKYC(c.Context(), user, status, middleware.GetAdminUUID(c))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to save kyc decision"})
+	}
+	if !decided {
+		return interfaces.ErrKYCNotAwaitingReview
 	}
 
-	return c.JSON(fiber.Map{"success": true, "message": "KYC rejected"})
+	return c.JSON(fiber.Map{"success": true, "message": message})
 }
 func (ac *AdminStoreController) Analytics(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
@@ -281,6 +312,34 @@ func (ac *AdminStoreController) PendingRedemptions(c fiber.Ctx) error {
 	offset := (page - 1) * limit
 
 	list, err := ac.TradeService.RedemptionRepo.ListPendingByTenant(c.Context(), tenantID, c.Query("phone"), limit, offset)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    list,
+		"page":    page,
+		"limit":   limit,
+	})
+}
+
+// CollectedRedemptions lists the pickups handed over at this store's counter today (IST),
+// newest first, with who handed each one over, for the end-of-day count.
+func (ac *AdminStoreController) CollectedRedemptions(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	list, err := ac.TradeService.RedemptionRepo.ListCollectedTodayByTenant(c.Context(), tenantID, limit, offset)
 	if err != nil {
 		return err
 	}

@@ -94,7 +94,10 @@ describe('useCollectRedemption', () => {
 
     await act(async () => {
       await expect(
-        result.current.mutateAsync({ redemptionId: 'r1', pickupCode: '123456' }),
+        result.current.mutateAsync({
+          redemptionId: 'r1',
+          pickupCode: '123456',
+        }),
       ).rejects.toMatchObject({ status: 409 });
     });
 

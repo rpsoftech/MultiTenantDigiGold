@@ -316,8 +316,14 @@ the trade is rejected (store out of credit, user gone). A missing intent is refu
 for orders tagged `notes.source = "digigold"`. Transient failures (database, Redis,
 Razorpay refund call) return `500` so Razorpay retries.
 
-Counter buys (`POST /admin/store/trade/counter`) identify the customer by `user_uuid` and
-accept `COUNTER_CASH` or `COUNTER_UPI`.
+Counter buys are two calls. `POST /admin/store/trade/counter/quote` prices the sale for a
+customer (`user_uuid`, `COUNTER_CASH` or `COUNTER_UPI`) at the store's own rate and holds
+it for 5 minutes; the cashier collects exactly that amount. `POST /admin/store/trade/counter`
+with the `quote_id` records it, with reference `COUNTER_<quote_id>`: confirming the same
+quote again returns the recorded sale (`already_recorded: true`) instead of a second one.
+Cash is refused once the customer's cash paid at the counter today (IST) would reach
+₹2,00,000 (Income Tax Act s.269ST), checked at quote time and again under the customer's
+vault lock when confirming.
 
 Redemption (counter pickup):
 
@@ -328,7 +334,12 @@ POST /trade/redeem {weight_grams}
 Customer shows the code at the counter
   → GET  /admin/store/redemptions/pending?phone=...   (staff find the request)
   → POST /admin/store/redemptions/collect {redemption_uuid, pickup_code}  → COLLECTED
+  → GET  /admin/store/redemptions/collected            (today's handovers, for the day's count)
 ```
+
+Each wrong pickup code counts against the request. After 5 it locks (`PICKUP_CODE_LOCKED`):
+even the right code is refused and the request can only be cancelled, so a 6-digit code
+can't be found by trying them all. Collect is also rate limited per staff login.
 
 A `PENDING` request can be cancelled by the customer (`POST /trade/redemptions/{uuid}/cancel`)
 or by staff (`POST /admin/store/redemptions/cancel`). Cancelling posts a `SYSTEM_REVERSAL`

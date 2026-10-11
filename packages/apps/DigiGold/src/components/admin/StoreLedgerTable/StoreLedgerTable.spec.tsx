@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from '@jest/globals';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import type { AdminLedgerEntry } from '@/features/admin/admin.types';
 import { StoreLedgerTable } from './StoreLedgerTable';
 

@@ -44,7 +44,15 @@ type KycPanelProps = {
 
 // Shared two-column frame for every KYC state. The left side summarises the status (icon, pill,
 // headline, copy); the right side holds the details or the form. They stack on small screens.
-function KycSplit({ tone, icon, badge, title, body, aside, children }: KycPanelProps) {
+function KycSplit({
+  tone,
+  icon,
+  badge,
+  title,
+  body,
+  aside,
+  children,
+}: KycPanelProps) {
   return (
     <div className={styles.page}>
       <Card className={styles.split} data-tone={tone}>
@@ -64,7 +72,11 @@ function KycSplit({ tone, icon, badge, title, body, aside, children }: KycPanelP
   );
 }
 
-type Step = { label: string; hint: string; state: 'done' | 'current' | 'upcoming' };
+type Step = {
+  label: string;
+  hint: string;
+  state: 'done' | 'current' | 'upcoming';
+};
 
 function ReviewSteps({ steps }: { steps: Step[] }) {
   return (
@@ -85,9 +97,21 @@ function ReviewSteps({ steps }: { steps: Step[] }) {
 }
 
 const PENDING_STEPS: Step[] = [
-  { label: 'Details submitted', hint: 'We have your PAN and Aadhaar digits', state: 'done' },
-  { label: 'Under review', hint: 'Usually completed shortly', state: 'current' },
-  { label: 'Approved', hint: 'Higher purchase limits unlock', state: 'upcoming' },
+  {
+    label: 'Details submitted',
+    hint: 'We have your PAN and Aadhaar digits',
+    state: 'done',
+  },
+  {
+    label: 'Under review',
+    hint: 'The store team is checking your details',
+    state: 'current',
+  },
+  {
+    label: 'Approved',
+    hint: 'Higher purchase limits unlock',
+    state: 'upcoming',
+  },
 ];
 
 export function Kyc() {
@@ -161,7 +185,7 @@ export function Kyc() {
         icon={<ClockIcon width={32} height={32} />}
         badge="In review"
         title="KYC under review"
-        body="We've received your details. Verification is usually completed shortly, and higher purchase limits unlock once it is approved."
+        body="We've received your details. The store team reviews them, and higher purchase limits unlock once they approve them."
       >
         <h2 className={styles.mainTitle}>Verification progress</h2>
         <ReviewSteps steps={PENDING_STEPS} />
@@ -197,7 +221,10 @@ function KycForm({ rejected }: { rejected: boolean }) {
         pan_number: values.panNumber.toUpperCase(),
         aadhaar_last4: values.aadhaarLast4,
       });
-      showToast({ variant: 'success', title: 'KYC submitted for verification' });
+      showToast({
+        variant: 'success',
+        title: 'KYC submitted for verification',
+      });
     } catch (error) {
       showToast({
         variant: 'danger',
@@ -280,7 +307,7 @@ function KycForm({ rejected }: { rejected: boolean }) {
 
         <p className={styles.privacy}>
           <LockIcon width={14} height={14} />
-          Your details are used only to verify your identity.
+          The store team reviews these details to verify your identity.
         </p>
       </div>
     </KycSplit>

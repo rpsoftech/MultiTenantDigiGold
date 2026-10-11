@@ -32,7 +32,7 @@ jest.mock('./dashboard-essentials.config.json', () => ({
     },
     {
       id: 'jewelry',
-      title: 'Explore Jewelry',
+      title: 'Explore Jewellery',
       description: 'Browse collections.',
       url: '/marketplace/jewelry',
       icon: 'gem',
@@ -95,7 +95,7 @@ describe('DashboardEssentials', () => {
     ).toBeTruthy();
     expect(screen.getByText('My Digital Passbook')).toBeTruthy();
     expect(screen.getByText('Start a Gold SIP')).toBeTruthy();
-    expect(screen.getByText('Explore Jewelry')).toBeTruthy();
+    expect(screen.getByText('Explore Jewellery')).toBeTruthy();
     expect(screen.getByText('Always visible')).toBeTruthy();
   });
 
@@ -114,7 +114,7 @@ describe('DashboardEssentials', () => {
     );
 
     expect(screen.queryByText('Start a Gold SIP')).toBeNull();
-    expect(screen.queryByText('Explore Jewelry')).toBeNull();
+    expect(screen.queryByText('Explore Jewellery')).toBeNull();
     expect(screen.getByText('My Digital Passbook')).toBeTruthy();
   });
 

@@ -12,6 +12,9 @@ export const adminQueryKeys = {
   redemptionsPending: ['admin', 'store', 'redemptions', 'pending'] as const,
   redemptionsPendingPage: (page: number, limit: number, phone: string) =>
     ['admin', 'store', 'redemptions', 'pending', page, limit, phone] as const,
+  redemptionsCollected: ['admin', 'store', 'redemptions', 'collected'] as const,
+  redemptionsCollectedPage: (page: number, limit: number) =>
+    ['admin', 'store', 'redemptions', 'collected', page, limit] as const,
   ledger: ['admin', 'store', 'ledger'] as const,
   ledgerPage: (page: number, limit: number) =>
     ['admin', 'store', 'ledger', page, limit] as const,

@@ -18,12 +18,12 @@
       "url": "/invest/sip",
       "icon": "coins",
       "module": "trading",
-      "enabled": true,
+      "enabled": false,
       "order": 2
     },
     {
       "id": "jewelry",
-      "title": "Explore Jewelry",
+      "title": "Explore Jewellery",
       "description": "Browse our latest physical collections.",
       "url": "/jewellery",
       "icon": "gem",

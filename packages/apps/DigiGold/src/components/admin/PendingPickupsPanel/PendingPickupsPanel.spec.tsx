@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import type {
   CollectRedemptionPayload,
   PendingRedemption,
@@ -16,6 +23,7 @@ const pickup: PendingRedemption = {
   requestedAt: '2026-10-09T08:00:00Z',
   customerName: 'Asha Rao',
   customerPhone: '9876543210',
+  codeAttemptsLeft: 5,
 };
 
 const refetch = jest.fn();
@@ -33,7 +41,10 @@ type MutateOptions = {
   onSuccess?: () => void;
   onError?: (error: unknown) => void;
 };
-const collectMutate = jest.fn<void, [CollectRedemptionPayload, MutateOptions]>();
+const collectMutate = jest.fn<
+  void,
+  [CollectRedemptionPayload, MutateOptions]
+>();
 const cancelMutate = jest.fn<void, [string, MutateOptions]>();
 let collectState: { mutate: typeof collectMutate; isPending: boolean };
 let cancelState: { mutate: typeof cancelMutate; isPending: boolean };
@@ -176,9 +187,7 @@ describe('search by customer phone', () => {
     search('12345');
     expect(screen.getByText('Enter a 10-digit mobile number.')).toBeTruthy();
     expect(queryMock).not.toHaveBeenCalledWith(1, 20, '12345');
-    expect(
-      queryMock.mock.calls.every((call) => call[2] === ''),
-    ).toBe(true);
+    expect(queryMock.mock.calls.every((call) => call[2] === '')).toBe(true);
   });
 
   it('clears the inline error as soon as the user types again', () => {
@@ -234,13 +243,13 @@ describe('collect with the pickup code', () => {
     render(<PendingPickupsPanel />);
     openCollect();
     typeCode('482 915');
-    expect((screen.getByLabelText('Pickup code') as HTMLInputElement).value).toBe(
-      '482915',
-    );
+    expect(
+      (screen.getByLabelText('Pickup code') as HTMLInputElement).value,
+    ).toBe('482915');
     typeCode('ab12');
-    expect((screen.getByLabelText('Pickup code') as HTMLInputElement).value).toBe(
-      '12',
-    );
+    expect(
+      (screen.getByLabelText('Pickup code') as HTMLInputElement).value,
+    ).toBe('12');
   });
 
   it('sends the redemption id and code, then toasts on success and closes', () => {
@@ -256,7 +265,10 @@ describe('collect with the pickup code', () => {
     act(() => options.onSuccess?.());
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(showToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Gold handed over', variant: 'success' }),
+      expect.objectContaining({
+        title: 'Gold handed over',
+        variant: 'success',
+      }),
     );
   });
 
@@ -287,13 +299,83 @@ describe('collect with the pickup code', () => {
 
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByText(/pickup code is incorrect/)).toBeTruthy();
-    expect((screen.getByLabelText('Pickup code') as HTMLInputElement).value).toBe(
-      '',
-    );
+    expect(
+      (screen.getByLabelText('Pickup code') as HTMLInputElement).value,
+    ).toBe('');
     expect(showToast).not.toHaveBeenCalled();
 
     typeCode('1');
     expect(screen.queryByText(/pickup code is incorrect/)).toBeNull();
+  });
+
+  it('says how many tries are left before the pickup locks', () => {
+    render(<PendingPickupsPanel />);
+    openCollect();
+    typeCode('000000');
+    fireEvent.click(confirmButton());
+    const { onError } = collectMutate.mock.calls[0][1];
+
+    act(() =>
+      onError?.({
+        ...apiError(400, 'INVALID_PICKUP_CODE'),
+        extra: { attempts_left: 1 },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        /pickup code is incorrect.*1 try left before this pickup is locked/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('closes and explains when the pickup locks after too many wrong codes', () => {
+    render(<PendingPickupsPanel />);
+    openCollect();
+    typeCode('000000');
+    fireEvent.click(confirmButton());
+    const { onError } = collectMutate.mock.calls[0][1];
+
+    act(() => onError?.(apiError(423, 'PICKUP_CODE_LOCKED')));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(showToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Pickup locked', variant: 'danger' }),
+    );
+  });
+
+  it('marks a locked pickup and only lets staff cancel it', () => {
+    queryState.data = {
+      items: [{ ...pickup, codeAttemptsLeft: 0 }],
+      page: 1,
+      limit: 20,
+      hasNextPage: false,
+    };
+    render(<PendingPickupsPanel />);
+
+    expect(screen.getByText('Locked: too many wrong codes')).toBeTruthy();
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Collect pickup for Asha Rao',
+      }).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Cancel pickup for Asha Rao',
+      }).disabled,
+    ).toBe(false);
+  });
+
+  it('shows the tries left once a wrong code has been entered', () => {
+    queryState.data = {
+      items: [{ ...pickup, codeAttemptsLeft: 2 }],
+      page: 1,
+      limit: 20,
+      hasNextPage: false,
+    };
+    render(<PendingPickupsPanel />);
+
+    expect(screen.getByText('2 tries left for the code')).toBeTruthy();
   });
 
   it('closes with an "already completed" toast on a 409', () => {
@@ -307,7 +389,10 @@ describe('collect with the pickup code', () => {
 
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(showToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Already completed', variant: 'danger' }),
+      expect.objectContaining({
+        title: 'Already completed',
+        variant: 'danger',
+      }),
     );
   });
 
@@ -337,9 +422,9 @@ describe('collect with the pickup code', () => {
 
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByText(/server is having trouble/)).toBeTruthy();
-    expect((screen.getByLabelText('Pickup code') as HTMLInputElement).value).toBe(
-      '482915',
-    );
+    expect(
+      (screen.getByLabelText('Pickup code') as HTMLInputElement).value,
+    ).toBe('482915');
   });
 
   it('backs out of the dialog without sending anything', () => {
@@ -356,9 +441,9 @@ describe('collect with the pickup code', () => {
     typeCode('4829');
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     openCollect();
-    expect((screen.getByLabelText('Pickup code') as HTMLInputElement).value).toBe(
-      '',
-    );
+    expect(
+      (screen.getByLabelText('Pickup code') as HTMLInputElement).value,
+    ).toBe('');
   });
 
   it('blocks a second submission and dismissal while a request is in flight', () => {
@@ -385,7 +470,9 @@ describe('cancel a pickup', () => {
     render(<PendingPickupsPanel />);
     openCancel();
     expect(screen.getByText('Cancel this pickup?')).toBeTruthy();
-    expect(within(screen.getByRole('dialog')).getByText('2.5000 g')).toBeTruthy();
+    expect(
+      within(screen.getByRole('dialog')).getByText('2.5000 g'),
+    ).toBeTruthy();
     expect(cancelMutate).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep pickup' }));
