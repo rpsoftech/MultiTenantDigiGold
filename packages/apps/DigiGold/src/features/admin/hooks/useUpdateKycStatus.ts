@@ -6,8 +6,8 @@ export function useUpdateKycStatus() {
   const queryClient = useQueryClient();
 
   // A decision leaves the review queue and changes the customer's directory status. Also
-  // refresh on failure: a 403/404 means the customer is gone or already handled by another
-  // admin, so our copy of the queue is stale.
+  // refresh on failure: 409 KYC_NOT_AWAITING_REVIEW means another admin decided first and
+  // 403/404 that the customer left the store, so our copy of the queue is stale.
   return useMutation({
     mutationFn: adminService.updateKycStatus,
     onSettled: () =>

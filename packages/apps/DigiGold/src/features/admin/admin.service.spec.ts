@@ -219,6 +219,7 @@ describe('adminService store integration', () => {
             city: ' Pune ',
             total_vault_balance: 2.5,
             document_json: { pan_number: 'ABCDE1234F', aadhaar_last4: '4821' },
+            kyc_submitted_at: '2026-10-01T09:30:00Z',
           },
         ],
       },
@@ -243,6 +244,7 @@ describe('adminService store integration', () => {
             aadhaarLast4: '4821',
             other: [],
           },
+          submittedAt: '2026-10-01T09:30:00Z',
         },
       ],
       page: 1,
@@ -263,6 +265,17 @@ describe('adminService store integration', () => {
     });
     expect(result.items).toEqual([]);
     expect(result.hasNextPage).toBe(false);
+  });
+
+  it('refuses a sample decision on a customer with no submission waiting, like MainServer', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
+
+    // USR-101 is already verified; USR-103 was rejected.
+    for (const userId of ['USR-101', 'USR-103']) {
+      await expect(
+        adminService.updateKycStatus({ userId, kycStatus: 'verified' }),
+      ).rejects.toMatchObject({ status: 409, code: 'KYC_NOT_AWAITING_REVIEW' });
+    }
   });
 
   it('serves the pending queue from sample data without calling the API', async () => {

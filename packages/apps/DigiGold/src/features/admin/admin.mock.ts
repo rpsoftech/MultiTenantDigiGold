@@ -131,14 +131,22 @@ export async function mockGetAdminUsers(
 const MOCK_KYC_DOCUMENTS: Record<string, PendingKycSubmission['documents']> = {
   'USR-102': { panNumber: 'ABCDE1234F', aadhaarLast4: '4821', other: [] },
 };
+const MOCK_KYC_SUBMITTED_AT: Record<string, string> = {
+  'USR-102': '2026-08-02T10:15:00.000Z',
+};
+
+// A submission waiting for review, as MainServer defines it: pending with documents.
+function awaitingKycReview(user: AdminUserSummary) {
+  return (
+    user.kycStatus === 'pending' && Boolean(MOCK_KYC_DOCUMENTS[user.userId])
+  );
+}
 
 export async function mockGetPendingKyc(
   page = 1,
   limit = 20,
 ): Promise<StorePage<PendingKycSubmission>> {
-  const pending = MOCK_USERS.filter(
-    (user) => user.kycStatus === 'pending' && MOCK_KYC_DOCUMENTS[user.userId],
-  ).map(
+  const pending = MOCK_USERS.filter(awaitingKycReview).map(
     (user): PendingKycSubmission => ({
       userId: user.userId,
       name: user.name,
@@ -146,6 +154,7 @@ export async function mockGetPendingKyc(
       email: user.email,
       goldBalanceGrams: user.goldBalanceGrams,
       documents: MOCK_KYC_DOCUMENTS[user.userId],
+      submittedAt: MOCK_KYC_SUBMITTED_AT[user.userId],
     }),
   );
   return paginate(pending, page, limit);
@@ -168,6 +177,15 @@ export async function mockUpdateKycStatus(
 ): Promise<void> {
   const user = MOCK_USERS.find((candidate) => candidate.userId === userId);
   if (!user) throw new Error(`Unknown store customer: ${userId}`);
+  // Like MainServer: only a submission waiting for review can be decided, once.
+  if (!awaitingKycReview(user)) {
+    throw {
+      message:
+        'This customer has no KYC submission waiting for review. Another admin may already have decided it.',
+      code: 'KYC_NOT_AWAITING_REVIEW',
+      status: 409,
+    };
+  }
   user.kycStatus = kycStatus;
 }
 

@@ -1,0 +1,18 @@
+@use '@/styles/mixins' as *;
+
+// The table frame and cells come from PagedTable; these are the queue's own pieces.
+
+.reviewButton {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.75rem;
+  width: auto;
+}
+
+.actionsCell {
+  text-align: right;
+}
+
+.visuallyHidden {
+  @include visually-hidden;
+}

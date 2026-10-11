@@ -51,6 +51,7 @@ type PendingKycResponse = {
   city: string | null;
   total_vault_balance: number;
   document_json: Record<string, unknown> | null;
+  kyc_submitted_at?: string | null;
 };
 
 type StoreLedgerResponse = {
@@ -180,6 +181,7 @@ function mapPendingKyc(entry: PendingKycResponse): PendingKycSubmission {
     city: entry.city?.trim() || undefined,
     goldBalanceGrams: entry.total_vault_balance,
     documents: mapKycDocuments(entry.document_json),
+    submittedAt: entry.kyc_submitted_at || undefined,
   };
 }
 
@@ -241,10 +243,12 @@ export const adminService = {
     limit = 20,
   ): Promise<StorePage<PendingKycSubmission>> => {
     const params = normalizePagination(page, limit);
-    if (isAdminDataSample()) return mockGetPendingKyc(params.page, params.limit);
-    const response = await apiClient.get<
-      StorePageResponse<PendingKycResponse>
-    >('/admin/store/kyc/pending', { params });
+    if (isAdminDataSample())
+      return mockGetPendingKyc(params.page, params.limit);
+    const response = await apiClient.get<StorePageResponse<PendingKycResponse>>(
+      '/admin/store/kyc/pending',
+      { params },
+    );
     return mapPage(response.data, mapPendingKyc);
   },
 

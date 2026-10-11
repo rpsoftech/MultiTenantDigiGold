@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/react';
 import type {
   PendingKycSubmission,
   StorePage,
   UpdateKycStatusPayload,
 } from '@/features/admin/admin.types';
-import { UserApprovalsTable } from './UserApprovalsTable';
+import { KycReviewQueue } from './KycReviewQueue';
 
 jest.mock('@/hooks/useMediaQuery', () => ({ useMediaQuery: () => true }));
 
@@ -16,6 +22,7 @@ const submission: PendingKycSubmission = {
   email: 'asha@example.com',
   goldBalanceGrams: 1.25,
   documents: { panNumber: 'ABCDE1234F', aadhaarLast4: '4821', other: [] },
+  submittedAt: '2026-08-02T20:15:00.000Z',
 };
 
 const refetch = jest.fn();
@@ -66,7 +73,9 @@ beforeEach(() => {
 afterEach(cleanup);
 
 function openAndConfirm(action: 'Approve' | 'Reject') {
-  fireEvent.click(screen.getByRole('button', { name: 'Review KYC for Asha Rao' }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Review KYC for Asha Rao' }),
+  );
   fireEvent.click(screen.getByRole('button', { name: action }));
   fireEvent.click(
     screen.getByRole('button', {
@@ -77,7 +86,7 @@ function openAndConfirm(action: 'Approve' | 'Reject') {
 
 describe('KYC review queue', () => {
   it('lists pending submissions without exposing document numbers in the table', () => {
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     expect(screen.getByText('Asha Rao')).toBeTruthy();
     expect(screen.getByText('asha@example.com')).toBeTruthy();
     expect(screen.getByText('1.2500 g')).toBeTruthy();
@@ -86,7 +95,7 @@ describe('KYC review queue', () => {
   });
 
   it('opens the documents for the chosen customer', () => {
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     fireEvent.click(
       screen.getByRole('button', { name: 'Review KYC for Asha Rao' }),
     );
@@ -97,16 +106,16 @@ describe('KYC review queue', () => {
 
   it('shows an empty state when nothing is waiting', () => {
     queryState.data = { items: [], page: 1, limit: 20, hasNextPage: false };
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     expect(screen.getByText('No KYC submissions waiting')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('explains an empty page beyond the first', () => {
-    const { rerender } = render(<UserApprovalsTable />);
+    const { rerender } = render(<KycReviewQueue />);
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     queryState.data = { items: [], page: 2, limit: 20, hasNextPage: false };
-    rerender(<UserApprovalsTable />);
+    rerender(<KycReviewQueue />);
     expect(screen.getByText('No submissions on this page')).toBeTruthy();
     expect(
       (screen.getByRole('button', { name: 'Next' }) as HTMLButtonElement)
@@ -117,7 +126,7 @@ describe('KYC review queue', () => {
   it('retries a failed load without a perpetual loader', () => {
     queryState.data = undefined;
     queryState.isError = true;
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     expect(screen.getByRole('alert').textContent).toContain(
       'KYC queue is unavailable',
     );
@@ -126,7 +135,7 @@ describe('KYC review queue', () => {
   });
 
   it('pages and resets to page one when the page size changes', () => {
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     expect(queryMock).toHaveBeenLastCalledWith(1, 20);
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     expect(queryMock).toHaveBeenLastCalledWith(2, 20);
@@ -137,7 +146,7 @@ describe('KYC review queue', () => {
   });
 
   it('sends the approval for the reviewed customer and toasts on success', () => {
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     openAndConfirm('Approve');
     expect(mutate).toHaveBeenCalledTimes(1);
     const [payload, options] = mutate.mock.calls[0];
@@ -150,7 +159,7 @@ describe('KYC review queue', () => {
   });
 
   it('sends the rejection for the reviewed customer', () => {
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     openAndConfirm('Reject');
     expect(mutate.mock.calls[0][0]).toEqual({
       userId: 'customer-1',
@@ -159,7 +168,7 @@ describe('KYC review queue', () => {
   });
 
   it('keeps the dialog open with the error when the request fails', () => {
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     openAndConfirm('Approve');
     const { onError } = mutate.mock.calls[0][1];
 
@@ -176,7 +185,7 @@ describe('KYC review queue', () => {
   it.each([403, 404])(
     'closes the dialog and explains when the customer is gone (%i)',
     (status) => {
-      render(<UserApprovalsTable />);
+      render(<KycReviewQueue />);
       openAndConfirm('Approve');
       const { onError } = mutate.mock.calls[0][1];
 
@@ -193,17 +202,39 @@ describe('KYC review queue', () => {
     },
   );
 
+  it('shows when each customer submitted, in IST', () => {
+    render(<KycReviewQueue />);
+    // 20:15 UTC on 2 Aug is already 3 Aug in India.
+    expect(screen.getByText('3 Aug 2026')).toBeTruthy();
+  });
+
+  it('closes the dialog when another admin has already decided the submission', () => {
+    render(<KycReviewQueue />);
+    openAndConfirm('Reject');
+    const { onError } = mutate.mock.calls[0][1];
+
+    act(() =>
+      onError?.({
+        status: 409,
+        code: 'KYC_NOT_AWAITING_REVIEW',
+        message: 'no submission waiting',
+      }),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(showToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Already decided', variant: 'danger' }),
+    );
+  });
+
   it('ignores a second decision while one is already in flight', () => {
     mutationState.isPending = true;
     mutationState.variables = { userId: 'customer-1', kycStatus: 'verified' };
-    render(<UserApprovalsTable />);
+    render(<KycReviewQueue />);
     fireEvent.click(
       screen.getByRole('button', { name: 'Review KYC for Asha Rao' }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm approval' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }));
     expect(mutate).not.toHaveBeenCalled();
   });
 });

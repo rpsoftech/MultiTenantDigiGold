@@ -125,6 +125,14 @@ func ParseDBError(err error) *RequestError {
 			Name:       "COUNTER_QUOTE_EXPIRED",
 		}
 
+	case errors.Is(err, ErrKYCNotAwaitingReview):
+		return &RequestError{
+			StatusCode: 409,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "This customer has no KYC submission waiting for review. Another admin may already have decided it.",
+			Name:       "KYC_NOT_AWAITING_REVIEW",
+		}
+
 	case errors.Is(err, ErrCounterSaleInProgress):
 		return &RequestError{
 			StatusCode: 409,

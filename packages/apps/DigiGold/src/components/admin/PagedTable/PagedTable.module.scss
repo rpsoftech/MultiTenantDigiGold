@@ -58,7 +58,8 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 760px;
+  // Set per table through the PagedTable minWidth prop; stacked-table resets it on phones.
+  min-width: var(--paged-table-min-width, 640px);
   @include stacked-table;
 
   th {
@@ -116,7 +117,7 @@
   color: var(--color-text-muted);
   overflow-wrap: anywhere;
 }
-.joinedDate {
+.dateCell {
   white-space: nowrap;
 }
 

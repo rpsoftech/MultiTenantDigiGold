@@ -57,6 +57,8 @@ export type PendingKycSubmission = {
   city?: string;
   goldBalanceGrams: number;
   documents: KycDocuments;
+  // When the customer submitted these details (ISO); the queue is oldest first.
+  submittedAt?: string;
 };
 
 export type UpdateKycStatusPayload = {
