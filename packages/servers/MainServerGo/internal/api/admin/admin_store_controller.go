@@ -217,31 +217,17 @@ func (ac *AdminStoreController) PendingKYC(c fiber.Ctx) error {
 }
 
 func (ac *AdminStoreController) ApproveKYC(c fiber.Ctx) error {
-	tenantID := middleware.GetTenantIntID(c)
-
-	var payload map[string]string
-	if err := c.Bind().JSON(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid json"})
-	}
-
-	userUUID := payload["user_uuid"]
-	if userUUID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing user_uuid"})
-	}
-
-	user, err := ac.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, userUUID)
-	if err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user not found in tenant"})
-	}
-
-	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user, "verified", nil); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to approve kyc"})
-	}
-
-	return c.JSON(fiber.Map{"success": true, "message": "KYC approved"})
+	return ac.decideKYC(c, "verified", "KYC approved")
 }
 
 func (ac *AdminStoreController) RejectKYC(c fiber.Ctx) error {
+	return ac.decideKYC(c, "rejected", "KYC rejected")
+}
+
+// decideKYC records an admin's decision on a customer's pending KYC submission, and who
+// made it. A customer with no submission waiting (never submitted, or already decided by
+// another admin) gets 409 KYC_NOT_AWAITING_REVIEW instead of being overwritten.
+func (ac *AdminStoreController) decideKYC(c fiber.Ctx, status, message string) error {
 	tenantID := middleware.GetTenantIntID(c)
 
 	var payload map[string]string
@@ -259,11 +245,15 @@ func (ac *AdminStoreController) RejectKYC(c fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user not found in tenant"})
 	}
 
-	if err := ac.UserService.UserRepo.UpdateUserKYCStatus(c.Context(), user, "rejected", nil); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to reject kyc"})
+	decided, err := ac.UserService.UserRepo.DecideKYC(c.Context(), user, status, middleware.GetAdminUUID(c))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to save kyc decision"})
+	}
+	if !decided {
+		return interfaces.ErrKYCNotAwaitingReview
 	}
 
-	return c.JSON(fiber.Map{"success": true, "message": "KYC rejected"})
+	return c.JSON(fiber.Map{"success": true, "message": message})
 }
 func (ac *AdminStoreController) Analytics(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)

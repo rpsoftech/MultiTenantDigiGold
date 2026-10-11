@@ -20,6 +20,7 @@ export const ROUTES = {
   adminLogin: '/admin/login',
   adminDashboard: '/admin/dashboard',
   adminCustomers: '/admin/customers',
+  adminKycReview: '/admin/kyc-review',
   adminLedger: '/admin/ledger',
   adminCounterSale: '/admin/counter-sale',
   adminProfile: '/admin/profile',

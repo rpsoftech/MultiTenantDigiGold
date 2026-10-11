@@ -187,6 +187,12 @@ components:
           description: City entered at registration; null for customers who registered earlier.
         kyc_status: { type: string, enum: [pending, verified, rejected] }
         document_json: { description: KYC document payload (JSON). }
+        kyc_submitted_at:
+          {
+            type: string,
+            format: date-time,
+            description: When the KYC was last submitted. Only in the pending KYC queue.,
+          }
         erp_unique_id: { type: string, nullable: true }
         total_vault_balance:
           { type: number, description: Gold balance in grams. }
@@ -1204,7 +1210,9 @@ paths:
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Customers with `kyc_status = pending`.
+          description: >-
+            Customers with a KYC submission waiting for review (pending with documents),
+            oldest submission first. Each row carries `kyc_submitted_at`.
           content:
             application/json:
               schema:
@@ -1221,6 +1229,10 @@ paths:
       operationId: postAdminStoreKycApprove
       tags: [Admin Store]
       summary: Approve customer KYC
+      description: >-
+        Decides a submission waiting for review and records which staff login decided and
+        when. A customer with no submission waiting (never submitted, or already decided by
+        another admin) gets 409 KYC_NOT_AWAITING_REVIEW; the earlier decision stands.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1247,12 +1259,21 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: KYC_NOT_AWAITING_REVIEW.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/store/kyc/reject:
     post:
       operationId: postAdminStoreKycReject
       tags: [Admin Store]
       summary: Reject customer KYC
+      description: >-
+        Decides a submission waiting for review and records which staff login decided and
+        when. A customer with no submission waiting (never submitted, or already decided by
+        another admin) gets 409 KYC_NOT_AWAITING_REVIEW; the earlier decision stands.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1279,6 +1300,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: KYC_NOT_AWAITING_REVIEW.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/store/redemptions/pending:
     get:

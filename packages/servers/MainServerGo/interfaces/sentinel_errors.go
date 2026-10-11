@@ -38,3 +38,8 @@ var (
 	ErrCounterQuoteExpired   = errors.New("counter sale quote expired or not found")
 	ErrCounterSaleInProgress = errors.New("this counter sale is already being recorded")
 )
+
+// KYC review errors
+var (
+	ErrKYCNotAwaitingReview = errors.New("customer has no KYC submission waiting for review")
+)

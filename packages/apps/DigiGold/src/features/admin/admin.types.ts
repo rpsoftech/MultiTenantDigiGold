@@ -41,6 +41,26 @@ export type StorePage<T> = {
   hasNextPage: boolean;
 };
 
+// Mirrors the submitted document_json: MainServer stores only pan_number and aadhaar_last4,
+// and anything else it may add later is surfaced as `other` rather than dropped.
+export type KycDocuments = {
+  panNumber?: string;
+  aadhaarLast4?: string;
+  other: { label: string; value: string }[];
+};
+
+export type PendingKycSubmission = {
+  userId: string;
+  name: string;
+  mobileNumber: string;
+  email?: string;
+  city?: string;
+  goldBalanceGrams: number;
+  documents: KycDocuments;
+  // When the customer submitted these details (ISO); the queue is oldest first.
+  submittedAt?: string;
+};
+
 export type UpdateKycStatusPayload = {
   userId: string;
   kycStatus: Extract<KycStatus, 'verified' | 'rejected'>;

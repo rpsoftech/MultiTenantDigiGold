@@ -6,7 +6,7 @@ import type {
 } from '@/features/admin/admin.types';
 import { RecentTransactionsTable } from './RecentTransactionsTable/RecentTransactionsTable';
 import { RecentUsersTable } from './RecentUsersTable/RecentUsersTable';
-import { UserApprovalsTable } from './UserApprovalsTable/UserApprovalsTable';
+import { CustomerDirectoryTable } from './CustomerDirectoryTable/CustomerDirectoryTable';
 
 const user: AdminUserSummary = {
   userId: 'U1',
@@ -40,13 +40,6 @@ jest.mock('@/features/admin/hooks/useAdminUsers', () => ({
 }));
 jest.mock('@/features/admin/hooks/useRecentTransactions', () => ({
   useRecentTransactions: () => ({ data: [transaction], isLoading: false }),
-}));
-jest.mock('@/features/admin/hooks/useUpdateKycStatus', () => ({
-  useUpdateKycStatus: () => ({
-    mutate: jest.fn(),
-    isPending: false,
-    variables: undefined,
-  }),
 }));
 
 afterEach(cleanup);
@@ -91,8 +84,8 @@ describe('admin tables (mobile stacked layout)', () => {
     ]);
   });
 
-  it('labels the User Approvals data cells and leaves the actions cell unlabelled', () => {
-    const { container } = render(<UserApprovalsTable />);
+  it('labels every Customer Directory cell', () => {
+    const { container } = render(<CustomerDirectoryTable />);
     expect(dataLabels(container)).toEqual([
       'Customer',
       'Contact',
@@ -100,7 +93,7 @@ describe('admin tables (mobile stacked layout)', () => {
       'KYC status',
       'Joined',
     ]);
-    expect(container.querySelectorAll('tbody td')).toHaveLength(6);
+    expect(container.querySelectorAll('tbody td')).toHaveLength(5);
   });
 
   it('wraps multi-part cells in a single element', () => {
@@ -108,7 +101,7 @@ describe('admin tables (mobile stacked layout)', () => {
       <>
         <RecentUsersTable />
         <RecentTransactionsTable />
-        <UserApprovalsTable />
+        <CustomerDirectoryTable />
       </>,
     );
     expect(cellsWithLooseParts(container)).toEqual([]);

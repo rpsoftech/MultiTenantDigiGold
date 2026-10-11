@@ -204,6 +204,91 @@ describe('adminService store integration', () => {
     expect(result.items[2].isReversed).toBe(false);
   });
 
+  it('maps the pending KYC queue from /admin/store/kyc/pending', async () => {
+    const get = jest.spyOn(apiClient, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        page: 1,
+        limit: 1,
+        data: [
+          {
+            user_uuid: 'customer-uuid',
+            full_name: '  ',
+            phone_number: '9123456789',
+            email_id: null,
+            city: ' Pune ',
+            total_vault_balance: 2.5,
+            document_json: { pan_number: 'ABCDE1234F', aadhaar_last4: '4821' },
+            kyc_submitted_at: '2026-10-01T09:30:00Z',
+          },
+        ],
+      },
+    });
+
+    const result = await adminService.getPendingKyc(1, 1);
+
+    expect(get).toHaveBeenCalledWith('/admin/store/kyc/pending', {
+      params: { page: 1, limit: 1 },
+    });
+    expect(result).toEqual({
+      items: [
+        {
+          userId: 'customer-uuid',
+          name: 'Unnamed customer',
+          mobileNumber: '9123456789',
+          email: undefined,
+          city: 'Pune',
+          goldBalanceGrams: 2.5,
+          documents: {
+            panNumber: 'ABCDE1234F',
+            aadhaarLast4: '4821',
+            other: [],
+          },
+          submittedAt: '2026-10-01T09:30:00Z',
+        },
+      ],
+      page: 1,
+      limit: 1,
+      hasNextPage: true,
+    });
+  });
+
+  it('treats a null pending KYC list as empty and normalises invalid paging', async () => {
+    const get = jest.spyOn(apiClient, 'get').mockResolvedValue({
+      data: { success: true, page: 1, limit: 20, data: null },
+    });
+
+    const result = await adminService.getPendingKyc(0, 500);
+
+    expect(get).toHaveBeenCalledWith('/admin/store/kyc/pending', {
+      params: { page: 1, limit: 20 },
+    });
+    expect(result.items).toEqual([]);
+    expect(result.hasNextPage).toBe(false);
+  });
+
+  it('refuses a sample decision on a customer with no submission waiting, like MainServer', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
+
+    // USR-101 is already verified; USR-103 was rejected.
+    for (const userId of ['USR-101', 'USR-103']) {
+      await expect(
+        adminService.updateKycStatus({ userId, kycStatus: 'verified' }),
+      ).rejects.toMatchObject({ status: 409, code: 'KYC_NOT_AWAITING_REVIEW' });
+    }
+  });
+
+  it('serves the pending queue from sample data without calling the API', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
+    const get = jest.spyOn(apiClient, 'get');
+
+    const result = await adminService.getPendingKyc();
+
+    expect(get).not.toHaveBeenCalled();
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0].documents.panNumber).toBeTruthy();
+  });
+
   it.each([
     { kycStatus: 'verified' as const, action: 'approve' },
     { kycStatus: 'rejected' as const, action: 'reject' },
