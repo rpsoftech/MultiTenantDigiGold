@@ -10,6 +10,7 @@ import { stubMatchMedia } from '@/components/vault/Redemptions/testUtils';
 import { CounterSalePanel } from './CounterSalePanel';
 
 const mockMutate = jest.fn();
+const mockQuote = jest.fn();
 const mockShowToast = jest.fn();
 const mockFetchNextPage = jest.fn();
 let mockLive: {
@@ -23,12 +24,20 @@ let mockLive: {
 };
 let mockPicker: Record<string, unknown>;
 let mockTradeState: { isPending: boolean };
+let mockQuoteState: { isPending: boolean };
 
 jest.mock('@/features/market/hooks/useLiveRate', () => ({
   useLiveRate: () => mockLive,
 }));
 jest.mock('@/features/admin/hooks/useCustomerPicker', () => ({
   useCustomerPicker: () => mockPicker,
+}));
+jest.mock('@/features/admin/hooks/useCounterQuote', () => ({
+  useCounterQuote: () => ({
+    ...mockQuoteState,
+    mutate: mockQuote,
+    reset: jest.fn(),
+  }),
 }));
 jest.mock('@/features/admin/hooks/useCounterTrade', () => ({
   useCounterTrade: () => ({
@@ -56,6 +65,26 @@ const rohan = {
   mobileNumber: '9988776655',
   kycStatus: 'pending',
 };
+const aarav = {
+  ...priya,
+  userId: 'customer-3',
+  name: 'Aarav Shah',
+  mobileNumber: '9000000003',
+  kycStatus: 'rejected',
+};
+
+// The store's own price, which differs from the feed's ₹7,500 estimate.
+const quote = {
+  quoteId: 'quote-1',
+  paymentMode: 'COUNTER_CASH',
+  weightGrams: 0.1026,
+  amountInr: 750,
+  ratePerGram: 7313,
+  mcxBaseRate: 7000,
+  marginPerGramInr: 100,
+  gstPerGramInr: 213,
+  expiresAt: Date.now() + 5 * 60 * 1000,
+};
 
 const receipt = {
   id: 'gl-1',
@@ -65,18 +94,41 @@ const receipt = {
   amountInr: 750,
   ratePerGram: 7500,
   mcxBaseRate: 7000,
-  marginInr: 100,
-  gstInr: 213,
+  marginPerGramInr: 100,
+  gstPerGramInr: 213,
   runningGoldBalanceGrams: 2.1,
   createdAt: '2026-10-05T10:00:00Z',
+  alreadyRecorded: false,
 };
+
+type Callbacks<T> = {
+  onSuccess: (result: T) => void;
+  onError: (error: unknown) => void;
+};
+
+function quoteFails(error: unknown) {
+  mockQuote.mockImplementation((_request, options: Callbacks<unknown>) =>
+    options.onError(error),
+  );
+}
+
+function confirmFails(error: unknown) {
+  mockMutate.mockImplementation((_quoteId, options: Callbacks<unknown>) =>
+    options.onError(error),
+  );
+}
 
 beforeEach(() => {
   stubMatchMedia();
   mockMutate.mockReset();
+  mockQuote.mockReset();
+  mockQuote.mockImplementation((_request, options: Callbacks<typeof quote>) =>
+    options.onSuccess({ ...quote, expiresAt: Date.now() + 5 * 60 * 1000 }),
+  );
   mockShowToast.mockReset();
   mockFetchNextPage.mockReset();
   mockTradeState = { isPending: false };
+  mockQuoteState = { isPending: false };
   mockLive = {
     data: {
       pricePerGramInr: 7500,
@@ -87,7 +139,7 @@ beforeEach(() => {
     status: 'open',
   };
   mockPicker = {
-    customers: [priya, rohan],
+    customers: [priya, rohan, aarav],
     isLoading: false,
     isError: false,
     isFetchingNextPage: false,
@@ -274,49 +326,70 @@ describe('CounterSalePanel', () => {
   it('warns, but does not block, a customer without approved KYC', () => {
     render(<CounterSalePanel />);
     pickCustomer('Rohan Verma');
-    expect(screen.getByText(/KYC is not approved/)).toBeTruthy();
+    expect(screen.getByText(/KYC is not approved yet/)).toBeTruthy();
     next();
     expect(screen.getByLabelText('Amount in rupees')).toBeTruthy();
   });
 
-  it('confirms an amount sale and sends only the amount at the reviewed rate', () => {
+  it('calls out a customer whose KYC was rejected', () => {
+    render(<CounterSalePanel />);
+    pickCustomer('Aarav Shah');
+    expect(screen.getByText(/KYC was rejected/)).toBeTruthy();
+    expect(screen.queryByText(/KYC is not approved yet/)).toBeNull();
+  });
+
+  it('moves on from the sale details before the first rate arrives', () => {
+    mockLive = { data: null, status: 'connecting' };
+    render(<CounterSalePanel />);
+    toPayment();
+    expect(screen.getByRole('button', { name: 'UPI' })).toBeTruthy();
+  });
+
+  it('prices an amount sale on the server and shows the store’s exact price', () => {
     render(<CounterSalePanel />);
     toPayment();
     fireEvent.click(screen.getByRole('button', { name: 'UPI' }));
     review();
 
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('0.1000 g')).toBeTruthy();
-    confirm();
-
-    expect(mockMutate.mock.calls[0][0]).toEqual({
+    expect(mockQuote.mock.calls[0][0]).toEqual({
       userId: 'customer-1',
-      ratePerGram: 7500,
       paymentMode: 'COUNTER_UPI',
       amountInr: 750,
     });
+    const dialog = screen.getByRole('dialog');
+    // The server's grams and rate, not the feed estimate (0.1000 g at ₹7,500).
+    expect(within(dialog).getByText('0.1026 g')).toBeTruthy();
+    expect(within(dialog).getByText(/7,313\.00/)).toBeTruthy();
+    expect(within(dialog).getByText(/Price held until/)).toBeTruthy();
   });
 
-  it('sends only the grams when entering by weight', () => {
+  it('prices only the grams when entering by weight', () => {
     render(<CounterSalePanel />);
     toDetails();
     fireEvent.click(screen.getByRole('button', { name: 'Weight (grams)' }));
     enter('2.5');
     next();
     review();
-    confirm();
 
-    expect(mockMutate.mock.calls[0][0]).toEqual({
+    expect(mockQuote.mock.calls[0][0]).toEqual({
       userId: 'customer-1',
-      ratePerGram: 7500,
       paymentMode: 'COUNTER_CASH',
       weightGrams: 2.5,
     });
   });
 
+  it('confirms the sale by its quote alone', () => {
+    render(<CounterSalePanel />);
+    toPayment();
+    review();
+    confirm();
+
+    expect(mockMutate.mock.calls[0][0]).toBe('quote-1');
+  });
+
   it('shows the receipt after a successful sale and starts a new one', () => {
     mockMutate.mockImplementation(
-      (_payload, options: { onSuccess: (r: typeof receipt) => void }) =>
+      (_quoteId, options: Callbacks<typeof receipt>) =>
         options.onSuccess(receipt),
     );
     render(<CounterSalePanel />);
@@ -327,61 +400,159 @@ describe('CounterSalePanel', () => {
     expect(screen.getByText('Counter sale receipt')).toBeTruthy();
     expect(screen.getByText('gl-1')).toBeTruthy();
     expect(screen.getByText('2.1000 g')).toBeTruthy();
+    expect(screen.queryByText(/already been recorded/)).toBeNull();
     expect(mockShowToast).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'New sale' }));
     expect(screen.getByText('Select a customer')).toBeTruthy();
   });
 
-  it('closes the dialog and explains when the server reports slippage', () => {
+  it('says so when the sale had already been recorded by an earlier attempt', () => {
     mockMutate.mockImplementation(
-      (_payload, options: { onError: (e: unknown) => void }) =>
-        options.onError({
-          status: 409,
-          code: 'SLIPPAGE_EXCEEDED',
-          message: 'moved',
-        }),
+      (_quoteId, options: Callbacks<typeof receipt>) =>
+        options.onSuccess({ ...receipt, alreadyRecorded: true }),
     );
     render(<CounterSalePanel />);
     toPayment();
     review();
     confirm();
 
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByRole('alert').textContent).toMatch(/live rate moved/);
+    expect(screen.getByText(/already been recorded/)).toBeTruthy();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Sale was already recorded' }),
+    );
   });
 
-  it('keeps the dialog open with the server message for other failures', () => {
-    mockMutate.mockImplementation(
-      (_payload, options: { onError: (e: unknown) => void }) =>
-        options.onError({
-          status: 409,
-          code: 'CREDIT_LIMIT_EXCEEDED',
-          message: 'This store cannot accept the trade right now.',
-        }),
+  it('lets the cashier confirm again after a lost reply, which is safe', () => {
+    confirmFails({ status: null, code: 'ECONNABORTED', message: 'timeout' });
+    render(<CounterSalePanel />);
+    toPayment();
+    review();
+    confirm();
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('alert').textContent).toMatch(
+      /may already be recorded.*never recorded twice/,
+    );
+    expect(
+      (
+        within(dialog).getByRole('button', {
+          name: 'Confirm sale',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+
+  it('asks for a new price when the held one has expired', () => {
+    confirmFails({
+      status: 409,
+      code: 'COUNTER_QUOTE_EXPIRED',
+      message: 'expired',
+    });
+    render(<CounterSalePanel />);
+    toPayment();
+    review();
+    confirm();
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/This price has expired/)).toBeTruthy();
+    expect(
+      (
+        within(dialog).getByRole('button', {
+          name: 'Confirm sale',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Get a new price' }),
+    );
+    expect(mockQuote).toHaveBeenCalledTimes(2);
+    expect(mockQuote.mock.calls[1][0]).toEqual(mockQuote.mock.calls[0][0]);
+    expect(screen.queryByText(/This price has expired/)).toBeNull();
+  });
+
+  it('marks the price expired once its time is up', () => {
+    mockQuote.mockImplementation((_request, options: Callbacks<typeof quote>) =>
+      options.onSuccess({ ...quote, expiresAt: Date.now() - 1 }),
     );
     render(<CounterSalePanel />);
     toPayment();
     review();
-    const dialog = screen.getByRole('dialog');
-    fireEvent.click(
-      within(dialog).getByRole('button', { name: 'Confirm sale' }),
-    );
+
+    expect(screen.getByText(/This price has expired/)).toBeTruthy();
+  });
+
+  it('sends the cashier to UPI when cash would reach the legal limit', () => {
+    quoteFails({
+      status: 400,
+      code: 'CASH_LIMIT_EXCEEDED',
+      message: 'Cash received from this customer today would reach ₹2,00,000.',
+    });
+    render(<CounterSalePanel />);
+    toPayment('250000');
+    review();
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toMatch(/₹2,00,000/);
+    expect(screen.getByRole('button', { name: 'UPI' })).toBeTruthy();
+  });
+
+  it('closes the dialog when the cash limit is reached at confirmation', () => {
+    confirmFails({
+      status: 400,
+      code: 'CASH_LIMIT_EXCEEDED',
+      message: 'Cash received from this customer today would reach ₹2,00,000.',
+    });
+    render(<CounterSalePanel />);
+    toPayment();
+    review();
+    confirm();
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toMatch(/₹2,00,000/);
+  });
+
+  it('explains a pricing failure without opening the dialog', () => {
+    quoteFails({
+      status: 409,
+      code: 'CREDIT_LIMIT_EXCEEDED',
+      message: 'This store cannot accept the trade right now.',
+    });
+    render(<CounterSalePanel />);
+    toPayment();
+    review();
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      screen.getByText('This store cannot accept the trade right now.'),
+    ).toBeTruthy();
+  });
+
+  it('keeps the dialog open with the server message for other failures', () => {
+    confirmFails({
+      status: 409,
+      code: 'COUNTER_SALE_IN_PROGRESS',
+      message: 'This sale is still being recorded.',
+    });
+    render(<CounterSalePanel />);
+    toPayment();
+    review();
+    confirm();
 
     expect(
-      within(dialog).getByText('This store cannot accept the trade right now.'),
+      within(screen.getByRole('dialog')).getByText(
+        'This sale is still being recorded.',
+      ),
     ).toBeTruthy();
   });
 
   it('returns to the customer step when the server says they no longer exist', () => {
-    mockMutate.mockImplementation(
-      (_payload, options: { onError: (e: unknown) => void }) =>
-        options.onError({
-          status: 404,
-          code: 'ERROR_ENTITY_NOT_FOUND',
-          message: 'nope',
-        }),
-    );
+    confirmFails({
+      status: 404,
+      code: 'ERROR_USER_NOT_FOUND',
+      message: 'nope',
+    });
     render(<CounterSalePanel />);
     toPayment();
     review();
@@ -396,7 +567,7 @@ describe('CounterSalePanel', () => {
     pickCustomer();
     expect(screen.getByText(/Vault 2\.0000 g/)).toBeTruthy();
     pickCustomer('Rohan Verma');
-    expect(screen.getByText(/KYC is not approved/)).toBeTruthy();
+    expect(screen.getByText(/KYC is not approved yet/)).toBeTruthy();
     expect(screen.queryByRole('list', { name: 'Customers' })).toBeNull();
   });
 

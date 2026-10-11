@@ -109,6 +109,30 @@ func ParseDBError(err error) *RequestError {
 			Name:       "INVALID_PAYLOAD",
 		}
 
+	case errors.Is(err, ErrCashLimitExceeded):
+		return &RequestError{
+			StatusCode: 400,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "Cash received from this customer today would reach ₹2,00,000, which the law does not allow. Take the rest by UPI.",
+			Name:       "CASH_LIMIT_EXCEEDED",
+		}
+
+	case errors.Is(err, ErrCounterQuoteExpired):
+		return &RequestError{
+			StatusCode: 409,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "This price has expired. Get a new price before confirming the sale.",
+			Name:       "COUNTER_QUOTE_EXPIRED",
+		}
+
+	case errors.Is(err, ErrCounterSaleInProgress):
+		return &RequestError{
+			StatusCode: 409,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "This sale is still being recorded. Wait a moment, then try again to see the result.",
+			Name:       "COUNTER_SALE_IN_PROGRESS",
+		}
+
 	case errors.Is(err, ErrLedgerEntryNotFound):
 		return &RequestError{
 			StatusCode: 404,

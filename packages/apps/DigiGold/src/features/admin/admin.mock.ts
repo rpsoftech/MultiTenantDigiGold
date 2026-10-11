@@ -1,7 +1,8 @@
 import { sizeCounterTrade } from './counterTrade.utils';
 import type {
   AdminLedgerEntry,
-  CounterTradePayload,
+  CounterQuote,
+  CounterQuoteRequest,
   CounterTradeReceipt,
   AdminStats,
   AdminUserSummary,
@@ -183,16 +184,75 @@ export async function mockReverseLedgerEntry(ledgerId: string): Promise<void> {
     };
   }
   entry.isReversed = true;
+  // The sample ledger has no customer ids, so the balance after the reversal is the one
+  // before the original entry.
+  MOCK_LEDGER.unshift({
+    id: `${entry.id}-R`,
+    eventType: 'SYSTEM_REVERSAL',
+    paymentMode: 'NONE',
+    weightGrams: -entry.weightGrams,
+    amountInr: -entry.amountInr,
+    runningGoldBalanceGrams: entry.runningGoldBalanceGrams - entry.weightGrams,
+    timestamp: new Date().toISOString(),
+    referenceId: `REVERSAL_${entry.id}`,
+    reversesLedgerId: entry.id,
+    isReversed: false,
+  });
 }
 
-export async function mockCreateCounterTrade(
-  payload: CounterTradePayload,
-): Promise<CounterTradeReceipt> {
-  const user = MOCK_USERS.find((candidate) => candidate.userId === payload.userId);
-  if (!user) throw new Error(`Unknown store customer: ${payload.userId}`);
-  const sized = sizeCounterTrade(payload.ratePerGram, {
-    weightGrams: payload.weightGrams,
-    amountInr: payload.amountInr,
+// Sample store pricing, as MainServer's demo seed: MCX ask ₹7,000/g, ₹100/g margin, 3% GST.
+const MOCK_MCX_RATE = 7000;
+const MOCK_MARGIN_PER_GRAM = 100;
+const MOCK_GST_PER_GRAM =
+  Math.round((MOCK_MCX_RATE + MOCK_MARGIN_PER_GRAM) * 3) / 100;
+const MOCK_RATE_PER_GRAM =
+  MOCK_MCX_RATE + MOCK_MARGIN_PER_GRAM + MOCK_GST_PER_GRAM;
+const MOCK_QUOTE_VALIDITY_MS = 5 * 60 * 1000;
+// Income Tax Act s.269ST, enforced by MainServer per customer per day.
+const MOCK_CASH_LIMIT_INR = 200000;
+
+const mockQuotes = new Map<string, CounterQuote & { userId: string }>();
+const mockConfirmed = new Map<string, CounterTradeReceipt>();
+const mockCashToday = new Map<string, number>();
+
+function todayKey(userId: string) {
+  const day = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  });
+  return `${day}:${userId}`;
+}
+
+function checkMockCash(
+  request: { userId: string; paymentMode: string },
+  amountInr: number,
+) {
+  const today = mockCashToday.get(todayKey(request.userId)) ?? 0;
+  if (
+    request.paymentMode === 'COUNTER_CASH' &&
+    today + amountInr >= MOCK_CASH_LIMIT_INR
+  ) {
+    throw {
+      message:
+        'Cash received from this customer today would reach ₹2,00,000, which the law does not allow. Take the rest by UPI.',
+      code: 'CASH_LIMIT_EXCEEDED',
+      status: 400,
+    };
+  }
+}
+
+export async function mockQuoteCounterTrade(
+  request: CounterQuoteRequest,
+): Promise<CounterQuote> {
+  if (!MOCK_USERS.some((candidate) => candidate.userId === request.userId)) {
+    throw {
+      message: 'The requested user could not be found.',
+      code: 'ERROR_USER_NOT_FOUND',
+      status: 404,
+    };
+  }
+  const sized = sizeCounterTrade(MOCK_RATE_PER_GRAM, {
+    weightGrams: request.weightGrams,
+    amountInr: request.amountInr,
   });
   if (!sized) {
     throw {
@@ -201,19 +261,68 @@ export async function mockCreateCounterTrade(
       status: 400,
     };
   }
-  user.goldBalanceGrams =
-    Math.round((user.goldBalanceGrams + sized.weightGrams) * 10000) / 10000;
-  return {
-    id: `GL-${Date.now()}`,
-    eventType: 'GOLD_PURCHASE',
-    paymentMode: payload.paymentMode,
+  checkMockCash(request, sized.amountInr);
+  const quote: CounterQuote = {
+    quoteId: `quote-${Date.now()}-${mockQuotes.size + 1}`,
+    paymentMode: request.paymentMode,
     weightGrams: sized.weightGrams,
     amountInr: sized.amountInr,
-    ratePerGram: payload.ratePerGram,
-    mcxBaseRate: Math.round(payload.ratePerGram / 1.0609),
-    marginInr: 100,
-    gstInr: Math.round(payload.ratePerGram - payload.ratePerGram / 1.03),
+    ratePerGram: MOCK_RATE_PER_GRAM,
+    mcxBaseRate: MOCK_MCX_RATE,
+    marginPerGramInr: MOCK_MARGIN_PER_GRAM,
+    gstPerGramInr: MOCK_GST_PER_GRAM,
+    expiresAt: Date.now() + MOCK_QUOTE_VALIDITY_MS,
+  };
+  mockQuotes.set(quote.quoteId, { ...quote, userId: request.userId });
+  return { ...quote };
+}
+
+// Like MainServer: a quote is recorded once; confirming it again returns that sale.
+export async function mockCreateCounterTrade(
+  quoteId: string,
+): Promise<CounterTradeReceipt> {
+  const recorded = mockConfirmed.get(quoteId);
+  if (recorded) return { ...recorded, alreadyRecorded: true };
+
+  const quote = mockQuotes.get(quoteId);
+  if (!quote || quote.expiresAt < Date.now()) {
+    throw {
+      message:
+        'This price has expired. Get a new price before confirming the sale.',
+      code: 'COUNTER_QUOTE_EXPIRED',
+      status: 409,
+    };
+  }
+  const user = MOCK_USERS.find(
+    (candidate) => candidate.userId === quote.userId,
+  );
+  if (!user) throw new Error(`Unknown store customer: ${quote.userId}`);
+  checkMockCash(
+    { userId: quote.userId, paymentMode: quote.paymentMode },
+    quote.amountInr,
+  );
+
+  user.goldBalanceGrams =
+    Math.round((user.goldBalanceGrams + quote.weightGrams) * 10000) / 10000;
+  if (quote.paymentMode === 'COUNTER_CASH') {
+    const key = todayKey(quote.userId);
+    mockCashToday.set(key, (mockCashToday.get(key) ?? 0) + quote.amountInr);
+  }
+  const receipt: CounterTradeReceipt = {
+    id: `GL-${Date.now()}`,
+    eventType: 'GOLD_PURCHASE',
+    paymentMode: quote.paymentMode,
+    weightGrams: quote.weightGrams,
+    amountInr: quote.amountInr,
+    ratePerGram: quote.ratePerGram,
+    mcxBaseRate: quote.mcxBaseRate,
+    marginPerGramInr: quote.marginPerGramInr,
+    gstPerGramInr: quote.gstPerGramInr,
     runningGoldBalanceGrams: user.goldBalanceGrams,
     createdAt: new Date().toISOString(),
+    alreadyRecorded: false,
   };
+  mockConfirmed.set(quoteId, receipt);
+  mockQuotes.delete(quoteId);
+  return { ...receipt };
 }

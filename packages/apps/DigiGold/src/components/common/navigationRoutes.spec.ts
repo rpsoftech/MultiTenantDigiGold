@@ -2,9 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import headerConfig from './Header/header.config.json';
 import footerConfig from './Footer/footer.config.json';
+import essentialsConfig from '../dashboard/DashboardEssentials/dashboard-essentials.config.json';
+import promoConfig from '../dashboard/PromoCarousel/promo-carousel.config.json';
+import trendingConfig from '../dashboard/TrendingJewelry/trending-jewelry.config.json';
 
-// Every link the header and footer show must lead to a page this app actually builds. Nav
-// entries for pages that don't exist yet stay in the configs with `"enabled": false`.
+// Every link the header, footer and home page sections show must lead to a page this app
+// actually builds. Entries for pages that don't exist yet stay in the configs with
+// `"enabled": false`.
 
 const APP_DIR = path.resolve(__dirname, '../../app');
 
@@ -77,6 +81,16 @@ describe('navigation links', () => {
         footerConfig.columns.map((column) => ({ ...column, url: '#' })),
       ),
     ],
+    ['dashboard card', enabledUrls(essentialsConfig.items)],
+    [
+      'promo slide',
+      promoConfig.slides
+        .filter((slide) => slide.enabled)
+        .flatMap((slide) =>
+          'linkUrl' in slide && slide.linkUrl ? [slide.linkUrl] : [],
+        ),
+    ],
+    ['trending "View All"', [trendingConfig.viewAllUrl]],
   ])('every enabled %s link leads to an existing page', (_, urls) => {
     const missing = urls
       .filter(isInternalPage)

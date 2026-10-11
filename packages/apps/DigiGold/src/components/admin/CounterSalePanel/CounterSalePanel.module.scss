@@ -179,7 +179,11 @@
 
 .payCardActive {
   border-color: var(--brand-primary);
-  background: color-mix(in srgb, var(--brand-primary) 10%, var(--color-surface));
+  background: color-mix(
+    in srgb,
+    var(--brand-primary) 10%,
+    var(--color-surface)
+  );
 
   .payRadio {
     border-color: var(--brand-primary);

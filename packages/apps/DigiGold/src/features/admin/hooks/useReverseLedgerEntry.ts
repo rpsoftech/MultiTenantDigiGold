@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminService } from '../admin.service';
 import { adminQueryKeys } from '../admin.queryKeys';
+import type { AdminLedgerEntry, StorePage } from '../admin.types';
 
 export function useReverseLedgerEntry() {
   const queryClient = useQueryClient();
@@ -9,6 +10,18 @@ export function useReverseLedgerEntry() {
   // Also refresh on failure: a 409 means our copy of the ledger is stale.
   return useMutation({
     mutationFn: adminService.reverseLedgerEntry,
+    onSuccess: (_result, ledgerId) => {
+      queryClient.setQueriesData<StorePage<AdminLedgerEntry>>(
+        { queryKey: adminQueryKeys.ledger },
+        (page) =>
+          page && {
+            ...page,
+            items: page.items.map((entry) =>
+              entry.id === ledgerId ? { ...entry, isReversed: true } : entry,
+            ),
+          },
+      );
+    },
     onSettled: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: adminQueryKeys.ledger }),

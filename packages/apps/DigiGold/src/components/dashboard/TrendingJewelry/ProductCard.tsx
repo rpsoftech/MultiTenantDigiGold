@@ -1,4 +1,4 @@
-import Image from 'next/image';
+import { ProductImage } from '@/components/jewellery/ProductImage/ProductImage';
 import Link from 'next/link';
 import { Card } from '@/components/common/Card/Card';
 import { Badge } from '@/components/common/Badge/Badge';
@@ -18,10 +18,9 @@ export function ProductCard({
   return (
     <Card className={styles.productCard}>
       <div className={styles.imageWrap}>
-        <Image
+        <ProductImage
           src={product.imageUrl}
           alt={product.imageAlt}
-          fill
           className={styles.image}
           sizes="(min-width: 768px) 33vw, 90vw"
         />

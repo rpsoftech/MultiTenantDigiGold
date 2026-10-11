@@ -28,7 +28,11 @@ function readableLabel(value: string) {
     .replace(/^\w/, (letter) => letter.toUpperCase());
 }
 
-function formatDate(timestamp: string) {
+export function ledgerEventLabel(eventType: string) {
+  return EVENT_LABELS[eventType] ?? readableLabel(eventType);
+}
+
+export function formatLedgerDate(timestamp: string) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString('en-IN', {
@@ -43,7 +47,8 @@ function formatDate(timestamp: string) {
 
 function reverseHint(entry: AdminLedgerEntry) {
   if (entry.isReversed) return 'This entry has already been reversed';
-  if (entry.eventType === 'SYSTEM_REVERSAL') return 'Reversals cannot be reversed';
+  if (entry.eventType === 'SYSTEM_REVERSAL')
+    return 'Reversals cannot be reversed';
   return undefined;
 }
 
@@ -86,8 +91,7 @@ export function StoreLedgerTable({
                 <td data-label="Transaction">
                   <div className={styles.transaction}>
                     <span className={styles.primary}>
-                      {EVENT_LABELS[entry.eventType] ??
-                        readableLabel(entry.eventType)}
+                      {ledgerEventLabel(entry.eventType)}
                     </span>
                     <span className={styles.reference}>{entry.id}</span>
                     {entry.referenceId && !entry.reversesLedgerId && (
@@ -149,7 +153,7 @@ export function StoreLedgerTable({
                 </td>
                 <td data-label="Date & time (IST)">
                   <time className={styles.date} dateTime={entry.timestamp}>
-                    {formatDate(entry.timestamp)}
+                    {formatLedgerDate(entry.timestamp)}
                   </time>
                 </td>
                 {onReverse && (

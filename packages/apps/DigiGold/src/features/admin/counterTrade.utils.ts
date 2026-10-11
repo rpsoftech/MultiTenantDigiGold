@@ -11,8 +11,9 @@ export type SizedCounterTrade = {
   amountInr: number;
 };
 
-// MainServer's slippageToleranceINR: a rate further than this from its live price is refused.
-export const COUNTER_RATE_TOLERANCE_INR = 30;
+// Income Tax Act s.269ST: MainServer refuses cash that would take a customer's cash paid
+// at the counter today to this amount or more.
+export const COUNTER_CASH_LIMIT_INR = 200000;
 
 export const COUNTER_MAX_GRAMS_DECIMALS = 4;
 export const COUNTER_MAX_INR_DECIMALS = 2;
