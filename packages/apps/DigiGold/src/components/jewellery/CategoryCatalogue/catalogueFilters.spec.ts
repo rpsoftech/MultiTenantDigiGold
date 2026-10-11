@@ -30,15 +30,22 @@ describe('catalogue filters', () => {
     ]);
 
     expect(
-      groups.find((group) => group.key === 'carat')?.options.map((option) => option.value),
+      groups
+        .find((group) => group.key === 'carat')
+        ?.options.map((option) => option.value),
     ).toEqual(['9KT Gold', '18KT Gold', '22KT Gold']);
   });
 
   it('ignores a selection no option knows, e.g. from an old link', () => {
-    const products = [product({ id: 'a', carat: '22KT Gold' }), product({ id: 'b', carat: '18KT Gold' })];
+    const products = [
+      product({ id: 'a', carat: '22KT Gold' }),
+      product({ id: 'b', carat: '18KT Gold' }),
+    ];
     const groups = buildFilterGroups(products);
 
-    expect(applyFilters(products, groups, { carat: ['14KT Gold'] })).toHaveLength(2);
+    expect(
+      applyFilters(products, groups, { carat: ['14KT Gold'] }),
+    ).toHaveLength(2);
   });
 
   it('keeps the catalogue order for Featured and ties', () => {
@@ -48,9 +55,21 @@ describe('catalogue filters', () => {
       product({ id: 'z', price: 1, isNew: false }),
     ];
 
-    expect(sortProducts(products, 'featured').map((p) => p.id)).toEqual(['x', 'y', 'z']);
-    expect(sortProducts(products, 'price-low').map((p) => p.id)).toEqual(['z', 'x', 'y']);
-    expect(sortProducts(products, 'newest').map((p) => p.id)).toEqual(['y', 'x', 'z']);
+    expect(sortProducts(products, 'featured').map((p) => p.id)).toEqual([
+      'x',
+      'y',
+      'z',
+    ]);
+    expect(sortProducts(products, 'price-low').map((p) => p.id)).toEqual([
+      'z',
+      'x',
+      'y',
+    ]);
+    expect(sortProducts(products, 'newest').map((p) => p.id)).toEqual([
+      'y',
+      'x',
+      'z',
+    ]);
   });
 
   it('lists purities without "Gold", lightest first', () => {
@@ -64,7 +83,10 @@ describe('catalogue filters', () => {
   });
 
   it('round-trips filters and sort through the query string', () => {
-    const params = paramsFromState({ carat: ['18KT Gold', '22KT Gold'], price: ['0-100000'] }, 'price-high');
+    const params = paramsFromState(
+      { carat: ['18KT Gold', '22KT Gold'], price: ['0-100000'] },
+      'price-high',
+    );
 
     expect(params.toString()).toBe(
       'price=0-100000&carat=18KT+Gold&carat=22KT+Gold&sort=price-high',

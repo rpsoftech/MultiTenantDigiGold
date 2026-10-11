@@ -237,12 +237,41 @@ describe('adminService store integration', () => {
   });
 
   it('propagates a reversal conflict so the caller can handle it', async () => {
-    const error = { status: 409, code: 'ERROR_LEDGER_REVERSAL', message: 'ledger entry is already reversed' };
+    const error = {
+      status: 409,
+      code: 'ERROR_LEDGER_REVERSAL',
+      message: 'ledger entry is already reversed',
+    };
     jest.spyOn(apiClient, 'post').mockRejectedValue(error);
 
     await expect(adminService.reverseLedgerEntry('ledger-uuid')).rejects.toBe(
       error,
     );
+  });
+
+  // Sample mode should look like MainServer: an offsetting reversal row, the original marked.
+  it('posts a sample reversal row and refuses a second reversal', async () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
+    const post = jest.spyOn(apiClient, 'post');
+
+    await adminService.reverseLedgerEntry('GL-9931');
+    const { items } = await adminService.getStoreLedger(1, 20);
+
+    expect(items[0]).toMatchObject({
+      eventType: 'SYSTEM_REVERSAL',
+      weightGrams: -1.2,
+      amountInr: -8672.47,
+      reversesLedgerId: 'GL-9931',
+      referenceId: 'REVERSAL_GL-9931',
+      isReversed: false,
+    });
+    expect(items.find((entry) => entry.id === 'GL-9931')?.isReversed).toBe(
+      true,
+    );
+    await expect(
+      adminService.reverseLedgerEntry('GL-9931'),
+    ).rejects.toMatchObject({ status: 409, code: 'ERROR_LEDGER_REVERSAL' });
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('propagates API errors instead of replacing a failed request with an empty page', async () => {

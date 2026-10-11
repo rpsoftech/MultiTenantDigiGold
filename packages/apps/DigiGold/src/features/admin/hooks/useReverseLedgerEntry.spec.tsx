@@ -14,7 +14,17 @@ function setup() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const page = { items: [], page: 1, limit: 20, hasNextPage: false };
+  const entry = {
+    id: 'ledger-uuid',
+    eventType: 'GOLD_PURCHASE',
+    paymentMode: 'COUNTER_CASH',
+    weightGrams: 1,
+    amountInr: 7000,
+    runningGoldBalanceGrams: 1,
+    timestamp: '2026-01-02T00:00:00.000Z',
+    isReversed: false,
+  };
+  const page = { items: [entry], page: 1, limit: 20, hasNextPage: false };
   const keys = {
     ledger: adminQueryKeys.ledgerPage(1, 20),
     customers: adminQueryKeys.customerPage(1, 20),
@@ -43,6 +53,43 @@ describe('useReverseLedgerEntry', () => {
     expect(client.getQueryState(keys.ledger)?.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.customers)?.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.analytics)?.isInvalidated).toBe(true);
+    hook.unmount();
+    client.clear();
+  });
+
+  // Until the refetch lands, the row must not offer Reverse again.
+  it('marks the entry reversed in the cached ledger straight away', async () => {
+    jest.spyOn(adminService, 'reverseLedgerEntry').mockResolvedValue(undefined);
+    const { client, keys, hook } = setup();
+
+    await act(async () => {
+      await hook.result.current.mutateAsync('ledger-uuid');
+    });
+
+    const cached = client.getQueryData<{ items: { isReversed: boolean }[] }>(
+      keys.ledger,
+    );
+    expect(cached?.items[0].isReversed).toBe(true);
+    hook.unmount();
+    client.clear();
+  });
+
+  it('leaves the cached ledger alone when the reversal fails', async () => {
+    jest
+      .spyOn(adminService, 'reverseLedgerEntry')
+      .mockRejectedValue({ status: 500, code: 'ERR', message: 'x' });
+    const { client, keys, hook } = setup();
+
+    await act(async () => {
+      await hook.result.current
+        .mutateAsync('ledger-uuid')
+        .catch(() => undefined);
+    });
+
+    const cached = client.getQueryData<{ items: { isReversed: boolean }[] }>(
+      keys.ledger,
+    );
+    expect(cached?.items[0].isReversed).toBe(false);
     hook.unmount();
     client.clear();
   });
