@@ -4,7 +4,9 @@ import type {
   AdminLedgerEntry,
   AdminStats,
   AdminUserSummary,
-  CounterTradePayload,
+  CounterPaymentMode,
+  CounterQuote,
+  CounterQuoteRequest,
   CounterTradeReceipt,
   KycDocuments,
   KycStatus,
@@ -18,6 +20,7 @@ import {
   mockGetAdminStats,
   mockGetAdminUsers,
   mockCreateCounterTrade,
+  mockQuoteCounterTrade,
   mockCancelRedemption,
   mockCollectRedemption,
   mockGetPendingKyc,
@@ -53,6 +56,7 @@ type PendingKycResponse = {
   city: string | null;
   total_vault_balance: number;
   document_json: Record<string, unknown> | null;
+  kyc_submitted_at?: string | null;
 };
 
 type PendingRedemptionResponse = {
@@ -77,7 +81,24 @@ type StoreLedgerResponse = {
   created_at: string;
 };
 
+type CounterQuoteResponse = {
+  quote: {
+    quote_id: string;
+    payment_mode: CounterPaymentMode;
+    weight_grams: number;
+    total_amount_inr: number;
+    final_rate_per_gram: number;
+    mcx_base_rate: number;
+    // Per gram, like the ledger's margin and GST.
+    tenant_margin_applied: number;
+    gst_applied: number;
+    // Unix seconds.
+    expires_at: number;
+  };
+};
+
 type CounterTradeResponse = {
+  already_recorded?: boolean;
   trade: {
     gl_uuid: string;
     event_type: string;
@@ -174,6 +195,7 @@ function mapPendingKyc(entry: PendingKycResponse): PendingKycSubmission {
     city: entry.city?.trim() || undefined,
     goldBalanceGrams: entry.total_vault_balance,
     documents: mapKycDocuments(entry.document_json),
+    submittedAt: entry.kyc_submitted_at || undefined,
   };
 }
 
@@ -248,10 +270,12 @@ export const adminService = {
     limit = 20,
   ): Promise<StorePage<PendingKycSubmission>> => {
     const params = normalizePagination(page, limit);
-    if (isAdminDataSample()) return mockGetPendingKyc(params.page, params.limit);
-    const response = await apiClient.get<
-      StorePageResponse<PendingKycResponse>
-    >('/admin/store/kyc/pending', { params });
+    if (isAdminDataSample())
+      return mockGetPendingKyc(params.page, params.limit);
+    const response = await apiClient.get<StorePageResponse<PendingKycResponse>>(
+      '/admin/store/kyc/pending',
+      { params },
+    );
     return mapPage(response.data, mapPendingKyc);
   },
 
@@ -319,20 +343,43 @@ export const adminService = {
     });
   },
 
-  createCounterTrade: async (
-    payload: CounterTradePayload,
-  ): Promise<CounterTradeReceipt> => {
-    if (isAdminDataSample()) return mockCreateCounterTrade(payload);
+  // Prices a counter sale at the store's own rate. MainServer holds the price for a few
+  // minutes and refuses cash that would reach the legal daily limit for the customer.
+  quoteCounterTrade: async (
+    request: CounterQuoteRequest,
+  ): Promise<CounterQuote> => {
+    if (isAdminDataSample()) return mockQuoteCounterTrade(request);
+    const response = await apiClient.post<CounterQuoteResponse>(
+      '/admin/store/trade/counter/quote',
+      {
+        user_uuid: request.userId,
+        payment_mode: request.paymentMode,
+        ...(request.weightGrams !== undefined
+          ? { weight_grams: request.weightGrams }
+          : { total_amount_inr: request.amountInr }),
+      },
+    );
+    const quote = response.data.quote;
+    return {
+      quoteId: quote.quote_id,
+      paymentMode: quote.payment_mode,
+      weightGrams: quote.weight_grams,
+      amountInr: quote.total_amount_inr,
+      ratePerGram: quote.final_rate_per_gram,
+      mcxBaseRate: quote.mcx_base_rate,
+      marginPerGramInr: quote.tenant_margin_applied,
+      gstPerGramInr: quote.gst_applied,
+      expiresAt: quote.expires_at * 1000,
+    };
+  },
+
+  // Records the quoted sale. Safe to repeat: confirming the same quote again returns the
+  // sale already recorded (alreadyRecorded) instead of selling twice.
+  createCounterTrade: async (quoteId: string): Promise<CounterTradeReceipt> => {
+    if (isAdminDataSample()) return mockCreateCounterTrade(quoteId);
     const response = await apiClient.post<CounterTradeResponse>(
       '/admin/store/trade/counter',
-      {
-        user_uuid: payload.userId,
-        requested_rate_per_gram: payload.ratePerGram,
-        payment_mode: payload.paymentMode,
-        ...(payload.weightGrams !== undefined
-          ? { weight_grams: payload.weightGrams }
-          : { total_amount_inr: payload.amountInr }),
-      },
+      { quote_id: quoteId },
     );
     const trade = response.data.trade;
     return {
@@ -343,10 +390,11 @@ export const adminService = {
       amountInr: trade.total_amount_inr,
       ratePerGram: trade.final_rate_per_gram,
       mcxBaseRate: trade.mcx_base_rate,
-      marginInr: trade.tenant_margin_applied,
-      gstInr: trade.gst_applied,
+      marginPerGramInr: trade.tenant_margin_applied,
+      gstPerGramInr: trade.gst_applied,
       runningGoldBalanceGrams: trade.running_gold_balance_grams,
       createdAt: trade.created_at,
+      alreadyRecorded: response.data.already_recorded === true,
     };
   },
 

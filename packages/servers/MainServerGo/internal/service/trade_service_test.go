@@ -131,6 +131,28 @@ func TestTradeQuoteExpired(t *testing.T) {
 	}
 }
 
+func TestCheckCounterCash(t *testing.T) {
+	cases := []struct {
+		name        string
+		paymentMode string
+		cashToday   float64
+		amount      float64
+		wantRefused bool
+	}{
+		{"small cash sale", "COUNTER_CASH", 0, 50000, false},
+		{"just under the limit", "COUNTER_CASH", 0, 199999.99, false},
+		{"exactly the limit", "COUNTER_CASH", 0, 200000, true},
+		{"today's cash pushes it over", "COUNTER_CASH", 150000, 60000, true},
+		{"UPI is not cash", "COUNTER_UPI", 190000, 60000, false},
+	}
+	for _, tc := range cases {
+		err := checkCounterCash(tc.paymentMode, tc.cashToday, tc.amount)
+		if refused := errors.Is(err, interfaces.ErrCashLimitExceeded); refused != tc.wantRefused {
+			t.Errorf("%s: refused = %v, want %v", tc.name, refused, tc.wantRefused)
+		}
+	}
+}
+
 func TestIsPermanentTradeError(t *testing.T) {
 	if !isPermanentTradeError(errors.Join(interfaces.ErrCreditLimitExceeded, errors.New("detail"))) {
 		t.Error("credit limit errors must be permanent")

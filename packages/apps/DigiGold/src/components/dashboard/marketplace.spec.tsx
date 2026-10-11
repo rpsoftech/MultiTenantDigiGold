@@ -11,6 +11,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { marketplaceService } from '@/features/marketplace/marketplace.service';
 import { CategoryCarousel } from './CategoryCarousel/CategoryCarousel';
 import { TrendingJewelry } from './TrendingJewelry/TrendingJewelry';
+import { Provider } from 'react-redux';
+import { makeStore } from '@/store';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+
+// The sections read the tenant config (jewellery must be on for them to render).
+const withStore = (ui: React.ReactNode) => (
+  <Provider store={makeStore({ tenant: { config: DEFAULT_TENANT_CONFIG } })}>
+    {ui}
+  </Provider>
+);
 
 let queryClient: QueryClient;
 
@@ -51,8 +61,8 @@ describe.each([
   {
     name: 'trending jewelry',
     Component: TrendingJewelry,
-    retryLabel: 'Retry loading trending jewelry',
-    emptyText: 'No trending jewelry available right now.',
+    retryLabel: 'Retry loading trending jewellery',
+    emptyText: 'No trending jewellery available right now.',
     itemText: 'Classic gold ring',
     mockRequest: (empty = false) =>
       jest.spyOn(marketplaceService, 'getTrendingProducts').mockResolvedValue(
@@ -88,9 +98,11 @@ describe.each([
       status: null,
     });
     render(
-      <QueryClientProvider client={queryClient}>
-        <Component />
-      </QueryClientProvider>,
+      withStore(
+        <QueryClientProvider client={queryClient}>
+          <Component />
+        </QueryClientProvider>,
+      ),
     );
 
     const alert = await screen.findByRole('alert');
@@ -110,9 +122,11 @@ describe.each([
   it('shows the empty state for a successful response with no items', async () => {
     mockRequest(true);
     render(
-      <QueryClientProvider client={queryClient}>
-        <Component />
-      </QueryClientProvider>,
+      withStore(
+        <QueryClientProvider client={queryClient}>
+          <Component />
+        </QueryClientProvider>,
+      ),
     );
 
     expect(await screen.findByText(emptyText)).toBeTruthy();

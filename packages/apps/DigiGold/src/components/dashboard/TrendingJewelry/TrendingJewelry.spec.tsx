@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useTrendingProducts } from '@/features/marketplace/hooks/useTrendingProducts';
 import type { Product } from '@/features/marketplace/marketplace.types';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+import type { TenantConfig } from '@/features/tenant/tenant.types';
 import { TrendingJewelry } from './TrendingJewelry';
 import { ProductCard } from './ProductCard';
 
@@ -10,11 +12,21 @@ jest.mock('next/image', () => ({
     <img src={src} alt={alt} />
   ),
 }));
+// The section is jewellery content, shown only while the catalogue is on (tenant module
+// and build switch, both surfaced through the tenant config).
+let mockTenantConfig: TenantConfig | null = DEFAULT_TENANT_CONFIG;
+jest.mock('@/features/tenant/hooks/useTenantConfig', () => ({
+  useTenantConfig: () => mockTenantConfig,
+}));
+const jewelleryOff: TenantConfig = {
+  ...DEFAULT_TENANT_CONFIG,
+  activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, ecommerce: false },
+};
 jest.mock('@/features/marketplace/hooks/useTrendingProducts', () => ({
   useTrendingProducts: jest.fn(),
 }));
 jest.mock('./trending-jewelry.config.json', () => ({
-  title: 'Trending Jewelry',
+  title: 'Trending Jewellery',
   subtitle: 'Fresh from our collection',
   viewAllLabel: 'View all',
   viewAllUrl: '/marketplace/jewelry',
@@ -98,7 +110,7 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(
-      screen.getByRole('heading', { name: 'Trending Jewelry' }),
+      screen.getByRole('heading', { name: 'Trending Jewellery' }),
     ).toBeTruthy();
     expect(screen.getByText('Fresh from our collection')).toBeTruthy();
     expect(
@@ -113,7 +125,7 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(
-      screen.getByRole('status', { name: 'Loading trending jewelry' }),
+      screen.getByRole('status', { name: 'Loading trending jewellery' }),
     ).toBeTruthy();
   });
 
@@ -124,7 +136,7 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(
-      screen.getByText('No trending jewelry available right now.'),
+      screen.getByText('No trending jewellery available right now.'),
     ).toBeTruthy();
   });
 
@@ -135,14 +147,14 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(screen.getByRole('alert').textContent).toContain(
-      "We couldn't load trending jewelry.",
+      "We couldn't load trending jewellery.",
     );
     expect(
-      screen.queryByText('No trending jewelry available right now.'),
+      screen.queryByText('No trending jewellery available right now.'),
     ).toBeNull();
     expect(screen.queryByText('Heritage Necklace')).toBeNull();
     fireEvent.click(
-      screen.getByRole('button', { name: 'Retry loading trending jewelry' }),
+      screen.getByRole('button', { name: 'Retry loading trending jewellery' }),
     );
     expect(refetch).toHaveBeenCalledTimes(1);
   });
@@ -152,6 +164,21 @@ describe('TrendingJewelry', () => {
 
     expect(screen.getByText('Heritage Necklace')).toBeTruthy();
     expect(screen.getByText('Classic Ring')).toBeTruthy();
+  });
+});
+
+describe('TrendingJewelry with the jewellery catalogue off', () => {
+  afterEach(() => {
+    mockTenantConfig = DEFAULT_TENANT_CONFIG;
+  });
+
+  it('renders nothing and never asks for trending products', () => {
+    mockTenantConfig = jewelleryOff;
+    mockedUseProducts.mockClear();
+    const { container } = render(<TrendingJewelry />);
+
+    expect(container.innerHTML).toBe('');
+    expect(mockedUseProducts).not.toHaveBeenCalled();
   });
 });
 

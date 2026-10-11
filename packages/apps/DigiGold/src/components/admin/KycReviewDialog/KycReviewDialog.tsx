@@ -67,6 +67,10 @@ export function KycReviewDialog({
   }
 
   const confirmCopy = confirming ? CONFIRM_COPY[confirming] : null;
+  // New submissions always carry both (MainServer validates them); older free-form ones may
+  // not, and approving an identity without them would be a guess. Rejecting stays possible.
+  const missingDocuments =
+    !submission?.documents.panNumber || !submission?.documents.aadhaarLast4;
 
   return (
     <Modal
@@ -111,7 +115,15 @@ export function KycReviewDialog({
             ))}
           </dl>
 
-          {confirmCopy && <p className={styles.confirmText}>{confirmCopy.text}</p>}
+          {!confirming && missingDocuments && (
+            <p className={styles.error} role="note">
+              The PAN or Aadhaar digits are missing, so this submission can’t be
+              approved. Reject it so the customer submits their details again.
+            </p>
+          )}
+          {confirmCopy && (
+            <p className={styles.confirmText}>{confirmCopy.text}</p>
+          )}
           {error && (
             <p className={styles.error} role="alert">
               {error}
@@ -147,7 +159,10 @@ export function KycReviewDialog({
                 >
                   Reject
                 </Button>
-                <Button onClick={() => setConfirming('verified')}>
+                <Button
+                  disabled={missingDocuments}
+                  onClick={() => setConfirming('verified')}
+                >
                   Approve
                 </Button>
               </>

@@ -10,12 +10,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-const payload = {
-  userId: 'customer-uuid',
-  ratePerGram: 7500,
-  amountInr: 1000,
-  paymentMode: 'COUNTER_CASH' as const,
-};
+const quoteId = 'quote-uuid';
 
 function setup() {
   const client = new QueryClient({
@@ -43,10 +38,10 @@ describe('useCounterTrade', () => {
     const { client, keys, hook } = setup();
 
     await act(async () => {
-      await hook.result.current.mutateAsync(payload);
+      await hook.result.current.mutateAsync(quoteId);
     });
 
-    expect(create.mock.calls[0][0]).toEqual(payload);
+    expect(create.mock.calls[0][0]).toBe(quoteId);
     expect(client.getQueryState(keys.ledger)?.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.customers)?.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.analytics)?.isInvalidated).toBe(true);
@@ -55,13 +50,15 @@ describe('useCounterTrade', () => {
   });
 
   it('still refreshes when the server rejects the sale', async () => {
-    jest
-      .spyOn(adminService, 'createCounterTrade')
-      .mockRejectedValue({ status: 409, code: 'SLIPPAGE_EXCEEDED', message: 'x' });
+    jest.spyOn(adminService, 'createCounterTrade').mockRejectedValue({
+      status: 409,
+      code: 'SLIPPAGE_EXCEEDED',
+      message: 'x',
+    });
     const { client, keys, hook } = setup();
 
     await act(async () => {
-      await hook.result.current.mutateAsync(payload).catch(() => undefined);
+      await hook.result.current.mutateAsync(quoteId).catch(() => undefined);
     });
 
     expect(client.getQueryState(keys.ledger)?.isInvalidated).toBe(true);

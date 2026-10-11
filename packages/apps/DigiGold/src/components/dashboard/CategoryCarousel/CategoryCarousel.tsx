@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
 } from '@/components/common/icons/Icons';
 import { useCategories } from '@/features/marketplace/hooks/useCategories';
+import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useCategoryCarouselConfig } from './useCategoryCarouselConfig';
 import { CategoryCard } from './CategoryCard';
 import styles from './CategoryCarousel.module.scss';
@@ -18,7 +19,15 @@ const SCROLL_STEP = 240;
 const AUTOPLAY_INTERVAL_MS = 3000;
 const SCROLL_END_THRESHOLD = 4;
 
+// Jewellery categories: hidden (and not fetched) when the jewellery catalogue is off for this
+// tenant or this build (NEXT_PUBLIC_ENABLE_JEWELLERY=false in production).
 export function CategoryCarousel() {
+  const tenantConfig = useTenantConfig();
+  if (!(tenantConfig?.activeModules.ecommerce ?? true)) return null;
+  return <CategoryCarouselSection />;
+}
+
+function CategoryCarouselSection() {
   const config = useCategoryCarouselConfig();
   const {
     data: categories,

@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/constants"
@@ -130,23 +133,31 @@ func (s *TradeService) liveRate(ctx context.Context) (*rateSnapshot, error) {
 // PriceTrade prices a buy at the live rate, rejects it if the price moved more
 // than slippageToleranceINR from the requested rate, and sizes it.
 func (s *TradeService) PriceTrade(ctx context.Context, req interfaces.TradeExecutionRequest) (*TradeQuote, error) {
+	quote, err := s.priceAtLiveRate(ctx, req.TenantID, req.WeightGrams, req.TotalAmountINR)
+	if err != nil {
+		return nil, err
+	}
+	if math.Abs(quote.FinalRatePerGram-req.RequestedRatePerGram) > slippageToleranceINR {
+		log.Printf("[TradeService] Slippage for userID=%d, tenantID=%d: requested %f, live %f",
+			req.UserID, req.TenantID, req.RequestedRatePerGram, quote.FinalRatePerGram)
+		return nil, fmt.Errorf("%w: expected %f, live %f", interfaces.ErrSlippageExceeded, req.RequestedRatePerGram, quote.FinalRatePerGram)
+	}
+	return quote, nil
+}
+
+// priceAtLiveRate prices and sizes a buy at the live rate with the tenant's margin and GST.
+func (s *TradeService) priceAtLiveRate(ctx context.Context, tenantID int64, weightGrams, totalAmountINR float64) (*TradeQuote, error) {
 	rate, err := s.liveRate(ctx)
 	if err != nil {
 		return nil, err
 	}
-	margin, err := s.MarginRepo.GetMarginByTenant(ctx, req.TenantID, "GOLD")
+	margin, err := s.MarginRepo.GetMarginByTenant(ctx, tenantID, "GOLD")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get margin config: %w", err)
 	}
 
 	finalRate, marginApplied, gstApplied := buyPrice(rate.Ask, margin)
-	if math.Abs(finalRate-req.RequestedRatePerGram) > slippageToleranceINR {
-		log.Printf("[TradeService] Slippage for userID=%d, tenantID=%d: requested %f, live %f",
-			req.UserID, req.TenantID, req.RequestedRatePerGram, finalRate)
-		return nil, fmt.Errorf("%w: expected %f, live %f", interfaces.ErrSlippageExceeded, req.RequestedRatePerGram, finalRate)
-	}
-
-	weight, total, err := sizeTrade(req.WeightGrams, req.TotalAmountINR, finalRate)
+	weight, total, err := sizeTrade(weightGrams, totalAmountINR, finalRate)
 	if err != nil {
 		return nil, err
 	}
@@ -175,18 +186,15 @@ func (s *TradeService) QuoteBuy(ctx context.Context, req interfaces.TradeExecuti
 	return quote, nil
 }
 
-// ExecuteTrade prices a buy against the live rate and records it.
-func (s *TradeService) ExecuteTrade(ctx context.Context, req interfaces.TradeExecutionRequest, ipAddress, adminID string) (*models.GoldTransactionLedger, error) {
-	quote, err := s.PriceTrade(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return s.ExecuteQuotedTrade(ctx, req, quote, ipAddress, adminID)
-}
-
 // ExecuteQuotedTrade records a buy at an already computed quote. The caller
 // must check that the quote is still valid.
 func (s *TradeService) ExecuteQuotedTrade(ctx context.Context, req interfaces.TradeExecutionRequest, quote *TradeQuote, ipAddress, adminID string) (*models.GoldTransactionLedger, error) {
+	return s.executeQuotedTrade(ctx, req, quote, ipAddress, adminID, nil)
+}
+
+// executeQuotedTrade records a buy at quote. check, when set, runs inside the transaction
+// after the customer's vault row is locked, so it sees no concurrent trade for them.
+func (s *TradeService) executeQuotedTrade(ctx context.Context, req interfaces.TradeExecutionRequest, quote *TradeQuote, ipAddress, adminID string, check func(tx *sql.Tx) error) (*models.GoldTransactionLedger, error) {
 	log.Printf("[TradeService] Buy: tenantID=%d, userID=%d, rate=%f, weight=%f, amount=%f, ip=%s",
 		req.TenantID, req.UserID, quote.FinalRatePerGram, quote.WeightGrams, quote.TotalAmountINR, ipAddress)
 
@@ -195,6 +203,15 @@ func (s *TradeService) ExecuteQuotedTrade(ctx context.Context, req interfaces.Tr
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
+
+	if check != nil {
+		if err := s.LedgerRepo.LockUserVaultWithTX(ctx, tx, req.TenantID, req.UserID); err != nil {
+			return nil, err
+		}
+		if err := check(tx); err != nil {
+			return nil, err
+		}
+	}
 
 	entry := &models.GoldTransactionLedger{
 		TenantID:            req.TenantID,
@@ -223,6 +240,144 @@ func (s *TradeService) ExecuteQuotedTrade(ctx context.Context, req interfaces.Tr
 
 	log.Printf("[TradeService] Buy successful: tenantID=%d, userID=%d, ledgerUUID=%s", req.TenantID, req.UserID, result.UUID)
 	return result, nil
+}
+
+// A counter sale is priced first and recorded second. The cashier sees the server's exact
+// price, takes the payment, then confirms that quote; confirming it again (say, after a
+// lost reply) returns the sale already recorded instead of recording a second one.
+const (
+	// counterQuoteValidity is how long a cashier has to take the payment and confirm.
+	counterQuoteValidity = 5 * time.Minute
+
+	// counterCashLimitINR: Income Tax Act s.269ST bars receiving 2,00,000 INR or more
+	// in cash from one person in a day.
+	counterCashLimitINR = 200000.0
+
+	// counterConfirmLockTTL bounds how long a crashed confirmation can block a retry.
+	counterConfirmLockTTL = 30 * time.Second
+)
+
+// counterQuoteRecord is what QuoteCounterSale stores and ConfirmCounterSale records.
+type counterQuoteRecord struct {
+	TenantID    int64      `json:"tenant_id"`
+	UserID      int64      `json:"user_id"`
+	PaymentMode string     `json:"payment_mode"`
+	Quote       TradeQuote `json:"quote"`
+}
+
+func counterQuoteKey(tenantID int64, quoteID string) string {
+	return fmt.Sprintf("digiGold:counter_quote:%d:%s", tenantID, quoteID)
+}
+
+// checkCounterCash refuses a cash sale that would take the customer's cash paid at the
+// counter today to counterCashLimitINR or more.
+func checkCounterCash(paymentMode string, cashTodayINR, totalAmountINR float64) error {
+	if paymentMode == "COUNTER_CASH" && cashTodayINR+totalAmountINR >= counterCashLimitINR {
+		return interfaces.ErrCashLimitExceeded
+	}
+	return nil
+}
+
+// QuoteCounterSale prices a counter sale at the live rate with the store's margin and
+// holds the quote for counterQuoteValidity. It returns the quote's ID.
+func (s *TradeService) QuoteCounterSale(ctx context.Context, tenantID, userID int64, paymentMode string, weightGrams, totalAmountINR float64) (string, *TradeQuote, error) {
+	quote, err := s.priceAtLiveRate(ctx, tenantID, weightGrams, totalAmountINR)
+	if err != nil {
+		return "", nil, err
+	}
+	quote.ExpiresAt = time.Now().Add(counterQuoteValidity).Unix()
+
+	// Checked again when the sale is confirmed; here the cashier learns before taking payment.
+	cashToday, err := s.LedgerRepo.CounterCashToday(ctx, s.DB.Db, tenantID, userID)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := checkCounterCash(paymentMode, cashToday, quote.TotalAmountINR); err != nil {
+		return "", nil, err
+	}
+	if err := s.MarginRepo.CheckCreditCapacity(ctx, tenantID, "GOLD", quote.WeightGrams); err != nil {
+		return "", nil, err
+	}
+
+	quoteID := uuid.New().String()
+	record, _ := json.Marshal(counterQuoteRecord{
+		TenantID:    tenantID,
+		UserID:      userID,
+		PaymentMode: paymentMode,
+		Quote:       *quote,
+	})
+	if err := s.Redis.Client.Set(ctx, counterQuoteKey(tenantID, quoteID), record, counterQuoteValidity).Err(); err != nil {
+		return "", nil, fmt.Errorf("failed to save counter quote: %w", err)
+	}
+	return quoteID, quote, nil
+}
+
+// ConfirmCounterSale records the counter sale held under quoteID, once. alreadyRecorded is
+// true when the quote had been confirmed before; the sale returned is that earlier one.
+func (s *TradeService) ConfirmCounterSale(ctx context.Context, tenantID int64, quoteID, ipAddress, adminID string) (entry *models.GoldTransactionLedger, alreadyRecorded bool, err error) {
+	referenceID := repository.CounterReferencePrefix + quoteID
+
+	recorded := func() (*models.GoldTransactionLedger, error) {
+		existing, err := s.LedgerRepo.GetEntryByReference(ctx, tenantID, referenceID)
+		if errors.Is(err, interfaces.ErrLedgerEntryNotFound) {
+			return nil, nil
+		}
+		return existing, err
+	}
+	if existing, err := recorded(); err != nil || existing != nil {
+		return existing, existing != nil, err
+	}
+
+	// One confirmation at a time per quote. The lock is released only after the sale is
+	// committed, so a later attempt finds it in the ledger above.
+	lockKey := fmt.Sprintf("digiGold:lock:counter_quote:%d:%s", tenantID, quoteID)
+	acquired, err := s.Redis.Client.SetNX(ctx, lockKey, "locked", counterConfirmLockTTL).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to lock counter quote: %w", err)
+	}
+	if !acquired {
+		return nil, false, interfaces.ErrCounterSaleInProgress
+	}
+	defer s.Redis.Client.Del(context.Background(), lockKey)
+
+	// Another attempt may have finished between the first check and the lock.
+	if existing, err := recorded(); err != nil || existing != nil {
+		return existing, existing != nil, err
+	}
+
+	raw, err := s.Redis.Client.Get(ctx, counterQuoteKey(tenantID, quoteID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return nil, false, interfaces.ErrCounterQuoteExpired
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to read counter quote: %w", err)
+	}
+	var record counterQuoteRecord
+	if err := json.Unmarshal([]byte(raw), &record); err != nil || record.TenantID != tenantID {
+		return nil, false, interfaces.ErrCounterQuoteExpired
+	}
+	if record.Quote.Expired(time.Now()) {
+		return nil, false, interfaces.ErrCounterQuoteExpired
+	}
+
+	req := interfaces.TradeExecutionRequest{
+		TenantID:    tenantID,
+		UserID:      record.UserID,
+		PaymentMode: record.PaymentMode,
+		ReferenceID: referenceID,
+	}
+	result, err := s.executeQuotedTrade(ctx, req, &record.Quote, ipAddress, adminID, func(tx *sql.Tx) error {
+		cashToday, err := s.LedgerRepo.CounterCashToday(ctx, tx, tenantID, record.UserID)
+		if err != nil {
+			return err
+		}
+		return checkCounterCash(record.PaymentMode, cashToday, record.Quote.TotalAmountINR)
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	s.Redis.Client.Del(context.Background(), counterQuoteKey(tenantID, quoteID))
+	return result, false, nil
 }
 
 // recordLedgerMovementWithTX writes a signed ledger entry, its trade event and

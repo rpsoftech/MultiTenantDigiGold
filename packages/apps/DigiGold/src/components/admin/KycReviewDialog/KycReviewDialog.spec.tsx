@@ -66,6 +66,27 @@ describe('KycReviewDialog', () => {
     expect(screen.getAllByText('Not provided')).toHaveLength(4);
   });
 
+  it.each([
+    ['PAN', { aadhaarLast4: '4821', other: [] }],
+    ['Aadhaar digits', { panNumber: 'ABCDE1234F', other: [] }],
+  ])(
+    'will not approve a submission without its %s, but can still reject it',
+    (_missing, documents) => {
+      renderDialog({ submission: { ...submission, documents } });
+      expect(
+        (screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      expect(screen.getByText(/can’t be approved/)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Confirm rejection' }),
+      );
+      expect(onDecide).toHaveBeenCalledWith('rejected');
+    },
+  );
+
   it('shows unknown extra document fields', () => {
     renderDialog({
       submission: {

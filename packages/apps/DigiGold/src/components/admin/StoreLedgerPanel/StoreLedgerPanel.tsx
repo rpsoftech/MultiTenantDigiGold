@@ -6,7 +6,11 @@ import { Button } from '@/components/common/Button/Button';
 import { Loader } from '@/components/common/Loader/Loader';
 import { Modal } from '@/components/common/Modal/Modal';
 import { useToast } from '@/components/common/Toast/Toast';
-import { StoreLedgerTable } from '@/components/admin/StoreLedgerTable/StoreLedgerTable';
+import {
+  StoreLedgerTable,
+  formatLedgerDate,
+  ledgerEventLabel,
+} from '@/components/admin/StoreLedgerTable/StoreLedgerTable';
 import { useStoreLedger } from '@/features/admin/hooks/useStoreLedger';
 import { useReverseLedgerEntry } from '@/features/admin/hooks/useReverseLedgerEntry';
 import type { AdminLedgerEntry } from '@/features/admin/admin.types';
@@ -19,11 +23,17 @@ const PAGE_SIZE = 20;
 // MainServer answers 409 ERROR_LEDGER_REVERSAL (already reversed, not reversible, or a
 // redemption no longer pending) and 404 ERROR_LEDGER_NOT_FOUND. Both mean our copy is stale.
 const CONFLICT_FALLBACK = 'This entry can no longer be reversed.';
+// MainServer answers 400 ERROR_INSUFFICIENT_BALANCE when the reversal would take the
+// customer's vault below zero: the gold has since been sold or redeemed. Retrying can't help.
+const NO_BALANCE_MESSAGE =
+  'The customer no longer holds this gold (some of it has since been sold or redeemed), so this entry can’t be reversed.';
+
+type DialogError = { message: string; canRetry: boolean };
 
 export function StoreLedgerPanel() {
   const [page, setPage] = useState(1);
   const [target, setTarget] = useState<AdminLedgerEntry | null>(null);
-  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<DialogError | null>(null);
   const { showToast } = useToast();
   const reverse = useReverseLedgerEntry();
   const { data, isLoading, isError, isFetching, refetch } = useStoreLedger(
@@ -61,7 +71,10 @@ export function StoreLedgerPanel() {
         if (apiError?.status === 409 || apiError?.status === 404) {
           // Our copy is stale; the mutation already refetches the ledger.
           setTarget(null);
-          const reason = (apiError.message || CONFLICT_FALLBACK).replace(/\.$/, '');
+          const reason = (apiError.message || CONFLICT_FALLBACK).replace(
+            /\.$/,
+            '',
+          );
           showToast({
             title: 'Entry can’t be reversed',
             description: `${reason.charAt(0).toUpperCase()}${reason.slice(1)}. The ledger has been refreshed.`,
@@ -69,10 +82,16 @@ export function StoreLedgerPanel() {
           });
           return;
         }
-        setDialogError(
-          describeApiError(error) ??
+        if (apiError?.code === 'ERROR_INSUFFICIENT_BALANCE') {
+          setDialogError({ message: NO_BALANCE_MESSAGE, canRetry: false });
+          return;
+        }
+        setDialogError({
+          message:
+            describeApiError(error) ??
             'The entry could not be reversed. Please try again.',
-        );
+          canRetry: true,
+        });
       },
     });
   }
@@ -188,8 +207,12 @@ export function StoreLedgerPanel() {
           <div className={styles.dialogBody}>
             <dl className={styles.summary}>
               <div>
-                <dt>Entry</dt>
-                <dd>{target.id}</dd>
+                <dt>Type</dt>
+                <dd>{ledgerEventLabel(target.eventType)}</dd>
+              </div>
+              <div>
+                <dt>Date &amp; time (IST)</dt>
+                <dd>{formatLedgerDate(target.timestamp)}</dd>
               </div>
               <div>
                 <dt>Amount</dt>
@@ -199,10 +222,14 @@ export function StoreLedgerPanel() {
                 <dt>Gold</dt>
                 <dd>{target.weightGrams.toFixed(4)} g</dd>
               </div>
+              <div>
+                <dt>Entry</dt>
+                <dd>{target.id}</dd>
+              </div>
             </dl>
             {dialogError && (
               <p className={styles.dialogError} role="alert">
-                {dialogError}
+                {dialogError.message}
               </p>
             )}
             <div className={styles.dialogActions}>
@@ -211,11 +238,13 @@ export function StoreLedgerPanel() {
                 disabled={reverse.isPending}
                 onClick={() => closeReverse(false)}
               >
-                Cancel
+                {dialogError?.canRetry === false ? 'OK' : 'Cancel'}
               </Button>
-              <Button isLoading={reverse.isPending} onClick={confirmReverse}>
-                Reverse entry
-              </Button>
+              {dialogError?.canRetry !== false && (
+                <Button isLoading={reverse.isPending} onClick={confirmReverse}>
+                  Reverse entry
+                </Button>
+              )}
             </div>
           </div>
         )}

@@ -2,12 +2,11 @@ import type { Category, Product } from './marketplace.types';
 
 // MainServer's product catalog endpoint isn't ready yet — swapping to the real call in
 // marketplace.service.ts is a one-line change (flip USE_MOCK_MARKETPLACE).
+// Only categories that have their own photo. The rest (anklets, bracelet, chain-pendant)
+// get no image, shown as a "no photo yet" panel, rather than another category's photo.
 const PRODUCT_IMAGE_BY_CATEGORY: Record<string, string> = {
-  anklets: '/marketplace/categories/bangles.jpg',
   bangles: '/marketplace/categories/bangles.jpg',
-  bracelet: '/marketplace/categories/pendant-set.jpg',
   chain: '/marketplace/categories/chain.jpg',
-  'chain-pendant': '/marketplace/categories/tanmaniya.jpg',
   kada: '/marketplace/categories/kada.jpg',
   watch: '/marketplace/categories/watch.jpg',
   tanmaniya: '/marketplace/categories/tanmaniya.jpg',
@@ -18,13 +17,13 @@ const PRODUCT_IMAGE_BY_CATEGORY: Record<string, string> = {
 
 const PRODUCT_DEFAULTS = {
   weight: 24,
-  carat: '22KT Gold' as const,
-  color: 'Yellow' as const,
+  carat: '22KT Gold',
+  color: 'Yellow',
   category: 'Bangles',
   designType: 'Dailywear Collection',
-  gender: 'Ladies' as const,
+  gender: 'Ladies',
   collection: 'Daily Wear Jewellery',
-  gifts: 'For Her' as const,
+  gifts: 'For Her',
 };
 
 const createProduct = (
@@ -37,8 +36,7 @@ const createProduct = (
   id: `${category}-design-${index}`,
   code: `${category.slice(0, 3).toUpperCase()}${String(index).padStart(5, '0')}`,
   title,
-  imageUrl:
-    PRODUCT_IMAGE_BY_CATEGORY[category] ?? PRODUCT_IMAGE_BY_CATEGORY.bangles,
+  imageUrl: PRODUCT_IMAGE_BY_CATEGORY[category] ?? '',
   imageAlt: title,
   price,
   currency: 'INR',
@@ -47,7 +45,7 @@ const createProduct = (
     .replace('-', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase()),
   isNew: index % 3 === 1,
-  isBisHallmarked: true,
+  // Sample data never claims a certification (isBisHallmarked stays unset).
   ...overrides,
 });
 
@@ -62,19 +60,18 @@ const MOCK_TRENDING_PRODUCTS: Product[] = [
     currency: 'INR',
     ...PRODUCT_DEFAULTS,
     category: 'Necklace',
-    isBisHallmarked: true,
     isNew: true,
   },
   {
-    id: 'minimalist-bangle-24k',
+    // 22K to match its purity (PRODUCT_DEFAULTS.carat); it used to be titled 24K.
+    id: 'minimalist-bangle-22k',
     code: 'BNR00001',
-    title: '24K Gold Minimalist Bangle',
+    title: '22K Gold Minimalist Bangle',
     imageUrl: '/marketplace/minimalist-bengal1-24k.jpg',
-    imageAlt: '24K Gold Minimalist Bangle',
+    imageAlt: '22K Gold Minimalist Bangle',
     price: 85500,
     currency: 'INR',
     ...PRODUCT_DEFAULTS,
-    isBisHallmarked: true,
     isNew: false,
   },
 ];
@@ -85,7 +82,7 @@ export async function mockGetTrendingProducts(): Promise<Product[]> {
 
 const MOCK_CATEGORY_PRODUCTS: Product[] = [
   ...[
-    ['bangles', 'Pink Crystal Link Bracelet', 394670],
+    ['bangles', 'Pink Crystal Bangle', 394670],
     ['bangles', 'Green Glow Bangle', 357865],
     ['bangles', 'Designer Pattern Bangle', 552446],
     ['bangles', 'Oval Charm Bangle', 301043],

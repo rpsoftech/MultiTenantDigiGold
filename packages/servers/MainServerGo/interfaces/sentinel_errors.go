@@ -34,4 +34,12 @@ var (
 	ErrRedemptionNotPending  = errors.New("redemption is not pending")
 	ErrRedemptionNotFound    = errors.New("redemption request not found")
 	ErrInvalidPickupCode     = errors.New("pickup code does not match")
+	ErrCashLimitExceeded     = errors.New("cash received from this customer today would reach 2,00,000 INR")
+	ErrCounterQuoteExpired   = errors.New("counter sale quote expired or not found")
+	ErrCounterSaleInProgress = errors.New("this counter sale is already being recorded")
+)
+
+// KYC review errors
+var (
+	ErrKYCNotAwaitingReview = errors.New("customer has no KYC submission waiting for review")
 )
