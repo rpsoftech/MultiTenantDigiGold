@@ -1081,11 +1081,18 @@ paths:
                       total_margin_earned: { type: number }
                       total_transactions: { type: integer }
 
-  /admin/store/trade/counter:
+  /admin/store/trade/counter/quote:
     post:
-      operationId: postAdminStoreTradeCounter
+      operationId: postAdminStoreTradeCounterQuote
       tags: [Admin Store]
-      summary: Record an in-store (counter) trade
+      summary: Price an in-store (counter) sale at the store's own rate
+      description: >-
+        Prices the sale at the live rate with the store's margin and GST and holds the price
+        for 5 minutes. The cashier collects exactly `total_amount_inr`, then confirms the
+        quote with POST /admin/store/trade/counter. Send `weight_grams` or
+        `total_amount_inr` (weight wins when both are positive). A cash sale is refused when
+        the customer's cash paid at the counter today (IST) would reach 2,00,000 INR
+        (Income Tax Act s.269ST).
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1093,26 +1100,76 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/TradeRequest'
-                - type: object
-                  required: [user_uuid]
-                  properties:
-                    user_uuid:
-                      {
-                        type: string,
-                        format: uuid,
-                        description: Customer of this tenant.,
-                      }
-                    payment_mode:
-                      {
-                        type: string,
-                        enum: [COUNTER_CASH, COUNTER_UPI],
-                        default: COUNTER_CASH,
-                      }
+              type: object
+              required: [user_uuid]
+              properties:
+                user_uuid:
+                  { type: string, format: uuid, description: Customer of this tenant. }
+                weight_grams: { type: number }
+                total_amount_inr: { type: number }
+                payment_mode:
+                  {
+                    type: string,
+                    enum: [COUNTER_CASH, COUNTER_UPI],
+                    default: COUNTER_CASH,
+                  }
       responses:
         '200':
-          description: Trade executed.
+          description: Sale priced and held.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  quote:
+                    type: object
+                    properties:
+                      quote_id: { type: string, format: uuid }
+                      payment_mode: { type: string }
+                      weight_grams: { type: number }
+                      total_amount_inr: { type: number }
+                      final_rate_per_gram: { type: number }
+                      mcx_base_rate: { type: number }
+                      tenant_margin_applied:
+                        { type: number, description: Margin per gram (INR). }
+                      gst_applied: { type: number, description: GST per gram (INR). }
+                      expires_at: { type: integer, description: Unix seconds. }
+        '400':
+          description: >-
+            Invalid size or payment mode, or CASH_LIMIT_EXCEEDED.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: CREDIT_LIMIT_EXCEEDED (the store's gold credit cannot cover it).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /admin/store/trade/counter:
+    post:
+      operationId: postAdminStoreTradeCounter
+      tags: [Admin Store]
+      summary: Record an in-store (counter) sale priced by the quote endpoint
+      description: >-
+        Records the quoted sale, once. Confirming the same quote again (for example after a
+        lost reply) returns the sale already recorded with `already_recorded: true` instead
+        of selling the gold twice.
+      security: [{ AdminToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quote_id]
+              properties:
+                quote_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Sale recorded, now or by an earlier confirmation of the same quote.
           content:
             application/json:
               schema:
@@ -1120,10 +1177,17 @@ paths:
                 properties:
                   success: { type: boolean }
                   trade: { $ref: '#/components/schemas/LedgerEntry' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+                  already_recorded: { type: boolean }
+        '400':
+          description: Missing quote_id, or CASH_LIMIT_EXCEEDED.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: Slippage exceeded.
+          description: >-
+            COUNTER_QUOTE_EXPIRED (quote expired or unknown) or COUNTER_SALE_IN_PROGRESS
+            (another confirmation of this quote is running; retry to get its result).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

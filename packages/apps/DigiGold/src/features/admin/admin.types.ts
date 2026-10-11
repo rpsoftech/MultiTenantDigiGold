@@ -46,6 +46,47 @@ export type UpdateKycStatusPayload = {
   kycStatus: Extract<KycStatus, 'verified' | 'rejected'>;
 };
 
+export type CounterPaymentMode = 'COUNTER_CASH' | 'COUNTER_UPI';
+
+// A counter sale is priced by MainServer first (the quote) and recorded second, so the
+// cashier collects exactly what is recorded. Exactly one of weightGrams / amountInr is
+// sent: the one the cashier typed.
+export type CounterQuoteRequest = {
+  userId: string;
+  weightGrams?: number;
+  amountInr?: number;
+  paymentMode: CounterPaymentMode;
+};
+
+// The store's own price for the sale, held until expiresAt (epoch ms).
+export type CounterQuote = {
+  quoteId: string;
+  paymentMode: CounterPaymentMode;
+  weightGrams: number;
+  amountInr: number;
+  ratePerGram: number;
+  mcxBaseRate: number;
+  marginPerGramInr: number;
+  gstPerGramInr: number;
+  expiresAt: number;
+};
+
+export type CounterTradeReceipt = {
+  id: string;
+  eventType: string;
+  paymentMode: string;
+  weightGrams: number;
+  amountInr: number;
+  ratePerGram: number;
+  mcxBaseRate: number;
+  marginPerGramInr: number;
+  gstPerGramInr: number;
+  runningGoldBalanceGrams: number;
+  createdAt: string;
+  // True when this quote had been confirmed before: the sale shown is that earlier one.
+  alreadyRecorded: boolean;
+};
+
 // MainServer refuses to reverse a SYSTEM_REVERSAL or an entry that already has a reversal.
 // Whether a redemption is still pending is not in the ledger payload, so the server
 // answers 409 ERROR_LEDGER_REVERSAL for a collected one.

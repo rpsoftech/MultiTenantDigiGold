@@ -329,3 +329,82 @@ func (r *GoldLedgerRepository) ReferenceExistsWithTX(ctx context.Context, tx *sq
 	}
 	return exists, nil
 }
+
+// CounterReferencePrefix starts the reference ID of a counter sale, followed by the ID of
+// the quote it was recorded from, so one quote can never be recorded twice.
+const CounterReferencePrefix = "COUNTER_"
+
+// rowQuerier is satisfied by both *sql.DB and *sql.Tx.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// GetEntryByReference returns the tenant's ledger row with this reference ID.
+func (r *GoldLedgerRepository) GetEntryByReference(ctx context.Context, tenantID int64, referenceID string) (*models.GoldTransactionLedger, error) {
+	query := fmt.Sprintf(`
+		SELECT
+			gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s, gl.%s,
+			%s
+		FROM %s gl
+		WHERE gl.%s = $1 AND gl.%s = $2
+		LIMIT 1
+	`, schema.ColGLUUID, schema.ColGLEventType, schema.ColGLPaymentMode, schema.ColGLWeightGrams,
+		schema.ColGLTotalAmountINR, schema.ColGLRunningGoldBalanceGrams, schema.ColGLMCXBaseRate,
+		schema.ColGLTenantMarginApplied, schema.ColGLGSTApplied, schema.ColGLFinalRatePerGram,
+		schema.ColGLCreatedAt,
+		reversedCondition("$3"),
+		schema.TableGoldTransactionLedger, schema.ColGLTenantID, schema.ColGLReferenceID)
+
+	entry := models.GoldTransactionLedger{TenantID: tenantID, ReferenceID: referenceID}
+	err := r.DB.Db.QueryRowContext(ctx, query, tenantID, referenceID, ReversalReferencePrefix).Scan(
+		&entry.UUID, &entry.EventType, &entry.PaymentMode, &entry.WeightGrams,
+		&entry.TotalAmountINR, &entry.RunningGoldBalanceGrams, &entry.MCXBaseRate,
+		&entry.TenantMarginApplied, &entry.GSTApplied, &entry.FinalRatePerGram,
+		&entry.CreatedAt, &entry.IsReversed,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, interfaces.ErrLedgerEntryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ledger entry by reference: %w", err)
+	}
+	return &entry, nil
+}
+
+// LockUserVaultWithTX locks the customer's vault row in tx, the same lock
+// RecordTransactionWithTX takes, so a check on the customer's ledger made after it
+// cannot race another trade for the same customer.
+func (r *GoldLedgerRepository) LockUserVaultWithTX(ctx context.Context, tx *sql.Tx, tenantID, userID int64) error {
+	var userUUID, userPhone string
+	var lockedTenantID int64
+	var balance float64
+	err := tx.StmtContext(ctx, r.stmtLockUser).QueryRowContext(ctx, userID, tenantID).Scan(&userUUID, &userPhone, &lockedTenantID, &balance)
+	if errors.Is(err, sql.ErrNoRows) {
+		return interfaces.ErrUserNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("failed to lock user vault balance: %w", err)
+	}
+	return nil
+}
+
+// CounterCashToday totals the cash the customer has paid at the counter today (IST) for
+// purchases that have not been reversed. Pass a *sql.Tx to read under its locks.
+func (r *GoldLedgerRepository) CounterCashToday(ctx context.Context, q rowQuerier, tenantID, userID int64) (float64, error) {
+	query := fmt.Sprintf(`
+		SELECT COALESCE(SUM(gl.%s), 0)
+		FROM %s gl
+		WHERE gl.%s = $1 AND gl.%s = $2
+		  AND gl.%s = 'COUNTER_CASH' AND gl.%s = 'GOLD_PURCHASE'
+		  AND gl.%s >= (date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')
+		  AND NOT %s
+	`, schema.ColGLTotalAmountINR, schema.TableGoldTransactionLedger,
+		schema.ColGLTenantID, schema.ColGLUserID, schema.ColGLPaymentMode, schema.ColGLEventType,
+		schema.ColGLCreatedAt, reversedCondition("$3"))
+
+	var total float64
+	if err := q.QueryRowContext(ctx, query, tenantID, userID, ReversalReferencePrefix).Scan(&total); err != nil {
+		return 0, fmt.Errorf("failed to total today's counter cash: %w", err)
+	}
+	return total, nil
+}

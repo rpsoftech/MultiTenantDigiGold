@@ -34,6 +34,7 @@ func (ac *AdminStoreController) RegisterRoutes(api fiber.Router) {
 	storeGroup.Get("/ledger", ac.Ledger)
 	storeGroup.Post("/ledger/reverse", ac.ReverseTrade)
 	storeGroup.Get("/analytics", ac.Analytics)
+	storeGroup.Post("/trade/counter/quote", ac.CounterQuote)
 	storeGroup.Post("/trade/counter", ac.CounterTrade)
 
 	kycGroup := storeGroup.Group("/kyc")
@@ -99,13 +100,17 @@ func (ac *AdminStoreController) Ledger(c fiber.Ctx) error {
 	})
 }
 
-func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
+// CounterQuote prices a counter sale with the store's own margin and holds the price for a
+// few minutes, so the cashier collects exactly what will be recorded. Send weight_grams or
+// total_amount_inr; weight wins when both are positive.
+func (ac *AdminStoreController) CounterQuote(c fiber.Ctx) error {
 	tenantID := middleware.GetTenantIntID(c)
-	adminUUID := middleware.GetAdminUUID(c)
 
 	var body struct {
-		interfaces.TradeExecutionRequest
-		UserUUID string `json:"user_uuid"`
+		UserUUID       string  `json:"user_uuid"`
+		WeightGrams    float64 `json:"weight_grams"`
+		TotalAmountINR float64 `json:"total_amount_inr"`
+		PaymentMode    string  `json:"payment_mode"`
 	}
 	if err := c.Bind().JSON(&body); err != nil {
 		return &interfaces.RequestError{
@@ -114,21 +119,11 @@ func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
 			Message:    "Invalid JSON payload",
 		}
 	}
-	req := body.TradeExecutionRequest
-
-	// Resolve the customer strictly inside the admin's tenant. Internal user IDs
-	// from the request body are never trusted.
-	user, err := ac.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, body.UserUUID)
-	if err != nil {
-		return interfaces.ParseDBError(err)
-	}
-	req.TenantID = tenantID
-	req.UserID = user.ID
 
 	// Counter trades are settled in store; online modes are reserved for the payment gateway.
-	switch req.PaymentMode {
+	switch body.PaymentMode {
 	case "":
-		req.PaymentMode = "COUNTER_CASH"
+		body.PaymentMode = "COUNTER_CASH"
 	case "COUNTER_CASH", "COUNTER_UPI":
 	default:
 		return &interfaces.RequestError{
@@ -138,16 +133,61 @@ func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
 		}
 	}
 
-	ipAddress := c.IP()
+	// Resolve the customer strictly inside the admin's tenant. Internal user IDs
+	// from the request body are never trusted.
+	user, err := ac.UserService.UserRepo.GetFullUserByUUID(c.Context(), tenantID, body.UserUUID)
+	if err != nil {
+		return interfaces.ParseDBError(err)
+	}
 
-	result, err := ac.TradeService.ExecuteTrade(c.Context(), req, ipAddress, adminUUID)
+	quoteID, quote, err := ac.TradeService.QuoteCounterSale(c.Context(), tenantID, user.ID, body.PaymentMode, body.WeightGrams, body.TotalAmountINR)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"trade":   result,
+		"quote": fiber.Map{
+			"quote_id":              quoteID,
+			"payment_mode":          body.PaymentMode,
+			"weight_grams":          quote.WeightGrams,
+			"total_amount_inr":      quote.TotalAmountINR,
+			"final_rate_per_gram":   quote.FinalRatePerGram,
+			"mcx_base_rate":         quote.MCXBaseRate,
+			"tenant_margin_applied": quote.MarginApplied,
+			"gst_applied":           quote.GSTApplied,
+			"expires_at":            quote.ExpiresAt,
+		},
+	})
+}
+
+// CounterTrade records the counter sale priced by CounterQuote. The reference is derived
+// from the quote, never taken from the client, so confirming the same quote again returns
+// the sale already recorded ("already_recorded": true) instead of selling twice.
+func (ac *AdminStoreController) CounterTrade(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+	adminUUID := middleware.GetAdminUUID(c)
+
+	var body struct {
+		QuoteID string `json:"quote_id"`
+	}
+	if err := c.Bind().JSON(&body); err != nil || body.QuoteID == "" {
+		return &interfaces.RequestError{
+			StatusCode: fiber.StatusBadRequest,
+			Code:       interfaces.ERROR_INVALID_INPUT,
+			Message:    "quote_id is required: price the sale with /admin/store/trade/counter/quote first",
+		}
+	}
+
+	result, alreadyRecorded, err := ac.TradeService.ConfirmCounterSale(c.Context(), tenantID, body.QuoteID, c.IP(), adminUUID)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success":          true,
+		"trade":            result,
+		"already_recorded": alreadyRecorded,
 	})
 }
 func (ac *AdminStoreController) PendingKYC(c fiber.Ctx) error {
