@@ -316,8 +316,14 @@ the trade is rejected (store out of credit, user gone). A missing intent is refu
 for orders tagged `notes.source = "digigold"`. Transient failures (database, Redis,
 Razorpay refund call) return `500` so Razorpay retries.
 
-Counter buys (`POST /admin/store/trade/counter`) identify the customer by `user_uuid` and
-accept `COUNTER_CASH` or `COUNTER_UPI`.
+Counter buys are two calls. `POST /admin/store/trade/counter/quote` prices the sale for a
+customer (`user_uuid`, `COUNTER_CASH` or `COUNTER_UPI`) at the store's own rate and holds
+it for 5 minutes; the cashier collects exactly that amount. `POST /admin/store/trade/counter`
+with the `quote_id` records it, with reference `COUNTER_<quote_id>`: confirming the same
+quote again returns the recorded sale (`already_recorded: true`) instead of a second one.
+Cash is refused once the customer's cash paid at the counter today (IST) would reach
+₹2,00,000 (Income Tax Act s.269ST), checked at quote time and again under the customer's
+vault lock when confirming.
 
 Redemption (counter pickup):
 

@@ -274,14 +274,25 @@ describe('adminService store integration', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  describe('createCounterTrade', () => {
+  describe('counter sales', () => {
+    const quote = {
+      quote_id: 'quote-1',
+      payment_mode: 'COUNTER_UPI',
+      weight_grams: 0.1367,
+      total_amount_inr: 1000,
+      final_rate_per_gram: 7313,
+      mcx_base_rate: 7000,
+      tenant_margin_applied: 100,
+      gst_applied: 213,
+      expires_at: 1_791_000_000,
+    };
     const trade = {
       gl_uuid: 'gl-1',
       event_type: 'GOLD_PURCHASE',
       payment_mode: 'COUNTER_UPI',
-      weight_grams: 0.1333,
+      weight_grams: 0.1367,
       total_amount_inr: 1000,
-      running_gold_balance_grams: 1.1333,
+      running_gold_balance_grams: 1.1367,
       mcx_base_rate: 7000,
       tenant_margin_applied: 100,
       gst_applied: 213,
@@ -289,71 +300,164 @@ describe('adminService store integration', () => {
       created_at: '2026-10-05T10:00:00Z',
     };
 
-    it('sends only the amount when the cashier entered rupees', async () => {
+    it('prices only the amount when the cashier entered rupees', async () => {
       const post = jest
         .spyOn(apiClient, 'post')
-        .mockResolvedValue({ data: { success: true, trade } });
+        .mockResolvedValue({ data: { success: true, quote } });
 
-      const receipt = await adminService.createCounterTrade({
+      const result = await adminService.quoteCounterTrade({
         userId: 'customer-uuid',
-        ratePerGram: 7313,
         amountInr: 1000,
         paymentMode: 'COUNTER_UPI',
       });
 
-      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter', {
+      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter/quote', {
         user_uuid: 'customer-uuid',
-        requested_rate_per_gram: 7313,
         payment_mode: 'COUNTER_UPI',
         total_amount_inr: 1000,
       });
-      expect(receipt).toEqual({
-        id: 'gl-1',
-        eventType: 'GOLD_PURCHASE',
+      expect(result).toEqual({
+        quoteId: 'quote-1',
         paymentMode: 'COUNTER_UPI',
-        weightGrams: 0.1333,
+        weightGrams: 0.1367,
         amountInr: 1000,
         ratePerGram: 7313,
         mcxBaseRate: 7000,
-        marginInr: 100,
-        gstInr: 213,
-        runningGoldBalanceGrams: 1.1333,
-        createdAt: '2026-10-05T10:00:00Z',
+        marginPerGramInr: 100,
+        gstPerGramInr: 213,
+        // Unix seconds from the server, epoch ms for the browser.
+        expiresAt: 1_791_000_000_000,
       });
     });
 
-    it('sends only the grams when the cashier entered weight', async () => {
+    it('prices only the grams when the cashier entered weight', async () => {
       const post = jest
         .spyOn(apiClient, 'post')
-        .mockResolvedValue({ data: { success: true, trade } });
+        .mockResolvedValue({ data: { success: true, quote } });
 
-      await adminService.createCounterTrade({
+      await adminService.quoteCounterTrade({
         userId: 'customer-uuid',
-        ratePerGram: 7313,
         weightGrams: 2.5,
         paymentMode: 'COUNTER_CASH',
       });
 
-      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter', {
+      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter/quote', {
         user_uuid: 'customer-uuid',
-        requested_rate_per_gram: 7313,
         payment_mode: 'COUNTER_CASH',
         weight_grams: 2.5,
       });
     });
 
-    it('propagates a slippage conflict so the caller can react', async () => {
-      const error = { status: 409, code: 'SLIPPAGE_EXCEEDED', message: 'moved' };
+    it('confirms by quote id alone and maps the receipt', async () => {
+      const post = jest
+        .spyOn(apiClient, 'post')
+        .mockResolvedValue({ data: { success: true, trade } });
+
+      const receipt = await adminService.createCounterTrade('quote-1');
+
+      expect(post).toHaveBeenCalledWith('/admin/store/trade/counter', {
+        quote_id: 'quote-1',
+      });
+      expect(receipt).toEqual({
+        id: 'gl-1',
+        eventType: 'GOLD_PURCHASE',
+        paymentMode: 'COUNTER_UPI',
+        weightGrams: 0.1367,
+        amountInr: 1000,
+        ratePerGram: 7313,
+        mcxBaseRate: 7000,
+        marginPerGramInr: 100,
+        gstPerGramInr: 213,
+        runningGoldBalanceGrams: 1.1367,
+        createdAt: '2026-10-05T10:00:00Z',
+        alreadyRecorded: false,
+      });
+    });
+
+    it('reports a sale the server had already recorded for this quote', async () => {
+      jest.spyOn(apiClient, 'post').mockResolvedValue({
+        data: { success: true, trade, already_recorded: true },
+      });
+
+      await expect(
+        adminService.createCounterTrade('quote-1'),
+      ).resolves.toMatchObject({ id: 'gl-1', alreadyRecorded: true });
+    });
+
+    it('propagates the cash limit so the caller can send the cashier to UPI', async () => {
+      const error = {
+        status: 400,
+        code: 'CASH_LIMIT_EXCEEDED',
+        message: 'limit',
+      };
       jest.spyOn(apiClient, 'post').mockRejectedValue(error);
 
       await expect(
-        adminService.createCounterTrade({
+        adminService.quoteCounterTrade({
           userId: 'customer-uuid',
-          ratePerGram: 7313,
-          amountInr: 1000,
+          amountInr: 250000,
           paymentMode: 'COUNTER_CASH',
         }),
       ).rejects.toBe(error);
+    });
+
+    describe('in sample mode', () => {
+      beforeEach(() => {
+        process.env.NEXT_PUBLIC_USE_MOCK_ADMIN = 'true';
+      });
+
+      it('records a quote once, like MainServer', async () => {
+        const post = jest.spyOn(apiClient, 'post');
+        const priced = await adminService.quoteCounterTrade({
+          userId: 'USR-101',
+          weightGrams: 1,
+          paymentMode: 'COUNTER_UPI',
+        });
+
+        const first = await adminService.createCounterTrade(priced.quoteId);
+        const again = await adminService.createCounterTrade(priced.quoteId);
+
+        expect(priced.amountInr).toBe(7313);
+        expect(first).toMatchObject({
+          amountInr: 7313,
+          alreadyRecorded: false,
+        });
+        expect(again).toMatchObject({ id: first.id, alreadyRecorded: true });
+        expect(again.runningGoldBalanceGrams).toBe(
+          first.runningGoldBalanceGrams,
+        );
+        expect(post).not.toHaveBeenCalled();
+      });
+
+      it('refuses cash that would reach the daily limit for the customer', async () => {
+        const cash = (amountInr: number) =>
+          adminService.quoteCounterTrade({
+            userId: 'USR-102',
+            amountInr,
+            paymentMode: 'COUNTER_CASH',
+          });
+
+        await expect(cash(200000)).rejects.toMatchObject({
+          code: 'CASH_LIMIT_EXCEEDED',
+        });
+        await adminService.createCounterTrade((await cash(150000)).quoteId);
+        await expect(cash(60000)).rejects.toMatchObject({
+          code: 'CASH_LIMIT_EXCEEDED',
+        });
+        await expect(
+          adminService.quoteCounterTrade({
+            userId: 'USR-102',
+            amountInr: 60000,
+            paymentMode: 'COUNTER_UPI',
+          }),
+        ).resolves.toMatchObject({ amountInr: 60000 });
+      });
+
+      it('refuses an unknown quote', async () => {
+        await expect(
+          adminService.createCounterTrade('quote-unknown'),
+        ).rejects.toMatchObject({ status: 409, code: 'COUNTER_QUOTE_EXPIRED' });
+      });
     });
   });
 

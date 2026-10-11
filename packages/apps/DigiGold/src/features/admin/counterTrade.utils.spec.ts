@@ -17,7 +17,9 @@ describe('sizeCounterTrade', () => {
   });
 
   it('prefers grams when both are given, like MainServer', () => {
-    expect(sizeCounterTrade(7000, { weightGrams: 1, amountInr: 99999 })).toEqual({
+    expect(
+      sizeCounterTrade(7000, { weightGrams: 1, amountInr: 99999 }),
+    ).toEqual({
       weightGrams: 1,
       amountInr: 7000,
     });
