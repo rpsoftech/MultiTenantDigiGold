@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { usePromoCarouselConfig } from './usePromoCarouselConfig';
 import { PromoCarousel } from './PromoCarousel';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+import type { TenantConfig } from '@/features/tenant/tenant.types';
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -13,6 +15,12 @@ jest.mock('./usePromoCarouselConfig', () => ({
 }));
 
 const mockedConfig = usePromoCarouselConfig as jest.Mock;
+
+// Slides can be tied to a tenant module (e.g. a jewellery offer to `ecommerce`).
+let mockTenantConfig: TenantConfig | null = DEFAULT_TENANT_CONFIG;
+jest.mock('@/features/tenant/hooks/useTenantConfig', () => ({
+  useTenantConfig: () => mockTenantConfig,
+}));
 
 const slides = [
   {
@@ -171,6 +179,40 @@ describe('PromoCarousel', () => {
           jest.advanceTimersByTime(20000);
         });
       }).not.toThrow();
+    });
+  });
+
+  describe('module-gated slides', () => {
+    afterEach(() => {
+      mockTenantConfig = DEFAULT_TENANT_CONFIG;
+    });
+
+    it('hides a slide whose module is switched off and keeps the rest', () => {
+      mockTenantConfig = {
+        ...DEFAULT_TENANT_CONFIG,
+        activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, ecommerce: false },
+      };
+      mockedConfig.mockReturnValue({
+        autoplayIntervalMs: 3000,
+        slides: [
+          { ...slides[0], module: 'ecommerce' as const },
+          slides[1],
+        ],
+      });
+      render(<PromoCarousel />);
+
+      expect(screen.queryByAltText('First offer')).toBeNull();
+      expect(screen.getByAltText('Second offer')).toBeTruthy();
+    });
+
+    it('shows a module-gated slide while its module is on', () => {
+      mockedConfig.mockReturnValue({
+        autoplayIntervalMs: 3000,
+        slides: [{ ...slides[0], module: 'ecommerce' as const }],
+      });
+      render(<PromoCarousel />);
+
+      expect(screen.getByAltText('First offer')).toBeTruthy();
     });
   });
 });
