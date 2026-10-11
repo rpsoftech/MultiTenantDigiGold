@@ -33,8 +33,15 @@ type PagedTableProps = {
   page: number;
   limit: number;
   onPageChange: (page: number) => void;
-  // Followed by onPageChange(1): a new page size starts again from the first page.
-  onLimitChange: (limit: number) => void;
+  // Shows the rows-per-page select; followed by onPageChange(1), since a new page size
+  // starts again from the first page. Leave it out for a fixed page size.
+  onLimitChange?: (limit: number) => void;
+  // Extra controls on the right of the title, e.g. a refresh button.
+  actions?: ReactNode;
+  // Shown between the title and the table, e.g. a search form.
+  toolbar?: ReactNode;
+  // Replaces the empty state built from text, e.g. for a search with no results.
+  emptyState?: ReactNode;
   itemCount: number;
   hasNextPage: boolean;
   isLoading: boolean;
@@ -61,6 +68,9 @@ export function PagedTable({
   limit,
   onPageChange,
   onLimitChange,
+  actions,
+  toolbar,
+  emptyState,
   itemCount,
   hasNextPage,
   isLoading,
@@ -82,24 +92,29 @@ export function PagedTable({
           </h2>
           <p className={styles.sectionDescription}>{description}</p>
         </div>
-        <label className={styles.pageSize}>
-          Rows per page
-          <select
-            value={limit}
-            disabled={isFetching}
-            onChange={(event) => {
-              onLimitChange(Number(event.target.value));
-              onPageChange(1);
-            }}
-          >
-            {PAGE_SIZES.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </label>
+        {actions}
+        {onLimitChange && (
+          <label className={styles.pageSize}>
+            Rows per page
+            <select
+              value={limit}
+              disabled={isFetching}
+              onChange={(event) => {
+                onLimitChange(Number(event.target.value));
+                onPageChange(1);
+              }}
+            >
+              {PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
+
+      {toolbar}
 
       <Card className={styles.tableCard}>
         {isLoading ? (
@@ -116,12 +131,14 @@ export function PagedTable({
             </Button>
           </div>
         ) : itemCount === 0 ? (
-          <div className={styles.state}>
-            <strong>
-              {page === 1 ? text.emptyTitle : text.emptyPageTitle}
-            </strong>
-            <p>{page === 1 ? text.emptyDetail : text.emptyPageDetail}</p>
-          </div>
+          (emptyState ?? (
+            <div className={styles.state}>
+              <strong>
+                {page === 1 ? text.emptyTitle : text.emptyPageTitle}
+              </strong>
+              <p>{page === 1 ? text.emptyDetail : text.emptyPageDetail}</p>
+            </div>
+          ))
         ) : (
           <div className={styles.tableScroll} aria-busy={isFetching}>
             <table

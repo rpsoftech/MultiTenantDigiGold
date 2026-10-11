@@ -1,6 +1,9 @@
 package interfaces
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrTenantNotFound       = errors.New("invalid or missing tenant")
@@ -43,3 +46,19 @@ var (
 var (
 	ErrKYCNotAwaitingReview = errors.New("customer has no KYC submission waiting for review")
 )
+
+// Counter pickup errors
+var (
+	ErrPickupCodeLocked = errors.New("too many wrong pickup codes; the pickup can only be cancelled")
+)
+
+// PickupCodeMismatchError is ErrInvalidPickupCode with the tries left before the pickup locks.
+type PickupCodeMismatchError struct {
+	AttemptsLeft int
+}
+
+func (e *PickupCodeMismatchError) Error() string {
+	return fmt.Sprintf("%v (%d attempts left)", ErrInvalidPickupCode, e.AttemptsLeft)
+}
+
+func (e *PickupCodeMismatchError) Unwrap() error { return ErrInvalidPickupCode }

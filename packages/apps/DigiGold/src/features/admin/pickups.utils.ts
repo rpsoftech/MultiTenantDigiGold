@@ -1,4 +1,6 @@
 export const PICKUP_CODE_LENGTH = 6;
+// MainServer's models.MaxPickupCodeAttempts: wrong codes before a pickup locks.
+export const MAX_PICKUP_CODE_ATTEMPTS = 5;
 export const PHONE_LENGTH = 10;
 
 // The code is read out by the customer, so tolerate pasted spaces or dashes ("482 915").

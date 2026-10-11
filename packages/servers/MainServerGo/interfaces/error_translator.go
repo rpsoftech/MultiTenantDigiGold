@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"errors"
+	"fmt"
 )
 
 // ParseDBError translates your clean domain errors into your strict JSON format
@@ -11,6 +12,20 @@ func ParseDBError(err error) *RequestError {
 	}
 	if reqErr, ok := err.(*RequestError); ok {
 		return reqErr
+	}
+	var mismatch *PickupCodeMismatchError
+	if errors.As(err, &mismatch) {
+		tries := "tries"
+		if mismatch.AttemptsLeft == 1 {
+			tries = "try"
+		}
+		return &RequestError{
+			StatusCode: 400,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    fmt.Sprintf("Pickup code does not match. %d %s left before this pickup is locked.", mismatch.AttemptsLeft, tries),
+			Name:       "INVALID_PICKUP_CODE",
+			Extra:      map[string]int{"attempts_left": mismatch.AttemptsLeft},
+		}
 	}
 	// 1. Check for specific fixed structures using errors.Is()
 	switch {
@@ -123,6 +138,14 @@ func ParseDBError(err error) *RequestError {
 			Code:       ERROR_INVALID_INPUT,
 			Message:    "This price has expired. Get a new price before confirming the sale.",
 			Name:       "COUNTER_QUOTE_EXPIRED",
+		}
+
+	case errors.Is(err, ErrPickupCodeLocked):
+		return &RequestError{
+			StatusCode: 423,
+			Code:       ERROR_TOO_MANY_ATTEMPTS,
+			Message:    "Too many wrong pickup codes were entered, so this pickup is locked. Cancel it to return the gold to the customer's vault; they can then request a new pickup.",
+			Name:       "PICKUP_CODE_LOCKED",
 		}
 
 	case errors.Is(err, ErrKYCNotAwaitingReview):

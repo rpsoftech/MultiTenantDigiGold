@@ -334,7 +334,12 @@ POST /trade/redeem {weight_grams}
 Customer shows the code at the counter
   → GET  /admin/store/redemptions/pending?phone=...   (staff find the request)
   → POST /admin/store/redemptions/collect {redemption_uuid, pickup_code}  → COLLECTED
+  → GET  /admin/store/redemptions/collected            (today's handovers, for the day's count)
 ```
+
+Each wrong pickup code counts against the request. After 5 it locks (`PICKUP_CODE_LOCKED`):
+even the right code is refused and the request can only be cancelled, so a 6-digit code
+can't be found by trying them all. Collect is also rate limited per staff login.
 
 A `PENDING` request can be cancelled by the customer (`POST /trade/redemptions/{uuid}/cancel`)
 or by staff (`POST /admin/store/redemptions/cancel`). Cancelling posts a `SYSTEM_REVERSAL`

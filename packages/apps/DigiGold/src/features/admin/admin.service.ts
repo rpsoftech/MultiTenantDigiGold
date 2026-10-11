@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api/client';
+import { MAX_PICKUP_CODE_ATTEMPTS } from './pickups.utils';
 import type { ApiResponse } from '@/types/api.types';
 import type {
   AdminLedgerEntry,
@@ -11,6 +12,7 @@ import type {
   KycDocuments,
   KycStatus,
   CollectRedemptionPayload,
+  CollectedRedemption,
   PendingKycSubmission,
   PendingRedemption,
   StorePage,
@@ -23,6 +25,7 @@ import {
   mockQuoteCounterTrade,
   mockCancelRedemption,
   mockCollectRedemption,
+  mockGetCollectedRedemptions,
   mockGetPendingKyc,
   mockGetPendingRedemptions,
   mockGetStoreLedger,
@@ -66,7 +69,33 @@ type PendingRedemptionResponse = {
   customer_name?: string;
   customer_phone: string;
   created_at: string;
+  // Tries left before the request locks; 0 is sent (only a missing value means "unknown").
+  code_attempts_left?: number;
 };
+
+type CollectedRedemptionResponse = {
+  redemption_uuid: string;
+  weight_grams: number;
+  customer_name?: string;
+  customer_phone: string;
+  created_at: string;
+  collected_at: string;
+  collected_by?: string;
+};
+
+function mapCollectedRedemption(
+  entry: CollectedRedemptionResponse,
+): CollectedRedemption {
+  return {
+    id: entry.redemption_uuid,
+    weightGrams: entry.weight_grams,
+    requestedAt: entry.created_at,
+    collectedAt: entry.collected_at,
+    customerName: entry.customer_name?.trim() || 'Unnamed customer',
+    customerPhone: entry.customer_phone,
+    collectedBy: entry.collected_by?.trim() || 'Unknown staff',
+  };
+}
 
 type StoreLedgerResponse = {
   gl_uuid: string;
@@ -209,6 +238,7 @@ function mapPendingRedemption(
     requestedAt: entry.created_at,
     customerName: entry.customer_name?.trim() || 'Unnamed customer',
     customerPhone: entry.customer_phone,
+    codeAttemptsLeft: entry.code_attempts_left ?? MAX_PICKUP_CODE_ATTEMPTS,
   };
 }
 
@@ -301,6 +331,20 @@ export const adminService = {
       StorePageResponse<PendingRedemptionResponse>
     >('/admin/store/redemptions/pending', { params });
     return mapPage(response.data, mapPendingRedemption);
+  },
+
+  // Today's (IST) handovers at this store's counter, newest first.
+  getCollectedRedemptions: async (
+    page = 1,
+    limit = 20,
+  ): Promise<StorePage<CollectedRedemption>> => {
+    const params = normalizePagination(page, limit);
+    if (isAdminDataSample())
+      return mockGetCollectedRedemptions(params.page, params.limit);
+    const response = await apiClient.get<
+      StorePageResponse<CollectedRedemptionResponse>
+    >('/admin/store/redemptions/collected', { params });
+    return mapPage(response.data, mapCollectedRedemption);
   },
 
   collectRedemption: async ({

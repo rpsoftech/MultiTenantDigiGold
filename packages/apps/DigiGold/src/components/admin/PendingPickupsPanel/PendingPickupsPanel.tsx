@@ -1,18 +1,25 @@
 'use client';
 
 import { useRef, useState, type FormEvent } from 'react';
-import { Card } from '@/components/common/Card/Card';
+import { Badge } from '@/components/common/Badge/Badge';
 import { Button } from '@/components/common/Button/Button';
 import { Input } from '@/components/common/Input/Input';
-import { Loader } from '@/components/common/Loader/Loader';
 import { Modal } from '@/components/common/Modal/Modal';
 import { useToast } from '@/components/common/Toast/Toast';
 import { CollectPickupDialog } from '@/components/admin/PendingPickupsPanel/CollectPickupDialog';
+import {
+  PagedTable,
+  pagedTableStyles,
+  type PagedTableText,
+} from '@/components/admin/PagedTable/PagedTable';
 import { usePendingRedemptions } from '@/features/admin/hooks/usePendingRedemptions';
 import { useCollectRedemption } from '@/features/admin/hooks/useCollectRedemption';
 import { useCancelRedemption } from '@/features/admin/hooks/useCancelRedemption';
 import type { PendingRedemption } from '@/features/admin/admin.types';
-import { normalizePhoneSearch } from '@/features/admin/pickups.utils';
+import {
+  MAX_PICKUP_CODE_ATTEMPTS,
+  normalizePhoneSearch,
+} from '@/features/admin/pickups.utils';
 import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
 import { formatMobileNumber } from '@/lib/utils/formatMobileNumber';
 import styles from './PendingPickupsPanel.module.scss';
@@ -21,6 +28,19 @@ const PAGE_SIZE = 20;
 
 const WRONG_CODE_MESSAGE =
   'That pickup code is incorrect. Check it with the customer and try again.';
+
+const TEXT: PagedTableText = {
+  loadingLabel: 'Loading pending pickups',
+  loadingDetail: 'Loading pending pickups…',
+  errorTitle: 'Pending pickups are unavailable',
+  errorDetail: 'We couldn’t load the pickups. Please try again.',
+  emptyTitle: 'No pending pickups',
+  emptyDetail: 'Requests to collect physical gold will appear here.',
+  emptyPageTitle: 'No pickups on this page',
+  emptyPageDetail: 'Go to the previous page to see more pickups.',
+  noun: 'pickups',
+  paginationLabel: 'Pickups pagination',
+};
 
 function formatRequested(timestamp: string) {
   const date = new Date(timestamp);
@@ -35,12 +55,20 @@ function formatRequested(timestamp: string) {
   });
 }
 
-function statusOf(error: unknown): number | null {
-  return isNormalizedApiError(error) ? error.status : null;
+function triesLeft(count: number) {
+  return `${count} ${count === 1 ? 'try' : 'tries'} left`;
 }
 
-function codeOf(error: unknown): string | null {
-  return isNormalizedApiError(error) ? error.code : null;
+function asApiError(error: unknown) {
+  return isNormalizedApiError(error) ? error : null;
+}
+
+// MainServer reports the tries left before the pickup locks in `extra.attempts_left`.
+function attemptsLeftOf(error: unknown): number | null {
+  const extra = asApiError(error)?.extra as
+    | { attempts_left?: unknown }
+    | undefined;
+  return typeof extra?.attempts_left === 'number' ? extra.attempts_left : null;
 }
 
 export function PendingPickupsPanel() {
@@ -109,7 +137,7 @@ export function PendingPickupsPanel() {
     setCollectTarget(null);
     setCancelTarget(null);
     setCode('');
-    if (statusOf(error) === 404) {
+    if (asApiError(error)?.status === 404) {
       showToast({
         title: 'Pickup not found',
         description:
@@ -142,15 +170,31 @@ export function PendingPickupsPanel() {
           });
         },
         onError: (error) => {
-          const status = statusOf(error);
-          if (status === 409 || status === 404) {
+          const apiError = asApiError(error);
+          // Too many wrong codes: only cancelling (gold back to the vault) is left.
+          if (apiError?.code === 'PICKUP_CODE_LOCKED') {
+            setCollectTarget(null);
+            setCode('');
+            showToast({
+              title: 'Pickup locked',
+              description: `Too many wrong codes were entered for ${pickup.customerName}’s pickup. Cancel it to return the gold to their vault; they can then request a new pickup.`,
+              variant: 'danger',
+            });
+            return;
+          }
+          if (apiError?.status === 409 || apiError?.status === 404) {
             dismissStale(error);
             return;
           }
-          if (codeOf(error) === 'INVALID_PICKUP_CODE') {
+          if (apiError?.code === 'INVALID_PICKUP_CODE') {
             // Clear the wrong code so the next attempt starts fresh, and put the cursor back.
+            const left = attemptsLeftOf(error);
             setCode('');
-            setCollectError(WRONG_CODE_MESSAGE);
+            setCollectError(
+              left === null
+                ? WRONG_CODE_MESSAGE
+                : `${WRONG_CODE_MESSAGE} ${triesLeft(left)} before this pickup is locked.`,
+            );
             requestAnimationFrame(() => codeInputRef.current?.focus());
             return;
           }
@@ -187,7 +231,7 @@ export function PendingPickupsPanel() {
         });
       },
       onError: (error) => {
-        const status = statusOf(error);
+        const status = asApiError(error)?.status;
         if (status === 409 || status === 404) {
           dismissStale(error);
           return;
@@ -201,195 +245,163 @@ export function PendingPickupsPanel() {
   }
 
   const busyId = cancel.isPending ? cancelTarget?.id : null;
-  const firstItem = (page - 1) * PAGE_SIZE + 1;
 
   return (
-    <section aria-labelledby="pickups-title">
-      <div className={styles.sectionHeader}>
-        <div>
-          <h2 id="pickups-title" className={styles.sectionTitle}>
-            Pending pickups
-          </h2>
-          <p className={styles.sectionDescription}>
-            Customers waiting to collect physical gold at the counter, oldest
-            first. Collect with the customer’s pickup code.
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          className={styles.action}
-          disabled={isFetching}
-          onClick={() => void refetch()}
-        >
-          {isFetching && !isLoading ? 'Refreshing…' : 'Refresh pickups'}
-        </Button>
-      </div>
-
-      <form className={styles.search} onSubmit={runSearch} noValidate>
-        <Input
-          id="pickup-phone-search"
-          name="pickup-phone-search"
-          label="Search by customer mobile"
-          placeholder="98765 43210"
-          type="tel"
-          inputMode="tel"
-          autoComplete="off"
-          leftAddon="+91"
-          value={searchInput}
-          error={searchError ?? undefined}
-          onChange={(event) => {
-            setSearchInput(event.target.value);
-            if (searchError) setSearchError(null);
-          }}
-        />
-        <div className={styles.searchActions}>
-          <Button type="submit" disabled={isFetching && Boolean(phone)}>
-            Search
+    <>
+      <PagedTable
+        titleId="pickups-title"
+        title="Pending pickups"
+        description="Customers waiting to collect physical gold at the counter, oldest first. Collect with the customer’s pickup code."
+        text={TEXT}
+        page={page}
+        limit={PAGE_SIZE}
+        onPageChange={setPage}
+        itemCount={pickups.length}
+        hasNextPage={data?.hasNextPage ?? false}
+        isLoading={isLoading}
+        isError={isError}
+        isFetching={isFetching}
+        onRetry={() => void refetch()}
+        tableLabel="Pending pickups"
+        minWidth={760}
+        actions={
+          <Button
+            variant="secondary"
+            className={styles.action}
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {isFetching && !isLoading ? 'Refreshing…' : 'Refresh pickups'}
           </Button>
-          {(phone || searchInput) && (
-            <Button type="button" variant="outlined" onClick={clearSearch}>
-              Clear
-            </Button>
-          )}
-        </div>
-      </form>
-
-      <Card className={styles.tableCard}>
-        {isLoading ? (
-          <div className={styles.state}>
-            <Loader label="Loading pending pickups" />
-            <p>Loading pending pickups…</p>
-          </div>
-        ) : isError ? (
-          <div className={styles.state} role="alert">
-            <strong>Pending pickups are unavailable</strong>
-            <p>We couldn’t load the pickups. Please try again.</p>
-            <Button
-              variant="secondary"
-              onClick={() => void refetch()}
-              isLoading={isFetching}
-            >
-              Try again
-            </Button>
-          </div>
-        ) : pickups.length === 0 ? (
-          <div className={styles.state}>
-            <strong>
-              {phone
-                ? `No pending pickups for +91 ${formatMobileNumber(phone)}`
-                : page === 1
-                  ? 'No pending pickups'
-                  : 'No pickups on this page'}
-            </strong>
-            <p>
-              {phone
-                ? 'This customer has nothing waiting at the counter, or the number is not registered with this store.'
-                : page === 1
-                  ? 'Requests to collect physical gold will appear here.'
-                  : 'Go to the previous page to see more pickups.'}
-            </p>
-            {phone && (
+        }
+        toolbar={
+          <form className={styles.search} onSubmit={runSearch} noValidate>
+            <Input
+              id="pickup-phone-search"
+              name="pickup-phone-search"
+              label="Search by customer mobile"
+              placeholder="98765 43210"
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              leftAddon="+91"
+              value={searchInput}
+              error={searchError ?? undefined}
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                if (searchError) setSearchError(null);
+              }}
+            />
+            <div className={styles.searchActions}>
+              <Button type="submit" disabled={isFetching && Boolean(phone)}>
+                Search
+              </Button>
+              {(phone || searchInput) && (
+                <Button type="button" variant="outlined" onClick={clearSearch}>
+                  Clear
+                </Button>
+              )}
+            </div>
+          </form>
+        }
+        emptyState={
+          phone ? (
+            <div className={pagedTableStyles.state}>
+              <strong>
+                No pending pickups for +91 {formatMobileNumber(phone)}
+              </strong>
+              <p>
+                This customer has nothing waiting at the counter, or the number
+                is not registered with this store.
+              </p>
               <Button variant="outlined" onClick={clearSearch}>
                 Show all pickups
               </Button>
-            )}
-          </div>
-        ) : (
-          <div className={styles.tableScroll} aria-busy={isFetching}>
-            <table className={styles.table} aria-label="Pending pickups">
-              <thead>
-                <tr>
-                  <th scope="col">Customer</th>
-                  <th scope="col">Mobile</th>
-                  <th scope="col">Gold</th>
-                  <th scope="col">Requested (IST)</th>
-                  <th scope="col">
-                    <span className={styles.visuallyHidden}>Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {pickups.map((pickup) => (
-                  <tr key={pickup.id}>
-                    <td data-label="Customer">
-                      <div>
-                        <span className={styles.userName}>
-                          {pickup.customerName}
+            </div>
+          ) : undefined
+        }
+      >
+        <thead>
+          <tr>
+            <th scope="col">Customer</th>
+            <th scope="col">Mobile</th>
+            <th scope="col">Gold</th>
+            <th scope="col">Requested (IST)</th>
+            <th scope="col">
+              <span className={styles.visuallyHidden}>Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {pickups.map((pickup) => {
+            const locked = pickup.codeAttemptsLeft <= 0;
+            return (
+              <tr key={pickup.id}>
+                <td data-label="Customer">
+                  <div>
+                    <span className={pagedTableStyles.userName}>
+                      {pickup.customerName}
+                    </span>
+                    <span className={pagedTableStyles.userId}>{pickup.id}</span>
+                    {locked ? (
+                      <Badge variant="danger">
+                        Locked: too many wrong codes
+                      </Badge>
+                    ) : (
+                      pickup.codeAttemptsLeft < MAX_PICKUP_CODE_ATTEMPTS && (
+                        <span className={pagedTableStyles.userId}>
+                          {triesLeft(pickup.codeAttemptsLeft)} for the code
                         </span>
-                        <span className={styles.userId}>{pickup.id}</span>
-                      </div>
-                    </td>
-                    <td data-label="Mobile">
-                      +91 {formatMobileNumber(pickup.customerPhone)}
-                    </td>
-                    <td className={styles.goldBalance} data-label="Gold">
-                      {pickup.weightGrams.toFixed(4)} g
-                    </td>
-                    <td className={styles.joinedDate} data-label="Requested (IST)">
-                      <time dateTime={pickup.requestedAt}>
-                        {formatRequested(pickup.requestedAt)}
-                      </time>
-                    </td>
-                    <td className={styles.actionsCell}>
-                      <div className={styles.actions}>
-                        <Button
-                          className={styles.reviewButton}
-                          aria-label={`Collect pickup for ${pickup.customerName}`}
-                          disabled={cancel.isPending}
-                          onClick={() => openCollect(pickup)}
-                        >
-                          Collect
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          className={styles.reviewButton}
-                          aria-label={`Cancel pickup for ${pickup.customerName}`}
-                          disabled={cancel.isPending || collect.isPending}
-                          isLoading={busyId === pickup.id}
-                          onClick={() => openCancel(pickup)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <nav className={styles.pagination} aria-label="Pickups pagination">
-          <span className={styles.pageSummary} aria-live="polite">
-            {isFetching
-              ? 'Loading pickups…'
-              : isError
-                ? `Page ${page}`
-                : pickups.length
-                  ? `Showing ${firstItem}–${firstItem + pickups.length - 1} pickups`
-                  : '0 pickups on this page'}
-          </span>
-          <div className={styles.pageControls}>
-            <Button
-              variant="secondary"
-              className={styles.action}
-              disabled={page === 1 || isFetching}
-              onClick={() => setPage((current) => current - 1)}
-            >
-              Previous
-            </Button>
-            <span className={styles.pageNumber}>Page {page}</span>
-            <Button
-              variant="secondary"
-              className={styles.action}
-              disabled={!data?.hasNextPage || isFetching || isError}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </nav>
-      </Card>
+                      )
+                    )}
+                  </div>
+                </td>
+                <td data-label="Mobile">
+                  +91 {formatMobileNumber(pickup.customerPhone)}
+                </td>
+                <td className={pagedTableStyles.goldBalance} data-label="Gold">
+                  {pickup.weightGrams.toFixed(4)} g
+                </td>
+                <td
+                  className={pagedTableStyles.dateCell}
+                  data-label="Requested (IST)"
+                >
+                  <time dateTime={pickup.requestedAt}>
+                    {formatRequested(pickup.requestedAt)}
+                  </time>
+                </td>
+                <td className={styles.actionsCell}>
+                  <div className={styles.actions}>
+                    <Button
+                      className={styles.reviewButton}
+                      aria-label={`Collect pickup for ${pickup.customerName}`}
+                      title={
+                        locked
+                          ? 'Locked after too many wrong codes. Cancel it instead.'
+                          : undefined
+                      }
+                      disabled={cancel.isPending || locked}
+                      onClick={() => openCollect(pickup)}
+                    >
+                      Collect
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      className={styles.reviewButton}
+                      aria-label={`Cancel pickup for ${pickup.customerName}`}
+                      disabled={cancel.isPending || collect.isPending}
+                      isLoading={busyId === pickup.id}
+                      onClick={() => openCancel(pickup)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </PagedTable>
 
       <CollectPickupDialog
         redemption={collectTarget}
@@ -447,6 +459,6 @@ export function PendingPickupsPanel() {
           </div>
         )}
       </Modal>
-    </section>
+    </>
   );
 }

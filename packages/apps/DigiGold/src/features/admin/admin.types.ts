@@ -70,6 +70,21 @@ export type PendingRedemption = {
   requestedAt: string;
   customerName: string;
   customerPhone: string;
+  // Pickup-code tries left before MainServer locks the request (0 = locked: it can only be
+  // cancelled, which returns the gold to the vault).
+  codeAttemptsLeft: number;
+};
+
+// A pickup handed over at the counter today, for the end-of-day count.
+export type CollectedRedemption = {
+  id: string;
+  weightGrams: number;
+  requestedAt: string;
+  collectedAt: string;
+  customerName: string;
+  customerPhone: string;
+  // Username of the staff member who handed it over.
+  collectedBy: string;
 };
 
 export type CollectRedemptionPayload = {

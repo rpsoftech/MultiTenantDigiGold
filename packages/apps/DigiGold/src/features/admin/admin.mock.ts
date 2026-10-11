@@ -1,5 +1,7 @@
 import { sizeCounterTrade } from './counterTrade.utils';
+import { MAX_PICKUP_CODE_ATTEMPTS } from './pickups.utils';
 import type {
+  CollectedRedemption,
   AdminLedgerEntry,
   CounterQuote,
   CounterQuoteRequest,
@@ -161,11 +163,14 @@ export async function mockGetPendingKyc(
   return paginate(pending, page, limit);
 }
 
-type MockRedemption = PendingRedemption & {
+// codeAttemptsLeft is derived from failedCodeAttempts when listed, as MainServer does.
+type MockRedemption = Omit<PendingRedemption, 'codeAttemptsLeft'> & {
   status: 'PENDING' | 'COLLECTED' | 'CANCELLED';
   // Real pickup codes never reach staff; the sample data keeps them here so the screen can be
   // tried without a server. Aarav: 482915 and 159037, Priya: 730264.
   pickupCode: string;
+  failedCodeAttempts: number;
+  collectedAt?: string;
 };
 
 const MOCK_REDEMPTIONS: MockRedemption[] = [
@@ -178,6 +183,7 @@ const MOCK_REDEMPTIONS: MockRedemption[] = [
     customerPhone: '9876543210',
     status: 'PENDING',
     pickupCode: '482915',
+    failedCodeAttempts: 0,
   },
   {
     id: 'RDM-202',
@@ -188,6 +194,7 @@ const MOCK_REDEMPTIONS: MockRedemption[] = [
     customerPhone: '9123456789',
     status: 'PENDING',
     pickupCode: '730264',
+    failedCodeAttempts: 0,
   },
   {
     id: 'RDM-203',
@@ -198,12 +205,18 @@ const MOCK_REDEMPTIONS: MockRedemption[] = [
     customerPhone: '9876543210',
     status: 'PENDING',
     pickupCode: '159037',
+    failedCodeAttempts: 0,
   },
 ];
 
 // Same shape the API client produces for a MainServer error response.
-function redemptionError(status: number, code: string, message: string) {
-  return { status, code, message };
+function redemptionError(
+  status: number,
+  code: string,
+  message: string,
+  extra?: unknown,
+) {
+  return { status, code, message, ...(extra !== undefined && { extra }) };
 }
 
 function findPendingRedemption(id: string): MockRedemption {
@@ -242,6 +255,7 @@ export async function mockGetPendingRedemptions(
       requestedAt,
       customerName,
       customerPhone,
+      failedCodeAttempts,
     }) => ({
       id,
       ledgerId,
@@ -249,9 +263,33 @@ export async function mockGetPendingRedemptions(
       requestedAt,
       customerName,
       customerPhone,
+      codeAttemptsLeft: Math.max(
+        MAX_PICKUP_CODE_ATTEMPTS - failedCodeAttempts,
+        0,
+      ),
     }),
   );
   return paginate(pending, page, limit);
+}
+
+export async function mockGetCollectedRedemptions(
+  page = 1,
+  limit = 20,
+): Promise<StorePage<CollectedRedemption>> {
+  const collected = MOCK_REDEMPTIONS.filter(
+    (redemption) => redemption.status === 'COLLECTED' && redemption.collectedAt,
+  )
+    .sort((a, b) => (b.collectedAt ?? '').localeCompare(a.collectedAt ?? ''))
+    .map((redemption) => ({
+      id: redemption.id,
+      weightGrams: redemption.weightGrams,
+      requestedAt: redemption.requestedAt,
+      collectedAt: redemption.collectedAt ?? '',
+      customerName: redemption.customerName,
+      customerPhone: redemption.customerPhone,
+      collectedBy: 'Sample staff',
+    }));
+  return paginate(collected, page, limit);
 }
 
 export async function mockCollectRedemption(
@@ -259,14 +297,29 @@ export async function mockCollectRedemption(
   pickupCode: string,
 ): Promise<void> {
   const redemption = findPendingRedemption(id);
+  const locked = () =>
+    redemptionError(
+      423,
+      'PICKUP_CODE_LOCKED',
+      'Too many wrong pickup codes were entered, so this pickup is locked. Cancel it to return the gold to the customer’s vault; they can then request a new pickup.',
+    );
+  // Like MainServer: five wrong codes lock the request until it is cancelled.
+  if (redemption.failedCodeAttempts >= MAX_PICKUP_CODE_ATTEMPTS) {
+    throw locked();
+  }
   if (redemption.pickupCode !== pickupCode) {
+    redemption.failedCodeAttempts += 1;
+    const left = MAX_PICKUP_CODE_ATTEMPTS - redemption.failedCodeAttempts;
+    if (left <= 0) throw locked();
     throw redemptionError(
       400,
       'INVALID_PICKUP_CODE',
-      'Pickup code does not match.',
+      `Pickup code does not match. ${left} ${left === 1 ? 'try' : 'tries'} left before this pickup is locked.`,
+      { attempts_left: left },
     );
   }
   redemption.status = 'COLLECTED';
+  redemption.collectedAt = new Date().toISOString();
 }
 
 export async function mockCancelRedemption(id: string): Promise<void> {
