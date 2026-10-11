@@ -13,7 +13,9 @@ export type Product = {
   color: string;
   // Display label, e.g. "Chain Pendant".
   category: string;
-  // Catalogue id used in URLs (JEWELLERY_CATEGORIES), e.g. "chain-pendant".
+  // Catalogue id used in URLs (JEWELLERY_CATEGORIES), e.g. "chain-pendant". Products
+  // come from the API unmapped, so MainServer's catalogue endpoints must send it: without
+  // it the product page's breadcrumb has no link back to the category.
   categoryId: string;
   designType: string;
   gender: string;

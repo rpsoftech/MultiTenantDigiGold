@@ -252,6 +252,25 @@ describe('CategoryCatalogue', () => {
     expect(screen.queryByRole('button', { name: 'Carat' })).toBeNull();
   });
 
+  it('names each group of filter checkboxes', async () => {
+    await renderLoaded();
+
+    const carat = screen.getByRole('group', { name: 'Carat' });
+    expect(within(carat).getAllByRole('checkbox').length).toBeGreaterThan(1);
+  });
+
+  it('shows the page at once and waits only for the designs', async () => {
+    render(
+      renderable(<CategoryCatalogue categoryId="bangles" />, {
+        resolved: false,
+      }),
+    );
+
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
+    expect(screen.getByText('Loading designs…')).toBeTruthy();
+    expect(screen.queryByText(/Designs?$/)).toBeNull();
+  });
+
   it(
     'labels a sample catalogue as such',
     withSampleCatalogue(

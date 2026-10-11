@@ -127,8 +127,24 @@
   font-size: 0.74rem;
 }
 .filterGroup {
+  // A fieldset: drop the browser's own border, padding and min-width.
+  min-width: 0;
+  margin: 0;
   padding: 18px 0 2px;
+  border: 0;
   border-top: 1px solid #eee8df;
+}
+// Floated at full width, the legend sits in the normal flow instead of on the fieldset's
+// top border, so the title (or collapse button) lays out as before. (display: contents
+// would drop the legend from the accessibility tree in some browsers, and with it the
+// group's name.)
+.groupLegend {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+.groupLegend + * {
+  clear: both;
 }
 .groupTitle {
   width: 100%;
