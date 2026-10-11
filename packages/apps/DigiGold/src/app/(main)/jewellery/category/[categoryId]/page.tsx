@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { CategoryCatalogue } from '@/components/jewellery/CategoryCatalogue/CategoryCatalogue';
 import { JEWELLERY_CATEGORIES } from '@/features/marketplace/marketplace.catalogue';
 
@@ -11,5 +12,11 @@ export default async function JewelleryCategoryPage({
   params: Promise<{ categoryId: string }>;
 }) {
   const { categoryId } = await params;
-  return <CategoryCatalogue categoryId={categoryId} />;
+  // CategoryCatalogue reads its filters from the query string (useSearchParams), which a
+  // static export can only provide on the client.
+  return (
+    <Suspense fallback={null}>
+      <CategoryCatalogue categoryId={categoryId} />
+    </Suspense>
+  );
 }

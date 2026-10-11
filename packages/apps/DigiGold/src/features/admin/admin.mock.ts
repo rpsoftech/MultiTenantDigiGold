@@ -159,6 +159,20 @@ export async function mockReverseLedgerEntry(ledgerId: string): Promise<void> {
     };
   }
   entry.isReversed = true;
+  // The sample ledger has no customer ids, so the balance after the reversal is the one
+  // before the original entry.
+  MOCK_LEDGER.unshift({
+    id: `${entry.id}-R`,
+    eventType: 'SYSTEM_REVERSAL',
+    paymentMode: 'NONE',
+    weightGrams: -entry.weightGrams,
+    amountInr: -entry.amountInr,
+    runningGoldBalanceGrams: entry.runningGoldBalanceGrams - entry.weightGrams,
+    timestamp: new Date().toISOString(),
+    referenceId: `REVERSAL_${entry.id}`,
+    reversesLedgerId: entry.id,
+    isReversed: false,
+  });
 }
 
 export async function mockCreateCounterTrade(

@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { ProductImage } from '@/components/jewellery/ProductImage/ProductImage';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -117,10 +117,9 @@ function ProductView({ product }: { product: Product }) {
           aria-label={`${product.title} image`}
         >
           <div className={styles.imageFrame}>
-            <Image
+            <ProductImage
               src={product.imageUrl}
               alt={product.imageAlt}
-              fill
               priority
               sizes="(min-width: 1024px) 52vw, 100vw"
             />

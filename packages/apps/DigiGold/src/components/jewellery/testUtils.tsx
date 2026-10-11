@@ -24,6 +24,7 @@ export function renderable(ui: ReactNode, { ecommerce = true } = {}) {
   );
 }
 
+// A bangle from the catalogue, with every required field; override what a test cares about.
 export function product(overrides: Partial<Product> = {}): Product {
   return {
     id: 'bangles-design-1',
