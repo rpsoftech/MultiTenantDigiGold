@@ -6,15 +6,21 @@ import { Button } from '@/components/common/Button/Button';
 import { describeApiError } from '@/lib/api/client';
 import { useTrendingProducts } from '@/features/marketplace/hooks/useTrendingProducts';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useTenantResolved } from '@/features/tenant/hooks/useTenantResolved';
+import { isMarketplaceSample } from '@/features/marketplace/marketplace.sample';
+import { SampleCatalogueNotice } from '@/components/jewellery/SampleCatalogueNotice/SampleCatalogueNotice';
 import { useTrendingJewelryConfig } from './useTrendingJewelryConfig';
 import { ProductCard } from './ProductCard';
 import styles from './TrendingJewelry.module.scss';
 
 // Jewellery content: hidden (and not fetched) when the jewellery catalogue is off for this
-// tenant or this build (NEXT_PUBLIC_ENABLE_JEWELLERY=false in production).
+// tenant or this build (NEXT_PUBLIC_ENABLE_JEWELLERY=false in production), and until this
+// host's tenant config has arrived, so a tenant with it off never briefly sees it.
 export function TrendingJewelry() {
   const tenantConfig = useTenantConfig();
-  if (!(tenantConfig?.activeModules.ecommerce ?? true)) return null;
+  const tenantResolved = useTenantResolved();
+  if (!tenantResolved || !(tenantConfig?.activeModules.ecommerce ?? true))
+    return null;
   return <TrendingJewelrySection />;
 }
 
@@ -41,6 +47,8 @@ function TrendingJewelrySection() {
           {config.viewAllLabel}
         </Link>
       </div>
+
+      {isMarketplaceSample() && <SampleCatalogueNotice />}
 
       {isLoading && (
         <div className={styles.loaderWrap}>

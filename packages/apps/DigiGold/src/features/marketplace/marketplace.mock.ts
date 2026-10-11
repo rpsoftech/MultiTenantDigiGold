@@ -20,6 +20,7 @@ const PRODUCT_DEFAULTS = {
   carat: '22KT Gold',
   color: 'Yellow',
   category: 'Bangles',
+  categoryId: 'bangles',
   designType: 'Dailywear Collection',
   gender: 'Ladies',
   collection: 'Daily Wear Jewellery',
@@ -44,6 +45,7 @@ const createProduct = (
   category: category
     .replace('-', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase()),
+  categoryId: category,
   isNew: index % 3 === 1,
   // Sample data never claims a certification (isBisHallmarked stays unset).
   ...overrides,
@@ -60,6 +62,7 @@ const MOCK_TRENDING_PRODUCTS: Product[] = [
     currency: 'INR',
     ...PRODUCT_DEFAULTS,
     category: 'Necklace',
+    categoryId: 'necklace',
     isNew: true,
   },
   {
@@ -147,8 +150,7 @@ export async function mockGetCategoryProducts(
   // An unknown category is empty, not "everything" — showing every product under the
   // wrong heading was the old fallback.
   return MOCK_CATEGORY_PRODUCTS.filter(
-    (product) =>
-      product.category.toLowerCase().replace(' ', '-') === categoryId,
+    (product) => product.categoryId === categoryId,
   );
 }
 

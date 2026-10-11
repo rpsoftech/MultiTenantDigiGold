@@ -81,6 +81,7 @@ describe.each([
                 carat: '22KT Gold',
                 color: 'Yellow',
                 category: 'rings',
+                categoryId: 'rings',
                 designType: 'Classic',
                 gender: 'Ladies',
                 collection: 'Everyday',

@@ -36,7 +36,7 @@ describe('resolveTenantConfig', () => {
 
     const config = await resolveTenantConfig();
 
-    expect(request).toHaveBeenCalledWith('/tenant/info');
+    expect(request).toHaveBeenCalledWith('/tenant/info', { timeout: 4000 });
     expect(config.tenantId).toBe('live-tenant-uuid');
     expect(config.displayName).toBe('Live Gold Jewellers');
     expect(config.brandLogo).toEqual({

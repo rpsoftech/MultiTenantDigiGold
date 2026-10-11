@@ -14,6 +14,11 @@ jest.mock('next/image', () => ({
 // The section is jewellery content, shown only while the catalogue is on (tenant module
 // and build switch, both surfaced through the tenant config).
 let mockTenantConfig: TenantConfig | null = DEFAULT_TENANT_CONFIG;
+// Until the host's tenant config arrives, jewellery stays hidden.
+let mockTenantResolved = true;
+jest.mock('@/features/tenant/hooks/useTenantResolved', () => ({
+  useTenantResolved: () => mockTenantResolved,
+}));
 jest.mock('@/features/tenant/hooks/useTenantConfig', () => ({
   useTenantConfig: () => mockTenantConfig,
 }));
@@ -314,6 +319,16 @@ describe('CategoryCarousel', () => {
   describe('with the jewellery catalogue off', () => {
     afterEach(() => {
       mockTenantConfig = DEFAULT_TENANT_CONFIG;
+      mockTenantResolved = true;
+    });
+
+    it('renders nothing until this host’s tenant config has arrived', () => {
+      mockTenantResolved = false;
+      mockedUseCategories.mockClear();
+      const { container } = render(<CategoryCarousel />);
+
+      expect(container.innerHTML).toBe('');
+      expect(mockedUseCategories).not.toHaveBeenCalled();
     });
 
     it('renders nothing and never asks for categories', () => {

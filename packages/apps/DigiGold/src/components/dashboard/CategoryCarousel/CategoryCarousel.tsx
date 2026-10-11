@@ -11,6 +11,7 @@ import {
 } from '@/components/common/icons/Icons';
 import { useCategories } from '@/features/marketplace/hooks/useCategories';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useTenantResolved } from '@/features/tenant/hooks/useTenantResolved';
 import { useCategoryCarouselConfig } from './useCategoryCarouselConfig';
 import { CategoryCard } from './CategoryCard';
 import styles from './CategoryCarousel.module.scss';
@@ -23,7 +24,10 @@ const SCROLL_END_THRESHOLD = 4;
 // tenant or this build (NEXT_PUBLIC_ENABLE_JEWELLERY=false in production).
 export function CategoryCarousel() {
   const tenantConfig = useTenantConfig();
-  if (!(tenantConfig?.activeModules.ecommerce ?? true)) return null;
+  // Wait for this host's tenant config, so a tenant with ecommerce off never sees it.
+  const tenantResolved = useTenantResolved();
+  if (!tenantResolved || !(tenantConfig?.activeModules.ecommerce ?? true))
+    return null;
   return <CategoryCarouselSection />;
 }
 

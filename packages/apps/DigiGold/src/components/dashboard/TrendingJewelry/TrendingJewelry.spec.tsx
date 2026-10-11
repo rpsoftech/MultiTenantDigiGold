@@ -15,6 +15,11 @@ jest.mock('next/image', () => ({
 // The section is jewellery content, shown only while the catalogue is on (tenant module
 // and build switch, both surfaced through the tenant config).
 let mockTenantConfig: TenantConfig | null = DEFAULT_TENANT_CONFIG;
+// Until the host's tenant config arrives, jewellery stays hidden.
+let mockTenantResolved = true;
+jest.mock('@/features/tenant/hooks/useTenantResolved', () => ({
+  useTenantResolved: () => mockTenantResolved,
+}));
 jest.mock('@/features/tenant/hooks/useTenantConfig', () => ({
   useTenantConfig: () => mockTenantConfig,
 }));
@@ -74,6 +79,7 @@ const products: Product[] = [
     carat: '22KT Gold',
     color: 'Yellow',
     category: 'necklace',
+    categoryId: 'necklace',
     designType: 'Classic',
     gender: 'Ladies',
     collection: 'Heritage',
@@ -92,6 +98,7 @@ const products: Product[] = [
     carat: '22KT Gold',
     color: 'Yellow',
     category: 'ring',
+    categoryId: 'ring',
     designType: 'Classic',
     gender: 'Ladies',
     collection: 'Heritage',
@@ -167,9 +174,44 @@ describe('TrendingJewelry', () => {
   });
 });
 
+describe('TrendingJewelry on sample data', () => {
+  const original = process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
+  afterEach(() => {
+    if (original === undefined)
+      delete process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
+    else process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = original;
+  });
+
+  it('labels the products as samples', () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = 'true';
+    mockedUseProducts.mockReturnValue(queryState({ data: products }));
+    render(<TrendingJewelry />);
+
+    expect(screen.getByRole('note').textContent).toMatch(/Sample catalogue/);
+  });
+
+  it('says nothing about samples on real data', () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = 'false';
+    mockedUseProducts.mockReturnValue(queryState({ data: products }));
+    render(<TrendingJewelry />);
+
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+});
+
 describe('TrendingJewelry with the jewellery catalogue off', () => {
   afterEach(() => {
     mockTenantConfig = DEFAULT_TENANT_CONFIG;
+    mockTenantResolved = true;
+  });
+
+  it('renders nothing until this host’s tenant config has arrived', () => {
+    mockTenantResolved = false;
+    mockedUseProducts.mockClear();
+    const { container } = render(<TrendingJewelry />);
+
+    expect(container.innerHTML).toBe('');
+    expect(mockedUseProducts).not.toHaveBeenCalled();
   });
 
   it('renders nothing and never asks for trending products', () => {

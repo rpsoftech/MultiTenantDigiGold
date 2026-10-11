@@ -80,6 +80,23 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+// Sample-data mode is read from the environment on each render.
+function withSampleCatalogue(
+  variable: string,
+  run: () => Promise<void> | void,
+) {
+  return async () => {
+    const original = process.env[variable];
+    process.env[variable] = 'true';
+    try {
+      await run();
+    } finally {
+      if (original === undefined) delete process.env[variable];
+      else process.env[variable] = original;
+    }
+  };
+}
+
 describe('CategoryCatalogue', () => {
   it('lists the category and links each design to the client-side product page', async () => {
     await renderLoaded();
@@ -226,6 +243,57 @@ describe('CategoryCatalogue', () => {
       await screen.findByText('No designs in this category yet.'),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('makes only collapsible filter headings buttons', async () => {
+    await renderLoaded();
+
+    expect(screen.getByText('Carat')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Carat' })).toBeNull();
+  });
+
+  it('names each group of filter checkboxes', async () => {
+    await renderLoaded();
+
+    const carat = screen.getByRole('group', { name: 'Carat' });
+    expect(within(carat).getAllByRole('checkbox').length).toBeGreaterThan(1);
+  });
+
+  it('shows the page at once and waits only for the designs', async () => {
+    render(
+      renderable(<CategoryCatalogue categoryId="bangles" />, {
+        resolved: false,
+      }),
+    );
+
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
+    expect(screen.getByText('Loading designs…')).toBeTruthy();
+    expect(screen.queryByText(/Designs?$/)).toBeNull();
+  });
+
+  it(
+    'labels a sample catalogue as such',
+    withSampleCatalogue(
+      'NEXT_PUBLIC_USE_MOCK_MARKETPLACE_CATEGORY',
+      async () => {
+        await renderLoaded();
+        expect(screen.getByRole('note').textContent).toMatch(
+          /Sample catalogue/,
+        );
+      },
+    ),
+  );
+
+  it('waits for this host’s tenant config before loading designs', async () => {
+    render(
+      renderable(<CategoryCatalogue categoryId="bangles" />, {
+        resolved: false,
+      }),
+    );
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByText("Jewellery isn't available here")).toBeNull();
+    await waitFor(() => expect(getCategoryProducts).not.toHaveBeenCalled());
   });
 
   it('respects a tenant without the ecommerce module', async () => {

@@ -9,7 +9,10 @@ import { ChevronDownIcon } from '@/components/common/icons/Icons';
 import { Loader } from '@/components/common/Loader/Loader';
 import { JewelleryUnavailable } from '@/components/jewellery/JewelleryUnavailable/JewelleryUnavailable';
 import { ProductImage } from '@/components/jewellery/ProductImage/ProductImage';
+import { SampleCatalogueNotice } from '@/components/jewellery/SampleCatalogueNotice/SampleCatalogueNotice';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useTenantResolved } from '@/features/tenant/hooks/useTenantResolved';
+import { isJewellerySample } from '@/features/marketplace/marketplace.sample';
 import {
   JEWELLERY_CATEGORIES,
   jewelleryCategoryHref,
@@ -51,6 +54,8 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
   const searchParams = useSearchParams();
   const categoryTitle = jewelleryCategoryLabel(categoryId) ?? categoryId;
   const ecommerceEnabled = tenantConfig?.activeModules.ecommerce ?? true;
+  // Until this host's tenant config arrives the store holds the build-time default.
+  const tenantResolved = useTenantResolved();
 
   // Filters and sort start from the URL (so Back from a design, or a shared link, restores
   // them) and are written back to it on every change.
@@ -83,7 +88,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
   } = useQuery({
     queryKey: ['marketplace', 'category-products', categoryId],
     queryFn: () => marketplaceService.getCategoryProducts(categoryId),
-    enabled: ecommerceEnabled,
+    enabled: tenantResolved && ecommerceEnabled,
   });
 
   const filterGroups = useMemo(() => buildFilterGroups(products), [products]);
@@ -92,8 +97,11 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
     [products, filterGroups, selected, sort],
   );
   const purities = useMemo(() => purityList(products), [products]);
+  // The page itself renders (and is in the static HTML) straight away; only the designs
+  // wait for this host's tenant config.
+  const designsPending = !tenantResolved || isLoading;
 
-  if (!ecommerceEnabled) return <JewelleryUnavailable />;
+  if (tenantResolved && !ecommerceEnabled) return <JewelleryUnavailable />;
 
   const toggleFilter = (key: FilterKey, value: string) => {
     setSelected((current) => {
@@ -124,7 +132,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
   );
 
   const renderResults = () => {
-    if (isLoading) {
+    if (designsPending) {
       return (
         <div className={styles.loading}>
           <Loader label="Loading designs" />
@@ -173,8 +181,9 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
     );
   };
 
+  // A <div>: MainShell already provides the page's <main>.
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
       <header className={styles.hero}>
         <div>
           <nav className={styles.heroKicker} aria-label="Breadcrumb">
@@ -190,7 +199,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
                 {purities.length > 0 && ` in ${joinWithAnd(purities)} gold`}.
               </p>
             </div>
-            {!isLoading && !isError && (
+            {!designsPending && !isError && (
               <span className={styles.heroBadge}>
                 ◇ {products.length}{' '}
                 {products.length === 1 ? 'Design' : 'Designs'}
@@ -199,6 +208,12 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
           </div>
         </div>
       </header>
+
+      {isJewellerySample() && (
+        <div className={styles.sampleNotice}>
+          <SampleCatalogueNotice />
+        </div>
+      )}
 
       <div className={styles.content}>
         <button
@@ -260,22 +275,29 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
             const isExpanded =
               !group.collapsible || expandedGroups.includes(group.key);
             return (
-              <section className={styles.filterGroup} key={group.key}>
-                <button
-                  type="button"
-                  className={styles.groupTitle}
-                  onClick={() => group.collapsible && toggleGroup(group.key)}
-                  aria-expanded={isExpanded}
-                >
-                  {group.label}
-                  {group.collapsible && (
-                    <ChevronDownIcon
-                      className={isExpanded ? styles.chevronOpen : ''}
-                      width={16}
-                      height={16}
-                    />
+              // A fieldset names its checkboxes ("Carat, group"). Only a heading that
+              // collapses is a button; a do-nothing button announcing "expanded" would
+              // mislead screen readers.
+              <fieldset className={styles.filterGroup} key={group.key}>
+                <legend className={styles.groupLegend}>
+                  {group.collapsible ? (
+                    <button
+                      type="button"
+                      className={styles.groupTitle}
+                      onClick={() => toggleGroup(group.key)}
+                      aria-expanded={isExpanded}
+                    >
+                      {group.label}
+                      <ChevronDownIcon
+                        className={isExpanded ? styles.chevronOpen : ''}
+                        width={16}
+                        height={16}
+                      />
+                    </button>
+                  ) : (
+                    <span className={styles.groupTitle}>{group.label}</span>
                   )}
-                </button>
+                </legend>
                 {isExpanded && (
                   <div className={styles.options}>
                     {group.options.map((option) => (
@@ -301,16 +323,22 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
                     Show More
                   </button>
                 )}
-              </section>
+              </fieldset>
             );
           })}
         </aside>
 
         <section className={styles.results}>
           <div className={styles.toolbar}>
-            <span>
-              Showing <strong>{filteredProducts.length}</strong>{' '}
-              {filteredProducts.length === 1 ? 'design' : 'designs'}
+            <span aria-live="polite">
+              {designsPending ? (
+                'Loading designs…'
+              ) : (
+                <>
+                  Showing <strong>{filteredProducts.length}</strong>{' '}
+                  {filteredProducts.length === 1 ? 'design' : 'designs'}
+                </>
+              )}
             </span>
             <label className={styles.sort}>
               <span>Sort by</span>
@@ -331,7 +359,7 @@ export function CategoryCatalogue({ categoryId }: { categoryId: string }) {
           {renderResults()}
         </section>
       </div>
-    </main>
+    </div>
   );
 }
 

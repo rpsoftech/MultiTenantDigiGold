@@ -33,6 +33,23 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+// Sample-data mode is read from the environment on each render.
+function withSampleCatalogue(
+  variable: string,
+  run: () => Promise<void> | void,
+) {
+  return async () => {
+    const original = process.env[variable];
+    process.env[variable] = 'true';
+    try {
+      await run();
+    } finally {
+      if (original === undefined) delete process.env[variable];
+      else process.env[variable] = original;
+    }
+  };
+}
+
 describe('ProductDetail', () => {
   it('loads the product named in ?id= and shows its real price with paise', async () => {
     visit('bangles-design-1');
@@ -115,6 +132,58 @@ describe('ProductDetail', () => {
     expect(
       await screen.findByRole('heading', { name: 'Green Glow Bangle' }),
     ).toBeTruthy();
+  });
+
+  it('links the breadcrumb to the product’s category by its id', async () => {
+    visit('pendant-1');
+    getProduct.mockResolvedValue(
+      product({
+        id: 'pendant-1',
+        title: 'Lotus Pendant Chain',
+        category: 'Chain Pendant',
+        categoryId: 'chain-pendant',
+      }),
+    );
+    render(renderable(<ProductDetail />));
+
+    const link = await screen.findByRole('link', { name: 'Chain Pendant' });
+    expect(link.getAttribute('href')).toBe('/jewellery/category/chain-pendant');
+  });
+
+  it('does not link a category the catalogue does not know', async () => {
+    visit('odd-1');
+    getProduct.mockResolvedValue(
+      product({ id: 'odd-1', category: 'Toe Rings', categoryId: 'toe-rings' }),
+    );
+    render(renderable(<ProductDetail />));
+
+    await screen.findByRole('navigation', { name: 'Breadcrumb' });
+    expect(screen.queryByRole('link', { name: 'Toe Rings' })).toBeNull();
+  });
+
+  it(
+    'labels sample products as such',
+    withSampleCatalogue(
+      'NEXT_PUBLIC_USE_MOCK_MARKETPLACE_CATEGORY',
+      async () => {
+        visit('bangles-design-1');
+        getProduct.mockResolvedValue(product());
+        render(renderable(<ProductDetail />));
+
+        expect((await screen.findByRole('note')).textContent).toMatch(
+          /Sample catalogue/,
+        );
+      },
+    ),
+  );
+
+  it('waits for this host’s tenant config before loading the design', async () => {
+    visit('bangles-design-1');
+    render(renderable(<ProductDetail />, { resolved: false }));
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByText("Jewellery isn't available here")).toBeNull();
+    await waitFor(() => expect(getProduct).not.toHaveBeenCalled());
   });
 
   it('respects a tenant without the ecommerce module', async () => {

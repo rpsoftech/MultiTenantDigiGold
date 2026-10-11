@@ -5,9 +5,13 @@
   color: #3d2b1d;
 }
 .breadcrumbs,
-.layout {
+.layout,
+.sampleNotice {
   max-width: 1280px;
   margin-inline: auto;
+}
+.sampleNotice {
+  margin-bottom: 18px;
 }
 .breadcrumbs {
   display: flex;
