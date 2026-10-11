@@ -45,3 +45,10 @@ export type UpdateKycStatusPayload = {
   userId: string;
   kycStatus: Extract<KycStatus, 'verified' | 'rejected'>;
 };
+
+// MainServer refuses to reverse a SYSTEM_REVERSAL or an entry that already has a reversal.
+// Whether a redemption is still pending is not in the ledger payload, so the server
+// answers 409 ERROR_LEDGER_REVERSAL for a collected one.
+export function canReverseLedgerEntry(entry: AdminLedgerEntry): boolean {
+  return !entry.isReversed && entry.eventType !== 'SYSTEM_REVERSAL';
+}

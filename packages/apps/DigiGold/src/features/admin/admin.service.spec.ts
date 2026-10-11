@@ -223,6 +223,28 @@ describe('adminService store integration', () => {
     },
   );
 
+  it('posts the ledger uuid to the reversal endpoint', async () => {
+    const post = jest
+      .spyOn(apiClient, 'post')
+      .mockResolvedValue({ data: { success: true } });
+
+    await expect(
+      adminService.reverseLedgerEntry('ledger-uuid'),
+    ).resolves.toBeUndefined();
+    expect(post).toHaveBeenCalledWith('/admin/store/ledger/reverse', {
+      ledger_uuid: 'ledger-uuid',
+    });
+  });
+
+  it('propagates a reversal conflict so the caller can handle it', async () => {
+    const error = { status: 409, code: 'ERROR_LEDGER_REVERSAL', message: 'ledger entry is already reversed' };
+    jest.spyOn(apiClient, 'post').mockRejectedValue(error);
+
+    await expect(adminService.reverseLedgerEntry('ledger-uuid')).rejects.toBe(
+      error,
+    );
+  });
+
   it('propagates API errors instead of replacing a failed request with an empty page', async () => {
     const error = { status: 500, message: 'Unable to fetch ledger' };
     jest.spyOn(apiClient, 'get').mockRejectedValue(error);

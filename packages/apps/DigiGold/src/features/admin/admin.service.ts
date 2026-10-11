@@ -12,6 +12,7 @@ import {
   mockGetAdminStats,
   mockGetAdminUsers,
   mockGetStoreLedger,
+  mockReverseLedgerEntry,
   mockUpdateKycStatus,
 } from './admin.mock';
 
@@ -155,6 +156,13 @@ export const adminService = {
       StorePageResponse<StoreLedgerResponse>
     >('/admin/store/ledger', { params });
     return mapPage(response.data, mapLedgerEntry);
+  },
+
+  reverseLedgerEntry: async (ledgerId: string): Promise<void> => {
+    if (isAdminDataSample()) return mockReverseLedgerEntry(ledgerId);
+    await apiClient.post('/admin/store/ledger/reverse', {
+      ledger_uuid: ledgerId,
+    });
   },
 
   updateKycStatus: async ({

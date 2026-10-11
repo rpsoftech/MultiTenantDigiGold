@@ -142,3 +142,18 @@ export async function mockUpdateKycStatus(
   if (!user) throw new Error(`Unknown store customer: ${userId}`);
   user.kycStatus = kycStatus;
 }
+
+export async function mockReverseLedgerEntry(ledgerId: string): Promise<void> {
+  const entry = MOCK_LEDGER.find((candidate) => candidate.id === ledgerId);
+  if (!entry) throw new Error(`Unknown ledger entry: ${ledgerId}`);
+  if (entry.isReversed || entry.eventType === 'SYSTEM_REVERSAL') {
+    throw {
+      message: entry.isReversed
+        ? 'ledger entry is already reversed'
+        : 'ledger entry cannot be reversed',
+      code: 'ERROR_LEDGER_REVERSAL',
+      status: 409,
+    };
+  }
+  entry.isReversed = true;
+}

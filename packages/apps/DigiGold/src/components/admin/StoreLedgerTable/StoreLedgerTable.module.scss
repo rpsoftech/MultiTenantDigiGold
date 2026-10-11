@@ -97,3 +97,18 @@
     min-width: 0;
   }
 }
+
+.visuallyHidden {
+  @include visually-hidden;
+}
+
+.actionsCell {
+  white-space: nowrap;
+}
+
+.actionButton {
+  width: auto;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.75rem;
+}
