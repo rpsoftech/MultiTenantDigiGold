@@ -27,6 +27,7 @@ export function RedemptionCard({ redemption }: { redemption: Redemption }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   const isPending = redemption.status === 'PENDING';
+  const isLocked = isPending && redemption.code_attempts_left === 0;
 
   const handleCancel = async () => {
     try {
@@ -39,7 +40,8 @@ export function RedemptionCard({ redemption }: { redemption: Redemption }) {
       });
     } catch (error) {
       setIsConfirmOpen(false);
-      const notPending = isNormalizedApiError(error) && error.code === 'REDEMPTION_NOT_PENDING';
+      const notPending =
+        isNormalizedApiError(error) && error.code === 'REDEMPTION_NOT_PENDING';
       showToast({
         variant: 'danger',
         title: notPending
@@ -84,8 +86,17 @@ export function RedemptionCard({ redemption }: { redemption: Redemption }) {
         )}
       </div>
 
-      {isPending && redemption.pickup_code && (
-        <PickupCodeCard code={redemption.pickup_code} compact />
+      {isLocked ? (
+        <p className={styles.lockedNotice} role="note">
+          Too many wrong codes were entered at the counter, so this pickup is
+          locked. Cancel it to return the gold to your vault, then request a new
+          pickup.
+        </p>
+      ) : (
+        isPending &&
+        redemption.pickup_code && (
+          <PickupCodeCard code={redemption.pickup_code} compact />
+        )
       )}
 
       {isPending && (

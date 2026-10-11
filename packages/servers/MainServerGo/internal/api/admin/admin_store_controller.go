@@ -44,7 +44,8 @@ func (ac *AdminStoreController) RegisterRoutes(api fiber.Router) {
 
 	redemptionGroup := storeGroup.Group("/redemptions")
 	redemptionGroup.Get("/pending", ac.PendingRedemptions)
-	redemptionGroup.Post("/collect", ac.CollectRedemption)
+	redemptionGroup.Get("/collected", ac.CollectedRedemptions)
+	redemptionGroup.Post("/collect", middleware.PickupCollectRateLimiter(), ac.CollectRedemption)
 	redemptionGroup.Post("/cancel", ac.CancelRedemption)
 }
 
@@ -311,6 +312,34 @@ func (ac *AdminStoreController) PendingRedemptions(c fiber.Ctx) error {
 	offset := (page - 1) * limit
 
 	list, err := ac.TradeService.RedemptionRepo.ListPendingByTenant(c.Context(), tenantID, c.Query("phone"), limit, offset)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    list,
+		"page":    page,
+		"limit":   limit,
+	})
+}
+
+// CollectedRedemptions lists the pickups handed over at this store's counter today (IST),
+// newest first, with who handed each one over, for the end-of-day count.
+func (ac *AdminStoreController) CollectedRedemptions(c fiber.Ctx) error {
+	tenantID := middleware.GetTenantIntID(c)
+
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	list, err := ac.TradeService.RedemptionRepo.ListCollectedTodayByTenant(c.Context(), tenantID, limit, offset)
 	if err != nil {
 		return err
 	}

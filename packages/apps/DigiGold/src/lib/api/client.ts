@@ -17,6 +17,8 @@ export type NormalizedApiError = {
   message: string;
   code: string;
   status: number | null;
+  // MainServer's optional `extra` details, e.g. { attempts_left } on a wrong pickup code.
+  extra?: unknown;
 };
 
 export function normalizeApiBaseURL(
@@ -54,7 +56,7 @@ function normalizeApiError(error: unknown): NormalizedApiError {
 
   const axiosError = axios.isAxiosError(error) ? error : undefined;
   const responseData = axiosError?.response?.data as
-    | { message?: unknown; error?: unknown; name?: unknown }
+    | { message?: unknown; error?: unknown; name?: unknown; extra?: unknown }
     | undefined;
 
   return {
@@ -71,6 +73,7 @@ function normalizeApiError(error: unknown): NormalizedApiError {
         ? responseData.name
         : (axiosError?.code ?? 'UNKNOWN_ERROR'),
     status: axiosError?.response?.status ?? null,
+    ...(responseData?.extra !== undefined && { extra: responseData.extra }),
   };
 }
 
@@ -164,8 +167,7 @@ const ADMIN_REFRESH_LOCK = 'digigold-admin-refresh';
 // Where the API is missing (old browsers, jsdom) the task runs directly; the
 // adopt-after-rejection fallback in refreshAdminTokens then covers most cross-tab races.
 function withAdminRefreshLock<T>(task: () => Promise<T>): Promise<T> {
-  const locks =
-    typeof navigator === 'undefined' ? undefined : navigator.locks;
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
   if (!locks?.request) return task();
   return locks.request(ADMIN_REFRESH_LOCK, task);
 }
@@ -284,7 +286,6 @@ type AdminRetryConfig = InternalAxiosRequestConfig & {
   adminAuthRetried?: boolean;
   adminSessionId?: string | null;
 };
-
 
 apiClient.interceptors.response.use(
   (response) => response,

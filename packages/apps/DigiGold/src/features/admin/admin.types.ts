@@ -61,6 +61,37 @@ export type PendingKycSubmission = {
   submittedAt?: string;
 };
 
+// A customer's request to collect physical gold at the counter. MainServer never sends the
+// pickup code to staff: the customer reads it out and staff type it in.
+export type PendingRedemption = {
+  id: string;
+  ledgerId: string;
+  weightGrams: number;
+  requestedAt: string;
+  customerName: string;
+  customerPhone: string;
+  // Pickup-code tries left before MainServer locks the request (0 = locked: it can only be
+  // cancelled, which returns the gold to the vault).
+  codeAttemptsLeft: number;
+};
+
+// A pickup handed over at the counter today, for the end-of-day count.
+export type CollectedRedemption = {
+  id: string;
+  weightGrams: number;
+  requestedAt: string;
+  collectedAt: string;
+  customerName: string;
+  customerPhone: string;
+  // Username of the staff member who handed it over.
+  collectedBy: string;
+};
+
+export type CollectRedemptionPayload = {
+  redemptionId: string;
+  pickupCode: string;
+};
+
 export type UpdateKycStatusPayload = {
   userId: string;
   kycStatus: Extract<KycStatus, 'verified' | 'rejected'>;

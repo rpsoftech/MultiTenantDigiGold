@@ -19,13 +19,29 @@ func AuthRateLimiter() fiber.Handler {
 		KeyGenerator: func(c fiber.Ctx) string {
 			return c.IP() + "|" + c.Path()
 		},
-		LimitReached: func(c fiber.Ctx) error {
-			return &interfaces.RequestError{
-				StatusCode: fiber.StatusTooManyRequests,
-				Code:       interfaces.ERROR_TOO_MANY_ATTEMPTS,
-				Name:       "RATE_LIMITED",
-				Message:    "Too many requests. Please try again in a minute.",
-			}
-		},
+		LimitReached: rateLimited,
 	})
+}
+
+// PickupCollectRateLimiter caps pickup-code attempts per staff login across all pickups,
+// on top of the per-pickup lock after five wrong codes, so codes can't be sprayed across
+// many pickups. Runs after admin authentication, which provides the admin UUID.
+func PickupCollectRateLimiter() fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:        30,
+		Expiration: time.Minute,
+		KeyGenerator: func(c fiber.Ctx) string {
+			return GetAdminUUID(c) + "|pickup-collect"
+		},
+		LimitReached: rateLimited,
+	})
+}
+
+func rateLimited(c fiber.Ctx) error {
+	return &interfaces.RequestError{
+		StatusCode: fiber.StatusTooManyRequests,
+		Code:       interfaces.ERROR_TOO_MANY_ATTEMPTS,
+		Name:       "RATE_LIMITED",
+		Message:    "Too many requests. Please try again in a minute.",
+	}
 }

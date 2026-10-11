@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api/client';
+import { MAX_PICKUP_CODE_ATTEMPTS } from './pickups.utils';
 import type { ApiResponse } from '@/types/api.types';
 import type {
   AdminLedgerEntry,
@@ -10,7 +11,10 @@ import type {
   CounterTradeReceipt,
   KycDocuments,
   KycStatus,
+  CollectRedemptionPayload,
+  CollectedRedemption,
   PendingKycSubmission,
+  PendingRedemption,
   StorePage,
   UpdateKycStatusPayload,
 } from './admin.types';
@@ -19,7 +23,11 @@ import {
   mockGetAdminUsers,
   mockCreateCounterTrade,
   mockQuoteCounterTrade,
+  mockCancelRedemption,
+  mockCollectRedemption,
+  mockGetCollectedRedemptions,
   mockGetPendingKyc,
+  mockGetPendingRedemptions,
   mockGetStoreLedger,
   mockReverseLedgerEntry,
   mockUpdateKycStatus,
@@ -53,6 +61,41 @@ type PendingKycResponse = {
   document_json: Record<string, unknown> | null;
   kyc_submitted_at?: string | null;
 };
+
+type PendingRedemptionResponse = {
+  redemption_uuid: string;
+  ledger_uuid?: string;
+  weight_grams: number;
+  customer_name?: string;
+  customer_phone: string;
+  created_at: string;
+  // Tries left before the request locks; 0 is sent (only a missing value means "unknown").
+  code_attempts_left?: number;
+};
+
+type CollectedRedemptionResponse = {
+  redemption_uuid: string;
+  weight_grams: number;
+  customer_name?: string;
+  customer_phone: string;
+  created_at: string;
+  collected_at: string;
+  collected_by?: string;
+};
+
+function mapCollectedRedemption(
+  entry: CollectedRedemptionResponse,
+): CollectedRedemption {
+  return {
+    id: entry.redemption_uuid,
+    weightGrams: entry.weight_grams,
+    requestedAt: entry.created_at,
+    collectedAt: entry.collected_at,
+    customerName: entry.customer_name?.trim() || 'Unnamed customer',
+    customerPhone: entry.customer_phone,
+    collectedBy: entry.collected_by?.trim() || 'Unknown staff',
+  };
+}
 
 type StoreLedgerResponse = {
   gl_uuid: string;
@@ -185,6 +228,20 @@ function mapPendingKyc(entry: PendingKycResponse): PendingKycSubmission {
   };
 }
 
+function mapPendingRedemption(
+  entry: PendingRedemptionResponse,
+): PendingRedemption {
+  return {
+    id: entry.redemption_uuid,
+    ledgerId: entry.ledger_uuid ?? '',
+    weightGrams: entry.weight_grams,
+    requestedAt: entry.created_at,
+    customerName: entry.customer_name?.trim() || 'Unnamed customer',
+    customerPhone: entry.customer_phone,
+    codeAttemptsLeft: entry.code_attempts_left ?? MAX_PICKUP_CODE_ATTEMPTS,
+  };
+}
+
 function mapLedgerEntry(entry: StoreLedgerResponse): AdminLedgerEntry {
   const reversalReference =
     entry.event_type === 'SYSTEM_REVERSAL' &&
@@ -250,6 +307,64 @@ export const adminService = {
       { params },
     );
     return mapPage(response.data, mapPendingKyc);
+  },
+
+  // phone is an exact 10-digit match on MainServer; an empty string lists everyone.
+  getPendingRedemptions: async (
+    page = 1,
+    limit = 20,
+    phone = '',
+  ): Promise<StorePage<PendingRedemption>> => {
+    const { page: safePage, limit: safeLimit } = normalizePagination(
+      page,
+      limit,
+    );
+    const trimmedPhone = phone.trim();
+    if (isAdminDataSample())
+      return mockGetPendingRedemptions(safePage, safeLimit, trimmedPhone);
+    const params: Record<string, string | number> = {
+      page: safePage,
+      limit: safeLimit,
+    };
+    if (trimmedPhone) params.phone = trimmedPhone;
+    const response = await apiClient.get<
+      StorePageResponse<PendingRedemptionResponse>
+    >('/admin/store/redemptions/pending', { params });
+    return mapPage(response.data, mapPendingRedemption);
+  },
+
+  // Today's (IST) handovers at this store's counter, newest first.
+  getCollectedRedemptions: async (
+    page = 1,
+    limit = 20,
+  ): Promise<StorePage<CollectedRedemption>> => {
+    const params = normalizePagination(page, limit);
+    if (isAdminDataSample())
+      return mockGetCollectedRedemptions(params.page, params.limit);
+    const response = await apiClient.get<
+      StorePageResponse<CollectedRedemptionResponse>
+    >('/admin/store/redemptions/collected', { params });
+    return mapPage(response.data, mapCollectedRedemption);
+  },
+
+  collectRedemption: async ({
+    redemptionId,
+    pickupCode,
+  }: CollectRedemptionPayload): Promise<void> => {
+    if (isAdminDataSample())
+      return mockCollectRedemption(redemptionId, pickupCode);
+    await apiClient.post('/admin/store/redemptions/collect', {
+      redemption_uuid: redemptionId,
+      pickup_code: pickupCode,
+    });
+  },
+
+  // Returns the grams to the customer's vault by reversing the redemption's ledger debit.
+  cancelRedemption: async (redemptionId: string): Promise<void> => {
+    if (isAdminDataSample()) return mockCancelRedemption(redemptionId);
+    await apiClient.post('/admin/store/redemptions/cancel', {
+      redemption_uuid: redemptionId,
+    });
   },
 
   getStoreLedger: async (

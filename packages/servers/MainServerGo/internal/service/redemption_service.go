@@ -92,7 +92,9 @@ func (s *TradeService) RequestRedemption(ctx context.Context, tenantID, userID i
 }
 
 // CollectRedemption marks a PENDING request as handed over at the counter.
-// Staff must enter the customer's pickup code.
+// Staff must enter the customer's pickup code. Each wrong code is counted against the
+// request; after models.MaxPickupCodeAttempts it locks and can only be cancelled, so the
+// 6-digit code can't be found by trying them all.
 func (s *TradeService) CollectRedemption(ctx context.Context, tenantID int64, redemptionUUID, pickupCode, adminUUID, ipAddress string) (*models.RedemptionRequest, error) {
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
@@ -100,6 +102,7 @@ func (s *TradeService) CollectRedemption(ctx context.Context, tenantID int64, re
 	}
 	defer tx.Rollback()
 
+	// Locked FOR UPDATE, so concurrent attempts on one request are counted one at a time.
 	rr, err := s.RedemptionRepo.GetForUpdateWithTX(ctx, tx, tenantID, redemptionUUID)
 	if err != nil {
 		return nil, err
@@ -107,8 +110,23 @@ func (s *TradeService) CollectRedemption(ctx context.Context, tenantID int64, re
 	if rr.Status != models.RedemptionPending {
 		return nil, interfaces.ErrRedemptionNotPending
 	}
+	if rr.FailedCodeAttempts >= models.MaxPickupCodeAttempts {
+		return nil, interfaces.ErrPickupCodeLocked
+	}
 	if subtle.ConstantTimeCompare([]byte(rr.PickupCode), []byte(pickupCode)) != 1 {
-		return nil, interfaces.ErrInvalidPickupCode
+		attempts, err := s.RedemptionRepo.RecordFailedCodeAttemptWithTX(ctx, tx, rr.ID)
+		if err != nil {
+			return nil, err
+		}
+		// Keep the count even though the collection fails.
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("failed to record pickup code attempt: %w", err)
+		}
+		left := models.MaxPickupCodeAttempts - attempts
+		if left <= 0 {
+			return nil, interfaces.ErrPickupCodeLocked
+		}
+		return nil, &interfaces.PickupCodeMismatchError{AttemptsLeft: left}
 	}
 
 	if err := s.RedemptionRepo.MarkCollectedWithTX(ctx, tx, rr.ID, adminUUID); err != nil {

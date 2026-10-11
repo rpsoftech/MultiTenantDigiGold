@@ -28,4 +28,21 @@ type RedemptionRequest struct {
 	// Set on staff listings so the counter can identify the customer.
 	CustomerName  string `json:"customer_name,omitempty"`
 	CustomerPhone string `json:"customer_phone,omitempty"`
+
+	// Wrong pickup codes entered so far. Internal; listings expose CodeAttemptsLeft.
+	FailedCodeAttempts int `json:"-"`
+	// Pickup-code tries left before the request locks (0 = locked: it can only be
+	// cancelled). Set on the pending and customer listings.
+	CodeAttemptsLeft *int `json:"code_attempts_left,omitempty"`
+	// Username of the staff member who handed the gold over; on the collected listing.
+	CollectedBy string `json:"collected_by,omitempty"`
+}
+
+// MaxPickupCodeAttempts is how many wrong pickup codes a request takes before it locks.
+const MaxPickupCodeAttempts = 5
+
+// SetCodeAttemptsLeft fills CodeAttemptsLeft from FailedCodeAttempts.
+func (rr *RedemptionRequest) SetCodeAttemptsLeft() {
+	left := max(MaxPickupCodeAttempts-rr.FailedCodeAttempts, 0)
+	rr.CodeAttemptsLeft = &left
 }

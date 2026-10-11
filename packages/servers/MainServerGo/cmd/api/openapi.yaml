@@ -338,6 +338,13 @@ components:
         created_at: { type: string, format: date-time }
         customer_name: { type: string, description: Staff listings only. }
         customer_phone: { type: string, description: Staff listings only. }
+        code_attempts_left:
+          type: integer
+          description: >-
+            Pickup-code tries left before the request locks (0 = locked; it can only be
+            cancelled). On pending requests in the staff and customer listings.
+        collected_by:
+          { type: string, description: Staff username who handed it over. Collected listing only. }
 
     SystemEvent:
       type: object
@@ -1332,12 +1339,43 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/Redemption' }
 
+  /admin/store/redemptions/collected:
+    get:
+      operationId: getAdminStoreRedemptionsCollected
+      tags: [Admin Store]
+      summary: Pickups handed over today
+      description: >-
+        Requests collected at this store's counter today (IST), newest first, with the
+        customer and the staff member who handed each one over. Pickup codes are not returned.
+      security: [{ AdminToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Collected redemptions, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Redemption' }
+
   /admin/store/redemptions/collect:
     post:
       operationId: postAdminStoreRedemptionsCollect
       tags: [Admin Store]
       summary: Hand physical gold to the customer
-      description: The customer's pickup code must match. Only a `PENDING` request can be collected.
+      description: >-
+        The customer's pickup code must match. Only a `PENDING` request can be collected.
+        Each wrong code counts against the request; after 5 it locks (423
+        `PICKUP_CODE_LOCKED`) and can only be cancelled. Rate limited to 30 attempts a
+        minute per staff login.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1362,13 +1400,25 @@ paths:
                   message: { type: string }
                   redemption: { $ref: '#/components/schemas/Redemption' }
         '400':
-          description: Missing fields or wrong pickup code (`INVALID_PICKUP_CODE`).
+          description: >-
+            Missing fields or wrong pickup code (`INVALID_PICKUP_CODE`, with
+            `extra.attempts_left`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: Already collected or cancelled (`REDEMPTION_NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '423':
+          description: Too many wrong codes (`PICKUP_CODE_LOCKED`); cancel the request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Rate limited (`RATE_LIMITED`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

@@ -200,6 +200,17 @@ export function WalletIcon(props: IconProps) {
   );
 }
 
+export function TruckIcon(props: IconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M3 6h11v10H3z" />
+      <path d="M14 10h4l3 3v3h-7z" />
+      <circle cx="7" cy="18" r="2" />
+      <circle cx="17" cy="18" r="2" />
+    </svg>
+  );
+}
+
 export function CoinsIcon(props: IconProps) {
   return (
     <svg {...DEFAULT_PROPS} {...props}>
