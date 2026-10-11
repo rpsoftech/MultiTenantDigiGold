@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useCategories } from '@/features/marketplace/hooks/useCategories';
 import type { Category } from '@/features/marketplace/marketplace.types';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+import type { TenantConfig } from '@/features/tenant/tenant.types';
 import { CategoryCarousel } from './CategoryCarousel';
 
 jest.mock('next/image', () => ({
@@ -9,6 +11,21 @@ jest.mock('next/image', () => ({
     <img src={src} alt={alt} />
   ),
 }));
+// The section is jewellery content, shown only while the catalogue is on (tenant module
+// and build switch, both surfaced through the tenant config).
+let mockTenantConfig: TenantConfig | null = DEFAULT_TENANT_CONFIG;
+// Until the host's tenant config arrives, jewellery stays hidden.
+let mockTenantResolved = true;
+jest.mock('@/features/tenant/hooks/useTenantResolved', () => ({
+  useTenantResolved: () => mockTenantResolved,
+}));
+jest.mock('@/features/tenant/hooks/useTenantConfig', () => ({
+  useTenantConfig: () => mockTenantConfig,
+}));
+const jewelleryOff: TenantConfig = {
+  ...DEFAULT_TENANT_CONFIG,
+  activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, ecommerce: false },
+};
 jest.mock('@/features/marketplace/hooks/useCategories', () => ({
   useCategories: jest.fn(),
 }));
@@ -296,6 +313,31 @@ describe('CategoryCarousel', () => {
       });
 
       expect(scrollBy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('with the jewellery catalogue off', () => {
+    afterEach(() => {
+      mockTenantConfig = DEFAULT_TENANT_CONFIG;
+      mockTenantResolved = true;
+    });
+
+    it('renders nothing until this host’s tenant config has arrived', () => {
+      mockTenantResolved = false;
+      mockedUseCategories.mockClear();
+      const { container } = render(<CategoryCarousel />);
+
+      expect(container.innerHTML).toBe('');
+      expect(mockedUseCategories).not.toHaveBeenCalled();
+    });
+
+    it('renders nothing and never asks for categories', () => {
+      mockTenantConfig = jewelleryOff;
+      mockedUseCategories.mockClear();
+      const { container } = render(<CategoryCarousel />);
+
+      expect(container.innerHTML).toBe('');
+      expect(mockedUseCategories).not.toHaveBeenCalled();
     });
   });
 });

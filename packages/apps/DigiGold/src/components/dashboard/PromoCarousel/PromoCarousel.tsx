@@ -3,12 +3,19 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { usePromoCarouselConfig } from './usePromoCarouselConfig';
 import { cn } from '@/lib/utils/cn';
 import styles from './PromoCarousel.module.scss';
 
 export function PromoCarousel() {
-  const { slides, autoplayIntervalMs } = usePromoCarouselConfig();
+  const { slides: configuredSlides, autoplayIntervalMs } =
+    usePromoCarouselConfig();
+  const tenantConfig = useTenantConfig();
+  const slides = configuredSlides.filter(
+    (slide) =>
+      !slide.module || (tenantConfig?.activeModules[slide.module] ?? true),
+  );
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -58,7 +65,7 @@ export function PromoCarousel() {
                   sizes="(min-width: 1280px) 1280px, 100vw"
                 />
               </div>
-            )
+            ),
           )}
         </div>
 
@@ -71,7 +78,10 @@ export function PromoCarousel() {
                 role="tab"
                 aria-selected={index === activeIndex}
                 aria-label={`Show slide ${index + 1} of ${slides.length}`}
-                className={cn(styles.dot, index === activeIndex && styles.dotActive)}
+                className={cn(
+                  styles.dot,
+                  index === activeIndex && styles.dotActive,
+                )}
                 onClick={() => setActiveIndex(index)}
               />
             ))}

@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 	utility_functions "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions"
@@ -12,8 +14,9 @@ import (
 )
 
 type UserService struct {
-	UserRepo *repository.UserRepository
-	DB       *postgres.PostgresDBStruct
+	UserRepo  *repository.UserRepository
+	EventRepo *repository.EventRepository
+	DB        *postgres.PostgresDBStruct
 }
 
 var (
@@ -24,8 +27,9 @@ var (
 func GetUserService() *UserService {
 	userServiceOnce.Do(func() {
 		userServiceInstance = &UserService{
-			UserRepo: repository.GetUserRepository(),
-			DB:       postgres.GetPostgresDB(),
+			UserRepo:  repository.GetUserRepository(),
+			EventRepo: repository.GetEventRepository(),
+			DB:        postgres.GetPostgresDB(),
 		}
 	})
 	return userServiceInstance
@@ -63,4 +67,35 @@ func (s *UserService) RegisterUser(ctx context.Context, tenantID int64, phone, f
 	}
 
 	return user, nil
+}
+
+// DecideKYC approves ("verified") or rejects ("rejected") a customer's KYC submission and
+// writes a KYC_DECIDED audit event in the same transaction, so the decision and its record
+// stand or fall together. Returns false when the customer had no submission waiting.
+func (s *UserService) DecideKYC(ctx context.Context, u *models.User, status, tenantUUID, adminUUID, ipAddress string) (bool, error) {
+	tx, err := s.DB.Db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	decided, err := s.UserRepo.DecideKYCWithTX(ctx, tx, u, status, adminUUID)
+	if err != nil || !decided {
+		return false, err
+	}
+	event := events.GenerateKYCDecidedEvent(tenantUUID, adminUUID, ipAddress,
+		events.KYCDecision{UserUUID: u.UUID, Status: status})
+	if err := s.EventRepo.SaveEventWithTx(ctx, tx, event); err != nil {
+		return false, fmt.Errorf("failed to save kyc decision event: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("failed to commit kyc decision: %w", err)
+	}
+
+	// Synchronous, unlike the profile-update paths: the cached row is what InitiateBuy and
+	// GET /user/kyc read, so a stale entry would keep a just-approved customer blocked from
+	// KYC-gated purchases for the full cache TTL.
+	s.UserRepo.InvalidateUserCaches(ctx, u)
+	s.EventRepo.PublishAsync(event)
+	return true, nil
 }

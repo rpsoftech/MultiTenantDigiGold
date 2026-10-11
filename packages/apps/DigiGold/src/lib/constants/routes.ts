@@ -8,8 +8,8 @@ export const ROUTES = {
   redemptions: '/vault/redemptions',
   kyc: '/kyc',
   sip: '/invest/sip',
-  // /jewellery shows the default category (DEFAULT_JEWELLERY_CATEGORY_ID); category
-  // and product URLs come from features/marketplace/marketplace.catalogue.ts.
+  // /jewellery shows the default category (DEFAULT_JEWELLERY_CATEGORY_ID); category and
+  // product URLs come from features/marketplace/marketplace.catalogue.ts.
   jewellery: '/jewellery',
   aboutUs: '/about-us',
   vaultSecurity: '/vault/security',
@@ -20,7 +20,11 @@ export const ROUTES = {
   adminLogin: '/admin/login',
   adminDashboard: '/admin/dashboard',
   adminCustomers: '/admin/customers',
+  adminKycReview: '/admin/kyc-review',
   adminLedger: '/admin/ledger',
+  adminPickups: '/admin/pickups',
+  adminAuditEvents: '/admin/audit-events',
+  adminCounterSale: '/admin/counter-sale',
   adminProfile: '/admin/profile',
   adminUpdatePassword: '/admin/update-password',
 } as const;

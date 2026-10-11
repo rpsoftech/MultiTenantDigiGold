@@ -1,10 +1,10 @@
 import { StoreAccessGate } from '@/components/admin/StoreAccessGate/StoreAccessGate';
-import { UserApprovalsTable } from '@/components/admin/UserApprovalsTable/UserApprovalsTable';
+import { CustomerDirectoryTable } from '@/components/admin/CustomerDirectoryTable/CustomerDirectoryTable';
 
 export default function AdminCustomersPage() {
   return (
     <StoreAccessGate>
-      <UserApprovalsTable />
+      <CustomerDirectoryTable />
     </StoreAccessGate>
   );
 }

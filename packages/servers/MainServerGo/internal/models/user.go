@@ -15,7 +15,8 @@ type User struct {
 	City             *string         `json:"city"` // entered at registration; nil for older customers
 	KYCStatus        string          `json:"kyc_status"`
 	StatusApprovedBy *int64          `json:"status_approved_by"`
-	DocumentJSON     json.RawMessage `json:"document_json"` // JSONB
+	DocumentJSON     json.RawMessage `json:"document_json"`              // JSONB
+	KYCSubmittedAt   *time.Time      `json:"kyc_submitted_at,omitempty"` // set by the KYC review queue query
 	ERPUniqueID      *string         `json:"erp_unique_id"`
 	VaultBalance     float64         `json:"total_vault_balance"` // DECIMAL(14,4)
 	CreatedAt        time.Time       `json:"created_at"`

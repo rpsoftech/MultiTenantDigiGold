@@ -1,4 +1,9 @@
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import {
+  createSelector,
+  createSlice,
+  type PayloadAction,
+} from '@reduxjs/toolkit';
+import { applyBuildSwitches } from '@/features/tenant/buildSwitches';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
 import type { RootState } from '@/store';
 
@@ -32,7 +37,17 @@ export const { tenantConfigReceived, tenantConfigUnavailable } =
   tenantSlice.actions;
 export const tenantReducer = tenantSlice.reducer;
 
-export const selectTenantConfig = (state: RootState): TenantConfig | null =>
-  state.tenant.config;
+// What the app should act on: the tenant's config with the build-level switches applied
+// (e.g. jewellery hidden in production). Memoized so components don't re-render on every read.
+// False until this host's tenant config has arrived (or failed to). Until then
+// selectTenantConfig returns the build-time default, so module switches aren't final.
 export const selectTenantResolved = (state: RootState): boolean =>
   state.tenant.resolved ?? true;
+
+export const selectTenantConfig = createSelector(
+  [(state: RootState) => state.tenant.config],
+  (config): TenantConfig | null => (config ? applyBuildSwitches(config) : null),
+  // With no build switch to apply the stored config comes back unchanged, by design;
+  // Reselect's dev-mode check would otherwise warn that the selector is an identity.
+  { devModeChecks: { identityFunctionCheck: 'never' } },
+);

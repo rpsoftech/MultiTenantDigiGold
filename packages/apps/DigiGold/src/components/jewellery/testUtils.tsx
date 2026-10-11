@@ -5,7 +5,7 @@ import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
 import type { Product } from '@/features/marketplace/marketplace.types';
 import { makeStore } from '@/store';
 
-// resolved: false simulates the tenant config still loading (build-time default in place).
+// resolved: false renders before this host's tenant config has arrived.
 export function renderable(
   ui: ReactNode,
   { ecommerce = true, resolved = true } = {},
@@ -29,6 +29,7 @@ export function renderable(
   );
 }
 
+// A bangle from the catalogue, with every required field; override what a test cares about.
 export function product(overrides: Partial<Product> = {}): Product {
   return {
     id: 'bangles-design-1',

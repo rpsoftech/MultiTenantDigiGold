@@ -3,8 +3,9 @@ import { Card } from '@/components/common/Card/Card';
 import { ROUTES } from '@/lib/constants/routes';
 import styles from './JewelleryUnavailable.module.scss';
 
-// Shown when the tenant has the ecommerce module switched off. The nav already hides the
-// Jewellery link; this covers typed or bookmarked catalogue URLs.
+// Shown when the jewellery catalogue is off: the tenant's ecommerce module is switched off,
+// or the build hides it (NEXT_PUBLIC_ENABLE_JEWELLERY=false in production). The nav and
+// the home page already hide jewellery; this covers typed or bookmarked catalogue URLs.
 export function JewelleryUnavailable() {
   return (
     <Card className={styles.card}>

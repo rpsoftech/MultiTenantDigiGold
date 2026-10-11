@@ -10,40 +10,68 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+function setup() {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  const page = { items: [], page: 1, limit: 20, hasNextPage: false };
+  const keys = {
+    directory: adminQueryKeys.customerPage(2, 20),
+    recent: adminQueryKeys.customerPage(1, 5),
+    queue: adminQueryKeys.kycPendingPage(1, 20),
+    ledger: adminQueryKeys.ledgerPage(1, 20),
+  };
+  Object.values(keys).forEach((key) => client.setQueryData(key, page));
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const hook = renderHook(() => useUpdateKycStatus(), { wrapper });
+  const invalidated = (key: readonly unknown[]) =>
+    client.getQueryState(key)?.isInvalidated;
+  return { client, keys, hook, invalidated };
+}
+
 describe('useUpdateKycStatus', () => {
-  it('invalidates directory pages and recent customers after a review, leaving ledger data cached', async () => {
+  it('invalidates the review queue, directory pages and recent customers after a review, leaving ledger data cached', async () => {
     jest.spyOn(adminService, 'updateKycStatus').mockResolvedValue(undefined);
-    const client = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
-    const directoryKey = adminQueryKeys.customerPage(2, 20);
-    const recentKey = adminQueryKeys.customerPage(1, 5);
-    const ledgerKey = adminQueryKeys.ledgerPage(1, 20);
-    const page = { items: [], page: 1, limit: 20, hasNextPage: false };
-    client.setQueryData(directoryKey, page);
-    client.setQueryData(recentKey, page);
-    client.setQueryData(ledgerKey, page);
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
-    const { result, unmount } = renderHook(() => useUpdateKycStatus(), {
-      wrapper,
-    });
+    const { client, keys, hook, invalidated } = setup();
 
     await act(async () => {
-      await result.current.mutateAsync({
+      await hook.result.current.mutateAsync({
         userId: 'customer-uuid',
         kycStatus: 'verified',
       });
     });
 
-    expect(client.getQueryState(directoryKey)?.isInvalidated).toBe(true);
-    expect(client.getQueryState(recentKey)?.isInvalidated).toBe(true);
-    expect(client.getQueryState(ledgerKey)?.isInvalidated).toBe(false);
-    unmount();
+    expect(invalidated(keys.queue)).toBe(true);
+    expect(invalidated(keys.directory)).toBe(true);
+    expect(invalidated(keys.recent)).toBe(true);
+    expect(invalidated(keys.ledger)).toBe(false);
+    hook.unmount();
+    client.clear();
+  });
+
+  it('still refreshes the queue when the decision fails, since the queue is then stale', async () => {
+    jest
+      .spyOn(adminService, 'updateKycStatus')
+      .mockRejectedValue({ status: 403, message: 'user not found in tenant' });
+    const { client, keys, hook, invalidated } = setup();
+
+    await act(async () => {
+      await expect(
+        hook.result.current.mutateAsync({
+          userId: 'customer-uuid',
+          kycStatus: 'rejected',
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+    });
+
+    expect(invalidated(keys.queue)).toBe(true);
+    expect(invalidated(keys.directory)).toBe(true);
+    hook.unmount();
     client.clear();
   });
 });

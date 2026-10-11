@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { ProductImage } from '@/components/jewellery/ProductImage/ProductImage';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -11,18 +11,19 @@ import { JewelleryUnavailable } from '@/components/jewellery/JewelleryUnavailabl
 import { SampleCatalogueNotice } from '@/components/jewellery/SampleCatalogueNotice/SampleCatalogueNotice';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useTenantResolved } from '@/features/tenant/hooks/useTenantResolved';
+import { isJewellerySample } from '@/features/marketplace/marketplace.sample';
 import {
   jewelleryCategoryHref,
   jewelleryCategoryLabel,
 } from '@/features/marketplace/marketplace.catalogue';
 import { marketplaceService } from '@/features/marketplace/marketplace.service';
-import { isJewellerySample } from '@/features/marketplace/marketplace.sample';
 import type { Product } from '@/features/marketplace/marketplace.types';
 import { describeApiError } from '@/lib/api/client';
 import { ROUTES } from '@/lib/constants/routes';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import styles from './ProductDetail.module.scss';
 
+// A <div>: MainShell already provides the page's <main>.
 function StatePanel({ children }: { children: React.ReactNode }) {
   return (
     <div className={styles.page}>
@@ -34,7 +35,7 @@ function StatePanel({ children }: { children: React.ReactNode }) {
 export function ProductDetail() {
   const tenantConfig = useTenantConfig();
   const productId = useSearchParams().get('id') ?? '';
-  // Wait for the host's tenant config: until then the store holds the build-time default.
+  // Wait for this host's tenant config: until then the store holds the build-time default.
   const tenantResolved = useTenantResolved();
   const ecommerceEnabled = tenantConfig?.activeModules.ecommerce ?? true;
 
@@ -97,7 +98,11 @@ function ProductView({ product }: { product: Product }) {
 
   return (
     <div className={styles.page}>
-      {isJewellerySample() && <SampleCatalogueNotice />}
+      {isJewellerySample() && (
+        <div className={styles.sampleNotice}>
+          <SampleCatalogueNotice />
+        </div>
+      )}
       <nav className={styles.breadcrumbs} aria-label="Breadcrumb">
         <Link href={ROUTES.home}>Home</Link>
         <span>/</span>
@@ -120,10 +125,9 @@ function ProductView({ product }: { product: Product }) {
           aria-label={`${product.title} image`}
         >
           <div className={styles.imageFrame}>
-            <Image
+            <ProductImage
               src={product.imageUrl}
               alt={product.imageAlt}
-              fill
               priority
               sizes="(min-width: 1024px) 52vw, 100vw"
             />

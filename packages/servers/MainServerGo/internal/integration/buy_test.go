@@ -175,13 +175,93 @@ func TestCounterBuy_CreditsGold(t *testing.T) {
 }
 
 func TestCounterBuy_RejectsOnlinePaymentMode(t *testing.T) {
-	r := call(t, "POST", "/admin/store/trade/counter", demoManager(t), database.SeedDemoTenantUUID, map[string]any{
-		"user_uuid":               database.SeedVerifiedCustomerUUID,
-		"requested_rate_per_gram": demoBuyRate,
-		"weight_grams":            1,
-		"payment_mode":            "ONLINE_PG",
+	r := counterQuote(t, map[string]any{
+		"user_uuid":    database.SeedVerifiedCustomerUUID,
+		"weight_grams": 1,
+		"payment_mode": "ONLINE_PG",
 	})
 	expectStatus(t, r, http.StatusBadRequest)
+}
+
+func TestCounterSale_QuoteIsTheStorePrice(t *testing.T) {
+	r := counterQuote(t, map[string]any{
+		"user_uuid":        database.SeedVerifiedCustomerUUID,
+		"total_amount_inr": 7313,
+		"payment_mode":     "COUNTER_UPI",
+	})
+	expectStatus(t, r, http.StatusOK)
+	quote, _ := r.Body["quote"].(map[string]any)
+	if num(quote["final_rate_per_gram"]) != demoBuyRate || num(quote["total_amount_inr"]) != 7313 {
+		t.Fatalf("quote = %v, want the demo store's rate %v for ₹7313", quote, demoBuyRate)
+	}
+	expectGrams(t, "quoted grams", num(quote["weight_grams"]), 1)
+	if str(quote["quote_id"]) == "" || num(quote["expires_at"]) <= float64(time.Now().Unix()) {
+		t.Fatalf("quote = %v, want an id and a future expiry", quote)
+	}
+}
+
+// A cashier who lost the reply and confirms again must not sell the gold twice.
+func TestCounterSale_ConfirmingTwiceRecordsOnce(t *testing.T) {
+	before := balance(t, database.SeedVerifiedCustomerUUID)
+	quote := counterQuote(t, map[string]any{
+		"user_uuid":    database.SeedVerifiedCustomerUUID,
+		"weight_grams": 0.25,
+		"payment_mode": "COUNTER_UPI",
+	})
+	expectStatus(t, quote, http.StatusOK)
+
+	first := confirmCounterSale(t, quoteID(quote))
+	expectStatus(t, first, http.StatusOK)
+	again := confirmCounterSale(t, quoteID(quote))
+	expectStatus(t, again, http.StatusOK)
+
+	firstTrade, _ := first.Body["trade"].(map[string]any)
+	againTrade, _ := again.Body["trade"].(map[string]any)
+	if first.Body["already_recorded"] != false || again.Body["already_recorded"] != true {
+		t.Fatalf("already_recorded = %v then %v, want false then true", first.Body["already_recorded"], again.Body["already_recorded"])
+	}
+	if str(againTrade["gl_uuid"]) != str(firstTrade["gl_uuid"]) {
+		t.Fatalf("second confirmation returned %v, want the first sale %v", againTrade["gl_uuid"], firstTrade["gl_uuid"])
+	}
+	expectGrams(t, "balance", balance(t, database.SeedVerifiedCustomerUUID), before+0.25)
+}
+
+func TestCounterSale_RejectsAnUnknownQuote(t *testing.T) {
+	r := confirmCounterSale(t, "01900000-0000-7000-8000-00000000dead")
+	expectError(t, r, http.StatusConflict, "COUNTER_QUOTE_EXPIRED")
+
+	missing := call(t, "POST", "/admin/store/trade/counter", demoManager(t), database.SeedDemoTenantUUID,
+		map[string]any{"user_uuid": database.SeedVerifiedCustomerUUID, "weight_grams": 1})
+	expectStatus(t, missing, http.StatusBadRequest)
+}
+
+// Income Tax Act s.269ST: no 2,00,000 INR or more in cash from one person in a day.
+// Uses the pending-KYC customer, whom no other test sells to at the counter.
+func TestCounterSale_CashLimitPerCustomerPerDay(t *testing.T) {
+	sale := func(amount float64, mode string) response {
+		return counterQuote(t, map[string]any{
+			"user_uuid":        database.SeedPendingCustomerUUID,
+			"total_amount_inr": amount,
+			"payment_mode":     mode,
+		})
+	}
+
+	expectError(t, sale(200000, "COUNTER_CASH"), http.StatusBadRequest, "CASH_LIMIT_EXCEEDED")
+
+	first := sale(150000, "COUNTER_CASH")
+	expectStatus(t, first, http.StatusOK)
+	expectStatus(t, confirmCounterSale(t, quoteID(first)), http.StatusOK)
+
+	// Two quotes made before either was confirmed: the second confirmation is refused.
+	early := sale(40000, "COUNTER_CASH")
+	expectStatus(t, early, http.StatusOK)
+	late := sale(40000, "COUNTER_CASH")
+	expectStatus(t, late, http.StatusOK)
+	expectStatus(t, confirmCounterSale(t, quoteID(early)), http.StatusOK)
+	expectError(t, confirmCounterSale(t, quoteID(late)), http.StatusBadRequest, "CASH_LIMIT_EXCEEDED")
+
+	expectError(t, sale(20000, "COUNTER_CASH"), http.StatusBadRequest, "CASH_LIMIT_EXCEEDED")
+	expectStatus(t, sale(20000, "COUNTER_UPI"), http.StatusOK)
 }
 
 func TestCustomerCannotSell(t *testing.T) {

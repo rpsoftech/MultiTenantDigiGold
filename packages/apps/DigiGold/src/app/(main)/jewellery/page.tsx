@@ -1,8 +1,13 @@
+import { Suspense } from 'react';
 import { CategoryCatalogue } from '@/components/jewellery/CategoryCatalogue/CategoryCatalogue';
 import { DEFAULT_JEWELLERY_CATEGORY_ID } from '@/features/marketplace/marketplace.catalogue';
 
-// Renders the default category in place. A redirect() here only runs once JavaScript has
-// loaded in a static export, which left a blank page until then.
+// Shows the default category directly. A redirect() here would only run in the browser
+// (static export), leaving a blank page until JavaScript loads.
 export default function JewelleryPage() {
-  return <CategoryCatalogue categoryId={DEFAULT_JEWELLERY_CATEGORY_ID} />;
+  return (
+    <Suspense fallback={null}>
+      <CategoryCatalogue categoryId={DEFAULT_JEWELLERY_CATEGORY_ID} />
+    </Suspense>
+  );
 }

@@ -63,7 +63,7 @@ describe('useTrendingProducts', () => {
         weight: 10,
         carat: '22KT Gold' as const,
         color: 'Yellow' as const,
-        category: 'Necklace',
+        category: 'necklace',
         categoryId: 'necklace',
         designType: 'Classic',
         gender: 'Ladies' as const,

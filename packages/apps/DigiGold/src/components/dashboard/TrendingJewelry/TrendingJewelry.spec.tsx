@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useTrendingProducts } from '@/features/marketplace/hooks/useTrendingProducts';
 import type { Product } from '@/features/marketplace/marketplace.types';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+import type { TenantConfig } from '@/features/tenant/tenant.types';
 import { TrendingJewelry } from './TrendingJewelry';
 import { ProductCard } from './ProductCard';
 
@@ -10,11 +12,26 @@ jest.mock('next/image', () => ({
     <img src={src} alt={alt} />
   ),
 }));
+// The section is jewellery content, shown only while the catalogue is on (tenant module
+// and build switch, both surfaced through the tenant config).
+let mockTenantConfig: TenantConfig | null = DEFAULT_TENANT_CONFIG;
+// Until the host's tenant config arrives, jewellery stays hidden.
+let mockTenantResolved = true;
+jest.mock('@/features/tenant/hooks/useTenantResolved', () => ({
+  useTenantResolved: () => mockTenantResolved,
+}));
+jest.mock('@/features/tenant/hooks/useTenantConfig', () => ({
+  useTenantConfig: () => mockTenantConfig,
+}));
+const jewelleryOff: TenantConfig = {
+  ...DEFAULT_TENANT_CONFIG,
+  activeModules: { ...DEFAULT_TENANT_CONFIG.activeModules, ecommerce: false },
+};
 jest.mock('@/features/marketplace/hooks/useTrendingProducts', () => ({
   useTrendingProducts: jest.fn(),
 }));
 jest.mock('./trending-jewelry.config.json', () => ({
-  title: 'Trending Jewelry',
+  title: 'Trending Jewellery',
   subtitle: 'Fresh from our collection',
   viewAllLabel: 'View all',
   viewAllUrl: '/marketplace/jewelry',
@@ -61,7 +78,7 @@ const products: Product[] = [
     weight: 12.5,
     carat: '22KT Gold',
     color: 'Yellow',
-    category: 'Necklace',
+    category: 'necklace',
     categoryId: 'necklace',
     designType: 'Classic',
     gender: 'Ladies',
@@ -80,8 +97,8 @@ const products: Product[] = [
     weight: 4.2,
     carat: '22KT Gold',
     color: 'Yellow',
-    category: 'Rings',
-    categoryId: 'rings',
+    category: 'ring',
+    categoryId: 'ring',
     designType: 'Classic',
     gender: 'Ladies',
     collection: 'Heritage',
@@ -100,7 +117,7 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(
-      screen.getByRole('heading', { name: 'Trending Jewelry' }),
+      screen.getByRole('heading', { name: 'Trending Jewellery' }),
     ).toBeTruthy();
     expect(screen.getByText('Fresh from our collection')).toBeTruthy();
     expect(
@@ -115,7 +132,7 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(
-      screen.getByRole('status', { name: 'Loading trending jewelry' }),
+      screen.getByRole('status', { name: 'Loading trending jewellery' }),
     ).toBeTruthy();
   });
 
@@ -126,7 +143,7 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(
-      screen.getByText('No trending jewelry available right now.'),
+      screen.getByText('No trending jewellery available right now.'),
     ).toBeTruthy();
   });
 
@@ -137,14 +154,14 @@ describe('TrendingJewelry', () => {
     render(<TrendingJewelry />);
 
     expect(screen.getByRole('alert').textContent).toContain(
-      "We couldn't load trending jewelry.",
+      "We couldn't load trending jewellery.",
     );
     expect(
-      screen.queryByText('No trending jewelry available right now.'),
+      screen.queryByText('No trending jewellery available right now.'),
     ).toBeNull();
     expect(screen.queryByText('Heritage Necklace')).toBeNull();
     fireEvent.click(
-      screen.getByRole('button', { name: 'Retry loading trending jewelry' }),
+      screen.getByRole('button', { name: 'Retry loading trending jewellery' }),
     );
     expect(refetch).toHaveBeenCalledTimes(1);
   });
@@ -154,6 +171,56 @@ describe('TrendingJewelry', () => {
 
     expect(screen.getByText('Heritage Necklace')).toBeTruthy();
     expect(screen.getByText('Classic Ring')).toBeTruthy();
+  });
+});
+
+describe('TrendingJewelry on sample data', () => {
+  const original = process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
+  afterEach(() => {
+    if (original === undefined)
+      delete process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE;
+    else process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = original;
+  });
+
+  it('labels the products as samples', () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = 'true';
+    mockedUseProducts.mockReturnValue(queryState({ data: products }));
+    render(<TrendingJewelry />);
+
+    expect(screen.getByRole('note').textContent).toMatch(/Sample catalogue/);
+  });
+
+  it('says nothing about samples on real data', () => {
+    process.env.NEXT_PUBLIC_USE_MOCK_MARKETPLACE = 'false';
+    mockedUseProducts.mockReturnValue(queryState({ data: products }));
+    render(<TrendingJewelry />);
+
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+});
+
+describe('TrendingJewelry with the jewellery catalogue off', () => {
+  afterEach(() => {
+    mockTenantConfig = DEFAULT_TENANT_CONFIG;
+    mockTenantResolved = true;
+  });
+
+  it('renders nothing until this host’s tenant config has arrived', () => {
+    mockTenantResolved = false;
+    mockedUseProducts.mockClear();
+    const { container } = render(<TrendingJewelry />);
+
+    expect(container.innerHTML).toBe('');
+    expect(mockedUseProducts).not.toHaveBeenCalled();
+  });
+
+  it('renders nothing and never asks for trending products', () => {
+    mockTenantConfig = jewelleryOff;
+    mockedUseProducts.mockClear();
+    const { container } = render(<TrendingJewelry />);
+
+    expect(container.innerHTML).toBe('');
+    expect(mockedUseProducts).not.toHaveBeenCalled();
   });
 });
 

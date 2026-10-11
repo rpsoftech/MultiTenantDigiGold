@@ -1,0 +1,88 @@
+@use '@/styles/mixins' as *;
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.15s ease;
+
+  @include reduced-motion {
+    animation: none;
+  }
+}
+
+.content {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  width: min(100vw, 520px);
+  padding: var(--space-6);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  overflow-y: auto;
+  animation: slideIn 0.2s ease;
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+
+  @include reduced-motion {
+    animation: none;
+  }
+}
+
+.title {
+  margin: 0 var(--space-6) var(--space-2) 0;
+  font-family: var(--font-headline);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.description {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.srOnly {
+  @include visually-hidden;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+}

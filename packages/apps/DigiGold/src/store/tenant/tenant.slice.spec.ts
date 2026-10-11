@@ -46,6 +46,8 @@ describe('tenant slice', () => {
     store.dispatch(tenantConfigUnavailable());
 
     expect(selectTenantResolved(store.getState())).toBe(true);
-    expect(selectTenantConfig(store.getState())).toEqual(DEFAULT_TENANT_CONFIG);
+    expect(selectTenantConfig(store.getState())?.displayName).toBe(
+      DEFAULT_TENANT_CONFIG.displayName,
+    );
   });
 });

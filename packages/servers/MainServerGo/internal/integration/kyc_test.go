@@ -144,6 +144,92 @@ func TestKYC_PendingQueueListsOnlySubmissions(t *testing.T) {
 	}
 }
 
+func decideKYC(t *testing.T, decision, userUUID string) response {
+	t.Helper()
+	return call(t, "POST", "/admin/store/kyc/"+decision, demoManager(t), database.SeedDemoTenantUUID,
+		map[string]any{"user_uuid": userUUID})
+}
+
+// Two admins reviewing the same submission: the second decision must not overwrite the first.
+func TestKYC_DecisionIsFinalAndRecordsTheReviewer(t *testing.T) {
+	userUUID, token := newKYCCustomer(t)
+	expectStatus(t, submitKYC(t, token, validKYC), http.StatusOK)
+
+	expectStatus(t, decideKYC(t, "approve", userUUID), http.StatusOK)
+	expectError(t, decideKYC(t, "reject", userUUID), http.StatusConflict, "KYC_NOT_AWAITING_REVIEW")
+	expectError(t, decideKYC(t, "approve", userUUID), http.StatusConflict, "KYC_NOT_AWAITING_REVIEW")
+	if got := kycStatus(t, token); got != "verified" {
+		t.Fatalf("kyc_status = %q, want the first decision (verified) to stand", got)
+	}
+
+	var reviewer string
+	var decided bool
+	if err := db.QueryRowContext(context.Background(), `
+		SELECT COALESCE(tu.tu_uuid::text, ''), u.user_kyc_decided_at IS NOT NULL
+		FROM users u LEFT JOIN tenant_user_logins tu ON tu.tu_id = u.user_status_approved_by
+		WHERE u.user_uuid = $1`, userUUID).Scan(&reviewer, &decided); err != nil {
+		t.Fatalf("read kyc decision: %v", err)
+	}
+	if reviewer != database.SeedDemoManagerUUID || !decided {
+		t.Fatalf("reviewer = %q, decided_at set = %v; want the demo manager and a timestamp", reviewer, decided)
+	}
+}
+
+func TestKYC_CannotDecideWithoutASubmission(t *testing.T) {
+	userUUID, token := newKYCCustomer(t)
+
+	expectError(t, decideKYC(t, "approve", userUUID), http.StatusConflict, "KYC_NOT_AWAITING_REVIEW")
+	expectError(t, decideKYC(t, "reject", userUUID), http.StatusConflict, "KYC_NOT_AWAITING_REVIEW")
+	if got := kycStatus(t, token); got != "not_started" {
+		t.Fatalf("kyc_status = %q, want not_started", got)
+	}
+}
+
+// A trade moves user_modified_at; the queue must still put the earlier submission first.
+func TestKYC_QueueIsOldestSubmissionFirst(t *testing.T) {
+	firstUUID, firstToken := newKYCCustomer(t)
+	secondUUID, secondToken := newKYCCustomer(t)
+	expectStatus(t, submitKYC(t, firstToken, validKYC), http.StatusOK)
+	expectStatus(t, submitKYC(t, secondToken, validKYC), http.StatusOK)
+	if _, err := db.ExecContext(context.Background(), `
+		UPDATE users SET user_kyc_submitted_at = CURRENT_TIMESTAMP - interval '2 days',
+			user_modified_at = CURRENT_TIMESTAMP + interval '1 hour'
+		WHERE user_uuid = $1`, firstUUID); err != nil {
+		t.Fatalf("age first submission: %v", err)
+	}
+
+	r := call(t, "GET", "/admin/store/kyc/pending?limit=100", demoManager(t), database.SeedDemoTenantUUID, nil)
+	expectStatus(t, r, http.StatusOK)
+	position := map[string]int{}
+	rows, _ := r.Body["data"].([]any)
+	for i, row := range rows {
+		if m, ok := row.(map[string]any); ok {
+			position[str(m["user_uuid"])] = i + 1
+			if str(m["user_uuid"]) == firstUUID && str(m["kyc_submitted_at"]) == "" {
+				t.Fatalf("queue row has no kyc_submitted_at: %v", m)
+			}
+		}
+	}
+	if position[firstUUID] == 0 || position[secondUUID] == 0 || position[firstUUID] > position[secondUUID] {
+		t.Fatalf("positions first=%d second=%d, want the older submission first", position[firstUUID], position[secondUUID])
+	}
+}
+
+// Deleting a staff login must not delete the customers that staff member reviewed.
+func TestKYC_ReviewerReferenceDoesNotCascade(t *testing.T) {
+	var onDelete string
+	if err := db.QueryRowContext(context.Background(), `
+		SELECT con.confdeltype::text FROM pg_constraint con
+		JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ANY (con.conkey)
+		WHERE con.conrelid = 'users'::regclass AND con.contype = 'f'
+		  AND att.attname = 'user_status_approved_by'`).Scan(&onDelete); err != nil {
+		t.Fatalf("read reviewer foreign key: %v", err)
+	}
+	if onDelete != "n" {
+		t.Fatalf("user_status_approved_by ON DELETE action = %q, want n (SET NULL)", onDelete)
+	}
+}
+
 func TestOnlineBuy_UpfrontTenantRequiresKYCForAnyAmount(t *testing.T) {
 	ctx := context.Background()
 	if _, err := db.ExecContext(ctx,

@@ -191,6 +191,27 @@ describe('admin API authentication', () => {
     expect(getAdminRefreshToken()).toBe('admin-refresh');
   });
 
+  it('passes the server error name and extra details through', async () => {
+    apiClient.defaults.adapter = async (config) => {
+      throw httpError(config, 400, {
+        message:
+          'Pickup code does not match. 2 tries left before this pickup is locked.',
+        name: 'INVALID_PICKUP_CODE',
+        extra: { attempts_left: 2 },
+      });
+    };
+
+    await expect(
+      apiClient.post('/admin/store/redemptions/collect'),
+    ).rejects.toEqual({
+      message:
+        'Pickup code does not match. 2 tries left before this pickup is locked.',
+      code: 'INVALID_PICKUP_CODE',
+      status: 400,
+      extra: { attempts_left: 2 },
+    });
+  });
+
   it('deduplicates simultaneous refreshes, persists rotation, and retries requests', async () => {
     const originalSessionId = getAdminSessionId();
     const refreshStarted = deferred<void>();

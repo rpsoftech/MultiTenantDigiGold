@@ -199,15 +199,34 @@ func setLiveRate(t *testing.T, ask, bid float64) {
 // counterBuy gives a demo customer gold through a counter cash buy and returns the ledger entry.
 func counterBuy(t *testing.T, userUUID string, grams float64) map[string]any {
 	t.Helper()
-	r := call(t, "POST", "/admin/store/trade/counter", demoManager(t), database.SeedDemoTenantUUID, map[string]any{
-		"user_uuid":               userUUID,
-		"requested_rate_per_gram": demoBuyRate,
-		"weight_grams":            grams,
-		"payment_mode":            "COUNTER_CASH",
+	quote := counterQuote(t, map[string]any{
+		"user_uuid":    userUUID,
+		"weight_grams": grams,
+		"payment_mode": "COUNTER_CASH",
 	})
+	expectStatus(t, quote, http.StatusOK)
+	r := confirmCounterSale(t, quoteID(quote))
 	expectStatus(t, r, http.StatusOK)
 	trade, _ := r.Body["trade"].(map[string]any)
 	return trade
+}
+
+// counterQuote asks the demo store for a counter sale price.
+func counterQuote(t *testing.T, body map[string]any) response {
+	t.Helper()
+	return call(t, "POST", "/admin/store/trade/counter/quote", demoManager(t), database.SeedDemoTenantUUID, body)
+}
+
+// confirmCounterSale records the counter sale held under quoteID.
+func confirmCounterSale(t *testing.T, quoteID string) response {
+	t.Helper()
+	return call(t, "POST", "/admin/store/trade/counter", demoManager(t), database.SeedDemoTenantUUID,
+		map[string]any{"quote_id": quoteID})
+}
+
+func quoteID(r response) string {
+	quote, _ := r.Body["quote"].(map[string]any)
+	return str(quote["quote_id"])
 }
 
 // webhook posts a Razorpay payment.captured event for an order, signed with secret.

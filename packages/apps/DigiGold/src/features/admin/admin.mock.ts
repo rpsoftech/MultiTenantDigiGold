@@ -1,7 +1,19 @@
+import { sizeCounterTrade } from './counterTrade.utils';
+import { MAX_PICKUP_CODE_ATTEMPTS } from './pickups.utils';
 import type {
+  CollectedRedemption,
   AdminLedgerEntry,
+  AdminTenantOption,
+  AuditEvent,
+  AuditEventFilters,
+  AuditEventsPage,
+  CounterQuote,
+  CounterQuoteRequest,
+  CounterTradeReceipt,
   AdminStats,
   AdminUserSummary,
+  PendingKycSubmission,
+  PendingRedemption,
   StorePage,
 } from './admin.types';
 
@@ -123,6 +135,201 @@ export async function mockGetAdminUsers(
   );
 }
 
+const MOCK_KYC_DOCUMENTS: Record<string, PendingKycSubmission['documents']> = {
+  'USR-102': { panNumber: 'ABCDE1234F', aadhaarLast4: '4821', other: [] },
+};
+const MOCK_KYC_SUBMITTED_AT: Record<string, string> = {
+  'USR-102': '2026-08-02T10:15:00.000Z',
+};
+
+// A submission waiting for review, as MainServer defines it: pending with documents.
+function awaitingKycReview(user: AdminUserSummary) {
+  return (
+    user.kycStatus === 'pending' && Boolean(MOCK_KYC_DOCUMENTS[user.userId])
+  );
+}
+
+export async function mockGetPendingKyc(
+  page = 1,
+  limit = 20,
+): Promise<StorePage<PendingKycSubmission>> {
+  const pending = MOCK_USERS.filter(awaitingKycReview).map(
+    (user): PendingKycSubmission => ({
+      userId: user.userId,
+      name: user.name,
+      mobileNumber: user.mobileNumber,
+      email: user.email,
+      goldBalanceGrams: user.goldBalanceGrams,
+      documents: MOCK_KYC_DOCUMENTS[user.userId],
+      submittedAt: MOCK_KYC_SUBMITTED_AT[user.userId],
+    }),
+  );
+  return paginate(pending, page, limit);
+}
+
+// codeAttemptsLeft is derived from failedCodeAttempts when listed, as MainServer does.
+type MockRedemption = Omit<PendingRedemption, 'codeAttemptsLeft'> & {
+  status: 'PENDING' | 'COLLECTED' | 'CANCELLED';
+  // Real pickup codes never reach staff; the sample data keeps them here so the screen can be
+  // tried without a server. Aarav: 482915 and 159037, Priya: 730264.
+  pickupCode: string;
+  failedCodeAttempts: number;
+  collectedAt?: string;
+};
+
+const MOCK_REDEMPTIONS: MockRedemption[] = [
+  {
+    id: 'RDM-201',
+    ledgerId: 'GL-9941',
+    weightGrams: 5,
+    requestedAt: '2026-10-08T09:30:00.000Z',
+    customerName: 'Aarav Sharma',
+    customerPhone: '9876543210',
+    status: 'PENDING',
+    pickupCode: '482915',
+    failedCodeAttempts: 0,
+  },
+  {
+    id: 'RDM-202',
+    ledgerId: 'GL-9942',
+    weightGrams: 2.5,
+    requestedAt: '2026-10-08T11:05:00.000Z',
+    customerName: 'Priya Patel',
+    customerPhone: '9123456789',
+    status: 'PENDING',
+    pickupCode: '730264',
+    failedCodeAttempts: 0,
+  },
+  {
+    id: 'RDM-203',
+    ledgerId: 'GL-9943',
+    weightGrams: 1.25,
+    requestedAt: '2026-10-09T08:15:00.000Z',
+    customerName: 'Aarav Sharma',
+    customerPhone: '9876543210',
+    status: 'PENDING',
+    pickupCode: '159037',
+    failedCodeAttempts: 0,
+  },
+];
+
+// Same shape the API client produces for a MainServer error response.
+function redemptionError(
+  status: number,
+  code: string,
+  message: string,
+  extra?: unknown,
+) {
+  return { status, code, message, ...(extra !== undefined && { extra }) };
+}
+
+function findPendingRedemption(id: string): MockRedemption {
+  const redemption = MOCK_REDEMPTIONS.find((candidate) => candidate.id === id);
+  if (!redemption) {
+    throw redemptionError(
+      404,
+      'REDEMPTION_NOT_FOUND',
+      'Redemption request not found.',
+    );
+  }
+  if (redemption.status !== 'PENDING') {
+    throw redemptionError(
+      409,
+      'REDEMPTION_NOT_PENDING',
+      'Redemption is no longer pending.',
+    );
+  }
+  return redemption;
+}
+
+export async function mockGetPendingRedemptions(
+  page = 1,
+  limit = 20,
+  phone = '',
+): Promise<StorePage<PendingRedemption>> {
+  const pending = MOCK_REDEMPTIONS.filter(
+    (redemption) =>
+      redemption.status === 'PENDING' &&
+      (!phone || redemption.customerPhone === phone),
+  ).map(
+    ({
+      id,
+      ledgerId,
+      weightGrams,
+      requestedAt,
+      customerName,
+      customerPhone,
+      failedCodeAttempts,
+    }) => ({
+      id,
+      ledgerId,
+      weightGrams,
+      requestedAt,
+      customerName,
+      customerPhone,
+      codeAttemptsLeft: Math.max(
+        MAX_PICKUP_CODE_ATTEMPTS - failedCodeAttempts,
+        0,
+      ),
+    }),
+  );
+  return paginate(pending, page, limit);
+}
+
+export async function mockGetCollectedRedemptions(
+  page = 1,
+  limit = 20,
+): Promise<StorePage<CollectedRedemption>> {
+  const collected = MOCK_REDEMPTIONS.filter(
+    (redemption) => redemption.status === 'COLLECTED' && redemption.collectedAt,
+  )
+    .sort((a, b) => (b.collectedAt ?? '').localeCompare(a.collectedAt ?? ''))
+    .map((redemption) => ({
+      id: redemption.id,
+      weightGrams: redemption.weightGrams,
+      requestedAt: redemption.requestedAt,
+      collectedAt: redemption.collectedAt ?? '',
+      customerName: redemption.customerName,
+      customerPhone: redemption.customerPhone,
+      collectedBy: 'Sample staff',
+    }));
+  return paginate(collected, page, limit);
+}
+
+export async function mockCollectRedemption(
+  id: string,
+  pickupCode: string,
+): Promise<void> {
+  const redemption = findPendingRedemption(id);
+  const locked = () =>
+    redemptionError(
+      423,
+      'PICKUP_CODE_LOCKED',
+      'Too many wrong pickup codes were entered, so this pickup is locked. Cancel it to return the gold to the customer’s vault; they can then request a new pickup.',
+    );
+  // Like MainServer: five wrong codes lock the request until it is cancelled.
+  if (redemption.failedCodeAttempts >= MAX_PICKUP_CODE_ATTEMPTS) {
+    throw locked();
+  }
+  if (redemption.pickupCode !== pickupCode) {
+    redemption.failedCodeAttempts += 1;
+    const left = MAX_PICKUP_CODE_ATTEMPTS - redemption.failedCodeAttempts;
+    if (left <= 0) throw locked();
+    throw redemptionError(
+      400,
+      'INVALID_PICKUP_CODE',
+      `Pickup code does not match. ${left} ${left === 1 ? 'try' : 'tries'} left before this pickup is locked.`,
+      { attempts_left: left },
+    );
+  }
+  redemption.status = 'COLLECTED';
+  redemption.collectedAt = new Date().toISOString();
+}
+
+export async function mockCancelRedemption(id: string): Promise<void> {
+  findPendingRedemption(id).status = 'CANCELLED';
+}
+
 export async function mockGetStoreLedger(
   page = 1,
   limit = 20,
@@ -134,11 +341,288 @@ export async function mockGetStoreLedger(
   );
 }
 
+const MOCK_TENANT_UUID = '11111111-1111-4111-8111-111111111111';
+
+export const MOCK_TENANTS: AdminTenantOption[] = [
+  { tenantUuid: MOCK_TENANT_UUID, name: 'DigiGold' },
+  {
+    tenantUuid: '22222222-2222-4222-8222-222222222222',
+    name: 'Sample Jewellers',
+  },
+];
+
+const MOCK_AUDIT_EVENTS: AuditEvent[] = [
+  {
+    id: 'evt-1006',
+    key: 'key-1006',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'OTPVerifyEvent',
+    isProcessed: true,
+    parentNames: [],
+    payload: { phone: '9876543210', otp: '123456', verified: true },
+    ipAddress: '203.0.113.9',
+    occurredAt: '2026-10-08T11:20:00.000Z',
+  },
+  {
+    id: 'evt-1005',
+    key: 'key-1005',
+    tenantId: '7',
+    eventName: 'ADMIN_LOGGED_IN',
+    isProcessed: true,
+    parentNames: [],
+    payload: { role: 'super_admin', ip: '203.0.113.4' },
+    ipAddress: '203.0.113.4',
+    adminId: 'adm-001',
+    occurredAt: '2026-10-08T09:05:00.000Z',
+  },
+  {
+    id: 'evt-1004',
+    key: 'key-1004',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'MARGIN_UPDATED',
+    isProcessed: false,
+    parentNames: ['TenantConfigUpdated'],
+    payload: { oldMargin: 2.5, newMargin: 3.1 },
+    adminId: 'adm-001',
+    occurredAt: '2026-10-07T15:40:00.000Z',
+  },
+  {
+    id: 'evt-1003',
+    key: 'key-1003',
+    tenantId: '22222222-2222-4222-8222-222222222222',
+    eventName: 'KYC_DOC_VERIFIED',
+    isProcessed: true,
+    parentNames: [],
+    payload: { userUuid: 'USR-102', status: 'verified' },
+    occurredAt: '2026-10-05T12:00:00.000Z',
+  },
+  {
+    id: 'evt-1002',
+    key: 'key-1002',
+    tenantId: '7',
+    eventName: 'TRADE_GOLD_PURCHASE',
+    isProcessed: true,
+    parentNames: [],
+    payload: {
+      weightGrams: 1.2,
+      amountInr: 8672.47,
+      nested: { ref: 'pay_demo_9931' },
+    },
+    occurredAt: '2026-10-02T09:15:00.000Z',
+  },
+  {
+    id: 'evt-1001',
+    key: 'key-1001',
+    tenantId: MOCK_TENANT_UUID,
+    eventName: 'TENANT_UI_LAYOUT_UPDATED',
+    isProcessed: true,
+    parentNames: [],
+    payload: null,
+    occurredAt: '2026-09-28T08:00:00.000Z',
+  },
+];
+
+export async function mockGetAuditEvents(
+  filters: AuditEventFilters,
+  page = 1,
+  limit = 20,
+): Promise<AuditEventsPage> {
+  const from = filters.from
+    ? new Date(`${filters.from}T00:00:00`).getTime()
+    : null;
+  const to = filters.to ? new Date(`${filters.to}T23:59:59`).getTime() : null;
+  const matching = MOCK_AUDIT_EVENTS.filter((event) => {
+    const time = new Date(event.occurredAt).getTime();
+    return (
+      (!filters.tenantUuid || event.tenantId === filters.tenantUuid) &&
+      (!filters.type || event.eventName === filters.type) &&
+      (from === null || time >= from) &&
+      (to === null || time <= to)
+    );
+  });
+  return {
+    items: matching.slice((page - 1) * limit, page * limit),
+    total: matching.length,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(matching.length / limit)),
+  };
+}
+
+export async function mockGetAdminTenants(): Promise<AdminTenantOption[]> {
+  return MOCK_TENANTS.map((tenant) => ({ ...tenant }));
+}
+
 export async function mockUpdateKycStatus(
   userId: string,
   kycStatus: AdminUserSummary['kycStatus'],
 ): Promise<void> {
   const user = MOCK_USERS.find((candidate) => candidate.userId === userId);
   if (!user) throw new Error(`Unknown store customer: ${userId}`);
+  // Like MainServer: only a submission waiting for review can be decided, once.
+  if (!awaitingKycReview(user)) {
+    throw {
+      message:
+        'This customer has no KYC submission waiting for review. Another admin may already have decided it.',
+      code: 'KYC_NOT_AWAITING_REVIEW',
+      status: 409,
+    };
+  }
   user.kycStatus = kycStatus;
+}
+
+export async function mockReverseLedgerEntry(ledgerId: string): Promise<void> {
+  const entry = MOCK_LEDGER.find((candidate) => candidate.id === ledgerId);
+  if (!entry) throw new Error(`Unknown ledger entry: ${ledgerId}`);
+  if (entry.isReversed || entry.eventType === 'SYSTEM_REVERSAL') {
+    throw {
+      message: entry.isReversed
+        ? 'ledger entry is already reversed'
+        : 'ledger entry cannot be reversed',
+      code: 'ERROR_LEDGER_REVERSAL',
+      status: 409,
+    };
+  }
+  entry.isReversed = true;
+  // The sample ledger has no customer ids, so the balance after the reversal is the one
+  // before the original entry.
+  MOCK_LEDGER.unshift({
+    id: `${entry.id}-R`,
+    eventType: 'SYSTEM_REVERSAL',
+    paymentMode: 'NONE',
+    weightGrams: -entry.weightGrams,
+    amountInr: -entry.amountInr,
+    runningGoldBalanceGrams: entry.runningGoldBalanceGrams - entry.weightGrams,
+    timestamp: new Date().toISOString(),
+    referenceId: `REVERSAL_${entry.id}`,
+    reversesLedgerId: entry.id,
+    isReversed: false,
+  });
+}
+
+// Sample store pricing, as MainServer's demo seed: MCX ask ₹7,000/g, ₹100/g margin, 3% GST.
+const MOCK_MCX_RATE = 7000;
+const MOCK_MARGIN_PER_GRAM = 100;
+const MOCK_GST_PER_GRAM =
+  Math.round((MOCK_MCX_RATE + MOCK_MARGIN_PER_GRAM) * 3) / 100;
+const MOCK_RATE_PER_GRAM =
+  MOCK_MCX_RATE + MOCK_MARGIN_PER_GRAM + MOCK_GST_PER_GRAM;
+const MOCK_QUOTE_VALIDITY_MS = 5 * 60 * 1000;
+// Income Tax Act s.269ST, enforced by MainServer per customer per day.
+const MOCK_CASH_LIMIT_INR = 200000;
+
+const mockQuotes = new Map<string, CounterQuote & { userId: string }>();
+const mockConfirmed = new Map<string, CounterTradeReceipt>();
+const mockCashToday = new Map<string, number>();
+
+function todayKey(userId: string) {
+  const day = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  });
+  return `${day}:${userId}`;
+}
+
+function checkMockCash(
+  request: { userId: string; paymentMode: string },
+  amountInr: number,
+) {
+  const today = mockCashToday.get(todayKey(request.userId)) ?? 0;
+  if (
+    request.paymentMode === 'COUNTER_CASH' &&
+    today + amountInr >= MOCK_CASH_LIMIT_INR
+  ) {
+    throw {
+      message:
+        'Cash received from this customer today would reach ₹2,00,000, which the law does not allow. Take the rest by UPI.',
+      code: 'CASH_LIMIT_EXCEEDED',
+      status: 400,
+    };
+  }
+}
+
+export async function mockQuoteCounterTrade(
+  request: CounterQuoteRequest,
+): Promise<CounterQuote> {
+  if (!MOCK_USERS.some((candidate) => candidate.userId === request.userId)) {
+    throw {
+      message: 'The requested user could not be found.',
+      code: 'ERROR_USER_NOT_FOUND',
+      status: 404,
+    };
+  }
+  const sized = sizeCounterTrade(MOCK_RATE_PER_GRAM, {
+    weightGrams: request.weightGrams,
+    amountInr: request.amountInr,
+  });
+  if (!sized) {
+    throw {
+      message: 'must specify a positive weight_grams or total_amount_inr',
+      code: 'INVALID_PAYLOAD',
+      status: 400,
+    };
+  }
+  checkMockCash(request, sized.amountInr);
+  const quote: CounterQuote = {
+    quoteId: `quote-${Date.now()}-${mockQuotes.size + 1}`,
+    paymentMode: request.paymentMode,
+    weightGrams: sized.weightGrams,
+    amountInr: sized.amountInr,
+    ratePerGram: MOCK_RATE_PER_GRAM,
+    mcxBaseRate: MOCK_MCX_RATE,
+    marginPerGramInr: MOCK_MARGIN_PER_GRAM,
+    gstPerGramInr: MOCK_GST_PER_GRAM,
+    expiresAt: Date.now() + MOCK_QUOTE_VALIDITY_MS,
+  };
+  mockQuotes.set(quote.quoteId, { ...quote, userId: request.userId });
+  return { ...quote };
+}
+
+// Like MainServer: a quote is recorded once; confirming it again returns that sale.
+export async function mockCreateCounterTrade(
+  quoteId: string,
+): Promise<CounterTradeReceipt> {
+  const recorded = mockConfirmed.get(quoteId);
+  if (recorded) return { ...recorded, alreadyRecorded: true };
+
+  const quote = mockQuotes.get(quoteId);
+  if (!quote || quote.expiresAt < Date.now()) {
+    throw {
+      message:
+        'This price has expired. Get a new price before confirming the sale.',
+      code: 'COUNTER_QUOTE_EXPIRED',
+      status: 409,
+    };
+  }
+  const user = MOCK_USERS.find(
+    (candidate) => candidate.userId === quote.userId,
+  );
+  if (!user) throw new Error(`Unknown store customer: ${quote.userId}`);
+  checkMockCash(
+    { userId: quote.userId, paymentMode: quote.paymentMode },
+    quote.amountInr,
+  );
+
+  user.goldBalanceGrams =
+    Math.round((user.goldBalanceGrams + quote.weightGrams) * 10000) / 10000;
+  if (quote.paymentMode === 'COUNTER_CASH') {
+    const key = todayKey(quote.userId);
+    mockCashToday.set(key, (mockCashToday.get(key) ?? 0) + quote.amountInr);
+  }
+  const receipt: CounterTradeReceipt = {
+    id: `GL-${Date.now()}`,
+    eventType: 'GOLD_PURCHASE',
+    paymentMode: quote.paymentMode,
+    weightGrams: quote.weightGrams,
+    amountInr: quote.amountInr,
+    ratePerGram: quote.ratePerGram,
+    mcxBaseRate: quote.mcxBaseRate,
+    marginPerGramInr: quote.marginPerGramInr,
+    gstPerGramInr: quote.gstPerGramInr,
+    runningGoldBalanceGrams: user.goldBalanceGrams,
+    createdAt: new Date().toISOString(),
+    alreadyRecorded: false,
+  };
+  mockConfirmed.set(quoteId, receipt);
+  mockQuotes.delete(quoteId);
+  return { ...receipt };
 }
