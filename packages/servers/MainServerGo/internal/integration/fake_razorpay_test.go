@@ -66,6 +66,19 @@ func (f *fakeRazorpay) refund(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	f.mu.Lock()
+	// Like Razorpay, refuse to refund a payment that was already fully refunded.
+	for _, earlier := range f.refunds {
+		if earlier.PaymentID == r.PathValue("id") {
+			f.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+				"code":        "BAD_REQUEST_ERROR",
+				"description": "The payment has been fully refunded already",
+			}})
+			return
+		}
+	}
 	f.nextID++
 	refund := fakeRefund{ID: fmt.Sprintf("rfnd_test_%d", f.nextID), PaymentID: r.PathValue("id"), AmountPaise: body.Amount}
 	f.refunds = append(f.refunds, refund)
@@ -97,6 +110,14 @@ func (f *fakeRazorpay) refundFor(paymentID string) (fakeRefund, bool) {
 		}
 	}
 	return fakeRefund{}, false
+}
+
+// refundOutsideTheServer records a refund the server didn't make (or whose record it lost).
+func (f *fakeRazorpay) refundOutsideTheServer(paymentID string, amountPaise int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextID++
+	f.refunds = append(f.refunds, fakeRefund{ID: fmt.Sprintf("rfnd_test_%d", f.nextID), PaymentID: paymentID, AmountPaise: amountPaise})
 }
 
 // refundCount returns how many refunds were issued for a payment.

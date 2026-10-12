@@ -189,10 +189,12 @@ func (r *UserRepository) CreateFullUserWithTx(ctx context.Context, tx *sql.Tx, u
 	if err != nil {
 		return err
 	}
-	go r.createUserCaches(context.Background(), u)
+	// Not cached here: the transaction may still roll back, and the first read caches it.
 	return nil
 }
 
+// UpdateFullUserWithTx updates u in tx. The caller drops the user's cache after the commit
+// (InvalidateUserCaches): dropping it earlier lets a concurrent read cache the old row again.
 func (r *UserRepository) UpdateFullUserWithTx(ctx context.Context, tx *sql.Tx, u *models.User) error {
 	err := tx.StmtContext(ctx, r.stmtUpdateUser).QueryRowContext(ctx,
 		u.FullName, u.PhoneNumber, u.EmailID, u.KYCStatus,
@@ -200,12 +202,7 @@ func (r *UserRepository) UpdateFullUserWithTx(ctx context.Context, tx *sql.Tx, u
 		u.City,
 		u.TenantID, u.UUID,
 	).Scan(&u.ModifiedAt)
-
-	if err != nil {
-		return err
-	}
-	go r.invalidateUserCaches(context.Background(), u)
-	return nil
+	return err
 }
 
 // @deprecated
@@ -234,7 +231,7 @@ func (r *UserRepository) UpdateFullUser(ctx context.Context, u *models.User) err
 	if err != nil {
 		return err
 	}
-	go r.invalidateUserCaches(context.Background(), u)
+	r.invalidateUserCaches(ctx, u)
 	return nil
 }
 
@@ -251,7 +248,9 @@ func (r *UserRepository) GetFullUserByPhone(ctx context.Context, tenantID int64,
 	if err != nil {
 		return nil, err // Let the helper do the talking!
 	}
-	go r.createUserCaches(context.Background(), u)
+	// Cached before returning, not in a goroutine: a write that lands after a later change's
+	// invalidation would cache the old row (and vault balance) for userCacheTTL.
+	r.createUserCaches(ctx, u)
 	return u, nil
 }
 
@@ -276,8 +275,8 @@ func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, 
 		return nil, err
 	}
 
-	// 4. Populate Cache in Background
-	go r.createUserCaches(context.Background(), u)
+	// 4. Populate the cache (before returning: see GetFullUserByPhone)
+	r.createUserCaches(ctx, u)
 
 	return u, nil
 }

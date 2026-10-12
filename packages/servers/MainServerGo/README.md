@@ -267,7 +267,9 @@ request body. Every repository query on tenant data filters by tenant ID.
 A store can be suspended (`PATCH /admin/tenants/{uuid}/status {"is_active": false}`). The
 interceptor then refuses it with `403 TENANT_INACTIVE`; each API instance re-reads the flag
 at least every 30 seconds. Payments already captured still settle (the webhook doesn't go
-through the interceptor).
+through the interceptor). The platform tenant, and the tenant in the caller's own
+`X-Tenant-ID`, can't be suspended (`400 CANNOT_SUSPEND_PLATFORM_TENANT`): platform admins
+sign in through it, so nobody could reactivate it.
 
 ### Customer login (OTP)
 

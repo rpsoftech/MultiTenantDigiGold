@@ -1,9 +1,15 @@
 import { act } from '@testing-library/react';
 import {
+  customerUser,
   makeJwt,
   renderHookWithProviders,
 } from '@/test-utils/renderWithProviders';
-import { getRegistrationToken } from '@/lib/auth/tokenStorage';
+import {
+  getAccessToken,
+  getRefreshToken,
+  getRegistrationToken,
+  setTokens,
+} from '@/lib/auth/tokenStorage';
 import { authService } from '../auth.service';
 import { useCompleteProfile } from './useCompleteProfile';
 import { useRequestOtp } from './useRequestOtp';
@@ -143,6 +149,31 @@ describe('useVerifyOtp', () => {
     expect(session.registrationPhone).toBe('9876543210');
     expect(session.user?.isNewUser).toBe(true);
     expect(session.isAuthenticated).toBe(false);
+    expect(getRegistrationToken()).toBe('reg-token');
+  });
+
+  it("drops an earlier customer's tokens when a new number starts registering", async () => {
+    setTokens({ accessToken: 'old-access', refreshToken: 'old-refresh' });
+    mockedAuth.verifyOtp.mockResolvedValue({
+      success: true,
+      message: 'ok',
+      is_registered: false,
+      registration_token: 'reg-token',
+    });
+    const { result, store } = renderHookWithProviders(() => useVerifyOtp(), {
+      user: { ...customerUser, userId: 'old-customer' },
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        mobileNumber: '9876543210',
+        otp: '123456',
+      });
+    });
+
+    expect(getAccessToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
+    expect(store.getState().session.isAuthenticated).toBe(false);
     expect(getRegistrationToken()).toBe('reg-token');
   });
 

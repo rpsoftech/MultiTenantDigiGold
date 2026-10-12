@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/joho/godotenv"
@@ -16,7 +17,10 @@ import (
 const ENV_FILE_NAME = "digiGold.env"
 
 type EnvInterface struct {
-	APP_ENV           AppEnv `json:"APP_ENV" validate:"required"` // Assumes your validator supports enum or oneof
+	// APP_ENV is one of the AppEnv values (any case). An unknown value stops startup: the
+	// production guards compare against APP_ENV_PRODUCTION, so "PROD" or a typo would
+	// otherwise switch every one of them off silently.
+	APP_ENV           AppEnv `json:"APP_ENV" validate:"required,enum=AppEnv"`
 	PORT              int    `json:"PORT" validate:"required"`
 	ACCESS_TOKEN_KEY  string `json:"ACCESS_TOKEN_KEY" validate:"required,min=100"`
 	REFRESH_TOKEN_KEY string `json:"REFRESH_TOKEN_KEY" validate:"required,min=100"`
@@ -77,6 +81,9 @@ func LoadEnv(filename string) {
 		// Extract raw strings
 		portStr := os.Getenv(PORT_KEY)
 		appEnvStr = os.Getenv(app_ENV_KEY)
+		if parsed, ok := parseAppEnv(strings.TrimSpace(appEnvStr)); ok {
+			appEnvStr = string(parsed) // e.g. "production" -> "PRODUCTION"
+		}
 		IsDev = slices.Contains(os.Args, "--dev") || appEnvStr == string(APP_ENV_DEVELOP)
 		// Parse the Port
 		port, err := strconv.Atoi(portStr)

@@ -41,6 +41,10 @@ const sessionSlice = createSlice({
       state,
       action: PayloadAction<{ token: string; phone: string }>,
     ) => {
+      // Someone new is signing up: no customer session (an earlier one was signed out), and
+      // per-user queries must not reuse the previous customer's data.
+      state.revision += 1;
+      state.isAuthenticated = false;
       state.registrationToken = action.payload.token;
       state.registrationPhone = action.payload.phone;
       state.user = {

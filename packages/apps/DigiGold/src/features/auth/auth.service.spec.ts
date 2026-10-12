@@ -113,12 +113,14 @@ describe('authService', () => {
     await authService.completeProfile({
       registrationToken: 'registration-token',
       fullName: 'Jane Doe',
+      location: 'Mumbai',
       emailId: '',
     });
 
     expect(postSpy).toHaveBeenCalledWith('/auth/register', {
       registration_token: 'registration-token',
       full_name: 'Jane Doe',
+      location: 'Mumbai',
       email_id: undefined,
     });
     expect(window.localStorage.getItem('access_token')).toBe(

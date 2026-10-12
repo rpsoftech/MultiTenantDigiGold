@@ -125,6 +125,23 @@ func TestOnlineBuy_RefundIsNotRepeated(t *testing.T) {
 	}
 }
 
+// A payment refunded at Razorpay without a TRADE_PAYMENT_REFUNDED event (the event save
+// failed after the refund) is settled when its webhook comes again: Razorpay refuses the
+// second refund, and the server records the refund instead of failing on every retry.
+func TestOnlineBuy_RefundAlreadyMadeAtRazorpayIsSettled(t *testing.T) {
+	orderID, _ := initiateBuy(t, 400)
+	paymentID := razorpay.newPaymentID()
+	razorpay.refundOutsideTheServer(paymentID, 100)
+
+	expectStatus(t, webhook(t, orderID, paymentID, 100, webhookSecret), http.StatusOK) // amount mismatch: refund
+	if got := razorpay.refundCount(paymentID); got != 1 {
+		t.Fatalf("refunds for the payment = %d, want 1", got)
+	}
+	if !eventExists(t, events.TradeEventPaymentRefunded, "payment_id", paymentID) {
+		t.Fatal("the refund was not recorded")
+	}
+}
+
 // Checkout must open with the account the order was created on: the tenant's own key.
 func TestOnlineBuy_InitiateReturnsTheTenantKeyID(t *testing.T) {
 	r := call(t, "POST", "/trade/buy/initiate", verifiedCustomer(t), database.SeedDemoTenantUUID, map[string]any{

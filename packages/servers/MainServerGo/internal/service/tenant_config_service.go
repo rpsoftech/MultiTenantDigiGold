@@ -4,13 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/database"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 	utility_functions "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions"
@@ -304,8 +307,36 @@ func (s *TenantConfigService) UpdateTenantProfile(ctx context.Context, tenant *m
 	return nil
 }
 
+// normalizeMargin checks a margin update and fills its defaults: the commodity defaults to
+// GOLD, and FLAT (accepted by buyPrice) is stored as FIXED_INR, the database's name for it
+// (margin_unit_enum has only PERCENTAGE and FIXED_INR). Bad values are 400s, not 500s.
+func normalizeMargin(margin *models.MarginConfig) error {
+	margin.CommodityType = strings.ToUpper(strings.TrimSpace(margin.CommodityType))
+	if margin.CommodityType == "" {
+		margin.CommodityType = "GOLD"
+	}
+	switch strings.ToUpper(strings.TrimSpace(margin.SellMarginType)) {
+	case "PERCENTAGE":
+		margin.SellMarginType = "PERCENTAGE"
+	case "FIXED_INR", "FLAT":
+		margin.SellMarginType = "FIXED_INR"
+	default:
+		return invalidInput("sell_margin_type must be PERCENTAGE or FIXED_INR.")
+	}
+	if margin.SellMarginValue < 0 || margin.TenantCreditLimitGrams < 0 {
+		return invalidInput("sell_margin_value and tenant_credit_limit_grams can't be negative.")
+	}
+	if margin.GSTPercentage < 0 || margin.GSTPercentage > 100 {
+		return invalidInput("gst_percentage must be between 0 and 100.")
+	}
+	return nil
+}
+
 // Stage 4: Margin Patch
 func (s *TenantConfigService) UpdateTenantMargins(ctx context.Context, margin *models.MarginConfig, adminUUID string, tenantUUID string) error {
+	if err := normalizeMargin(margin); err != nil {
+		return err
+	}
 	tenantIntID, err := s.TenantRepo.TenantUUIDtoID(ctx, tenantUUID)
 	if err != nil || tenantIntID == 0 {
 		return fmt.Errorf("invalid tenant UUID: %w", err)
@@ -319,6 +350,9 @@ func (s *TenantConfigService) UpdateTenantMargins(ctx context.Context, margin *m
 	defer tx.Rollback()
 
 	if err := s.MarginRepo.UpdateMarginConfigWithTx(ctx, tx, margin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return invalidInput(fmt.Sprintf("This store has no %s margin to update.", margin.CommodityType))
+		}
 		return err
 	}
 
@@ -336,10 +370,34 @@ func (s *TenantConfigService) UpdateTenantMargins(ctx context.Context, margin *m
 	return nil
 }
 
+var errCannotSuspendPlatformTenant = &interfaces.RequestError{
+	StatusCode: 400,
+	Code:       interfaces.ERROR_INVALID_INPUT,
+	Name:       "CANNOT_SUSPEND_PLATFORM_TENANT",
+	Message:    "The platform tenant, or the store you are signed in to, can't be suspended.",
+}
+
 // Stage 7: Launch / Status Update. Suspends (isActive false) or reactivates a store; only
 // the active flag changes. A suspended store's customers and staff are refused within
 // activeTenantTTL on every API instance; payments already captured still settle.
-func (s *TenantConfigService) UpdateTenantStatus(ctx context.Context, tenantUUID string, isActive bool, adminUUID string) (*models.Tenant, error) {
+//
+// The platform tenant, and the tenant the caller is signed in to (callerTenantUUID, from
+// X-Tenant-ID), can't be suspended: platform admins sign in through it, so suspending it
+// would refuse every one of them, including the one who could reactivate it.
+func (s *TenantConfigService) UpdateTenantStatus(ctx context.Context, tenantUUID string, isActive bool, adminUUID, callerTenantUUID string) (*models.Tenant, error) {
+	if !isActive {
+		if tenantUUID == callerTenantUUID {
+			return nil, errCannotSuspendPlatformTenant
+		}
+		target, err := s.TenantRepo.GetFullTenantByUUID(ctx, tenantUUID)
+		if err != nil {
+			return nil, err
+		}
+		if target.ShortName != nil && *target.ShortName == database.PlatformTenantShortName {
+			return nil, errCannotSuspendPlatformTenant
+		}
+	}
+
 	tx, err := s.DB.Db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err

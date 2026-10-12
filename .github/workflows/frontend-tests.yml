@@ -27,9 +27,10 @@ on:
 
 jobs:
   test:
-    # Every push to staging also updates the open staging -> main PR. The push run
-    # already tested that exact commit, so skip the duplicate PR run.
-    if: github.event_name != 'pull_request' || github.head_ref != 'staging'
+    # A push to staging already tests that commit, so a PR from staging is skipped, except
+    # the release PR into main: it tests the merge result, and main's required checks need
+    # a real run, not a skipped one.
+    if: github.event_name != 'pull_request' || github.head_ref != 'staging' || github.base_ref == 'main'
     runs-on: ubuntu-latest
 
     steps:

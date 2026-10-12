@@ -34,6 +34,7 @@ type TradeService struct {
 	EventRepo      *repository.EventRepository
 	MarginRepo     *repository.MarginRepository
 	RedemptionRepo *repository.RedemptionRepository
+	UserRepo       *repository.UserRepository
 }
 
 func InitTradeService() *TradeService {
@@ -45,6 +46,7 @@ func InitTradeService() *TradeService {
 			EventRepo:      repository.GetEventRepository(),
 			MarginRepo:     repository.InitMarginRepository(),
 			RedemptionRepo: repository.InitRedemptionRepo(),
+			UserRepo:       repository.GetUserRepository(),
 		}
 	})
 	return tradeServiceInstance
@@ -228,7 +230,7 @@ func (s *TradeService) executeQuotedTrade(ctx context.Context, req interfaces.Tr
 		ReferenceID:         req.ReferenceID,
 	}
 
-	result, event, err := s.recordLedgerMovementWithTX(ctx, tx, entry, ipAddress, adminID)
+	result, event, owner, err := s.recordLedgerMovementWithTX(ctx, tx, entry, ipAddress, adminID)
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +238,7 @@ func (s *TradeService) executeQuotedTrade(ctx context.Context, req interfaces.Tr
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	s.UserRepo.InvalidateUserCaches(ctx, owner)
 	s.EventRepo.PublishAsync(event)
 
 	log.Printf("[TradeService] Buy successful: tenantID=%d, userID=%d, ledgerUUID=%s", req.TenantID, req.UserID, result.UUID)
@@ -381,18 +384,19 @@ func (s *TradeService) ConfirmCounterSale(ctx context.Context, tenantID int64, q
 }
 
 // recordLedgerMovementWithTX writes a signed ledger entry, its trade event and
-// the tenant's unlifted grams in tx. The caller commits and then publishes the event.
-func (s *TradeService) recordLedgerMovementWithTX(ctx context.Context, tx *sql.Tx, entry *models.GoldTransactionLedger, ipAddress, adminID string) (*models.GoldTransactionLedger, *events.BaseEvent, error) {
-	result, err := s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry)
+// the tenant's unlifted grams in tx. The caller commits, then drops the cache of the user
+// whose balance moved (owner) and publishes the event.
+func (s *TradeService) recordLedgerMovementWithTX(ctx context.Context, tx *sql.Tx, entry *models.GoldTransactionLedger, ipAddress, adminID string) (result *models.GoldTransactionLedger, event *events.BaseEvent, owner *models.User, err error) {
+	result, owner, err = s.LedgerRepo.RecordTransactionWithTX(ctx, tx, entry)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Every signed ledger movement is published as one trade event; the hedging
 	// consumer applies its signed weight to the platform exposure.
 	tradeEvent := events.GenerateGoldPurchaseEvent(fmt.Sprintf("%d", entry.TenantID), adminID, ipAddress, result)
 	if err := s.EventRepo.SaveEventWithTx(ctx, tx, &tradeEvent.BaseEvent); err != nil {
-		return nil, nil, fmt.Errorf("failed to save trade event: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to save trade event: %w", err)
 	}
 
 	// Only a new purchase uses up the store's credit. A redemption returns grams, and reversing
@@ -400,9 +404,9 @@ func (s *TradeService) recordLedgerMovementWithTX(ctx context.Context, tx *sql.T
 	// customer's gold would be stuck in a pickup nobody can cancel.
 	enforceCreditLimit := entry.EventType == ledgerEventPurchase
 	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, entry.TenantID, "GOLD", entry.WeightGrams, enforceCreditLimit); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return result, &tradeEvent.BaseEvent, nil
+	return result, &tradeEvent.BaseEvent, owner, nil
 }
 
 func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, ledgerUUID string, adminID string, ipAddress string) (*models.GoldTransactionLedger, error) {
@@ -456,7 +460,7 @@ func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, l
 
 	// RecordTransactionWithTX rejects the reversal if it would make the balance negative
 	// (e.g. reversing a purchase whose gold was already collected).
-	result, event, err := s.recordLedgerMovementWithTX(ctx, tx, reversalEntry, ipAddress, adminID)
+	result, event, owner, err := s.recordLedgerMovementWithTX(ctx, tx, reversalEntry, ipAddress, adminID)
 	if err != nil {
 		return nil, err
 	}
@@ -464,6 +468,7 @@ func (s *TradeService) ReverseTransaction(ctx context.Context, tenantID int64, l
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit reversal: %w", err)
 	}
+	s.UserRepo.InvalidateUserCaches(ctx, owner)
 	s.EventRepo.PublishAsync(event)
 
 	return result, nil

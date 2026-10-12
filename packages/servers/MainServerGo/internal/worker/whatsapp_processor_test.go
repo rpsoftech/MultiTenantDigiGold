@@ -1,6 +1,7 @@
 package workers
 
 import (
+	"context"
 	"testing"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -47,7 +48,7 @@ func TestSendDefaultAPIWithoutPlatformConfig(t *testing.T) {
 	for name, config := range configs {
 		t.Run(name, func(t *testing.T) {
 			consumer := &EventConsumer{DefaultTenantConfig: config}
-			if err := consumer.sendDefaultAPI("Your code is 1", "9876543210"); err != nil {
+			if err := consumer.sendDefaultAPI(context.Background(), "Your code is 1", "9876543210"); err != nil {
 				t.Errorf("sendDefaultAPI() = %v, want nil (dropped and reported)", err)
 			}
 		})

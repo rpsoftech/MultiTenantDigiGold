@@ -6,7 +6,10 @@ import {
   renderWithProviders,
 } from '@/test-utils/renderWithProviders';
 import { tradeService } from '@/features/trade/trade.service';
-import { openRazorpayCheckout, loadRazorpayScript } from '@/lib/payments/razorpay';
+import {
+  openRazorpayCheckout,
+  loadRazorpayScript,
+} from '@/lib/payments/razorpay';
 import type {
   RazorpayCheckoutOptions,
   RazorpayConstructor,
@@ -58,8 +61,12 @@ jest.mock('@/features/trade/hooks/useBuySettlement', () => ({
 }));
 
 const mockedTrade = tradeService as jest.Mocked<typeof tradeService>;
-const mockedLoad = loadRazorpayScript as jest.MockedFunction<typeof loadRazorpayScript>;
-const mockedOpen = openRazorpayCheckout as jest.MockedFunction<typeof openRazorpayCheckout>;
+const mockedLoad = loadRazorpayScript as jest.MockedFunction<
+  typeof loadRazorpayScript
+>;
+const mockedOpen = openRazorpayCheckout as jest.MockedFunction<
+  typeof openRazorpayCheckout
+>;
 
 const PRICE = 7000;
 const RATE = {
@@ -82,9 +89,14 @@ const quote = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const gramsInput = () => screen.getByLabelText('Enter Gold Weight (Grams)') as HTMLInputElement;
-const inrInput = () => screen.getByLabelText('Enter Amount (₹)') as HTMLInputElement;
-const proceed = () => screen.getByRole('button', { name: /Proceed to Pay|Login to Proceed|Locking|Waiting|Confirming/ }) as HTMLButtonElement;
+const gramsInput = () =>
+  screen.getByLabelText('Enter Gold Weight (Grams)') as HTMLInputElement;
+const inrInput = () =>
+  screen.getByLabelText('Enter Amount (₹)') as HTMLInputElement;
+const proceed = () =>
+  screen.getByRole('button', {
+    name: /Proceed to Pay|Login to Proceed|Locking|Waiting|Confirming/,
+  }) as HTMLButtonElement;
 
 // The options passed to the most recent Razorpay checkout, so tests can play the customer.
 function checkoutOptions(): RazorpayCheckoutOptions {
@@ -124,12 +136,18 @@ describe('BuyGold', () => {
       liveRate = { data: null, isLoading: true };
       renderWithProviders(<BuyGold />);
 
-      expect(screen.getByRole('status', { name: 'Loading live rate' })).toBeTruthy();
+      expect(
+        screen.getByRole('status', { name: 'Loading live rate' }),
+      ).toBeTruthy();
       expect(proceed().disabled).toBe(true);
     });
 
     it('renders nothing when the trading module is switched off for the tenant', () => {
-      tenantConfig = { displayName: 'Acme', activeModules: { trading: false }, theme: { colors: {} } };
+      tenantConfig = {
+        displayName: 'Acme',
+        activeModules: { trading: false },
+        theme: { colors: {} },
+      };
       const { container } = renderWithProviders(<BuyGold />);
 
       expect(container.textContent).toBe('');
@@ -159,7 +177,9 @@ describe('BuyGold', () => {
     it('clears the weight', () => {
       renderWithProviders(<BuyGold />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Clear gold weight' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Clear gold weight' }),
+      );
 
       expect(gramsInput().value).toBe('');
       expect(proceed().disabled).toBe(true);
@@ -178,14 +198,18 @@ describe('BuyGold', () => {
     it('switches to rupees and mirrors the weight as an amount', () => {
       renderWithProviders(<BuyGold />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
 
       expect(inrInput().value).toBe('7000.00');
     });
 
     it('converts a rupee amount into grams at the live price', () => {
       renderWithProviders(<BuyGold />);
-      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
 
       fireEvent.change(inrInput(), { target: { value: '14000' } });
       fireEvent.click(screen.getByRole('button', { name: 'Buy in Grams (g)' }));
@@ -195,7 +219,9 @@ describe('BuyGold', () => {
 
     it('adds quick rupee amounts exactly', () => {
       renderWithProviders(<BuyGold />);
-      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
 
       fireEvent.click(screen.getByRole('button', { name: '+₹1,000' }));
 
@@ -204,7 +230,9 @@ describe('BuyGold', () => {
 
     it('keeps the rupee amount as typed', () => {
       renderWithProviders(<BuyGold />);
-      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
 
       // Typed one character at a time: each keystroke must stay as entered (it used to be
       // converted to grams and back, turning "1" into "0.70").
@@ -216,7 +244,9 @@ describe('BuyGold', () => {
 
     it('pays exactly the rupee amount entered', async () => {
       renderWithProviders(<BuyGold />, { user: customerUser });
-      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
       fireEvent.click(screen.getByRole('button', { name: 'Clear amount' }));
       fireEvent.click(screen.getByRole('button', { name: '+₹1,000' }));
 
@@ -230,7 +260,9 @@ describe('BuyGold', () => {
 
     it('clears the rupee amount', () => {
       renderWithProviders(<BuyGold />);
-      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
 
       fireEvent.click(screen.getByRole('button', { name: 'Clear amount' }));
 
@@ -239,7 +271,9 @@ describe('BuyGold', () => {
 
     it('ignores non-numeric rupee input', () => {
       renderWithProviders(<BuyGold />);
-      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
 
       fireEvent.change(inrInput(), { target: { value: 'abc' } });
 
@@ -309,7 +343,9 @@ describe('BuyGold', () => {
     });
 
     it('credits the gold, refreshes balances and resets the form once settled', async () => {
-      const { rerender, queryClient } = renderWithProviders(<BuyGold />, { user: customerUser });
+      const { rerender, queryClient } = renderWithProviders(<BuyGold />, {
+        user: customerUser,
+      });
       const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
       fireEvent.change(gramsInput(), { target: { value: '2' } });
       await startPayment();
@@ -340,12 +376,53 @@ describe('BuyGold', () => {
       expect(await screen.findByText('Gold credited')).toBeTruthy();
       expect(screen.getByText('2.0000g added to your vault.')).toBeTruthy();
       const keys = invalidate.mock.calls.map(([filters]) => filters?.queryKey);
-      expect(keys).toEqual(expect.arrayContaining([['trade', 'history'], PORTFOLIO_QUERY_KEY]));
+      expect(keys).toEqual(
+        expect.arrayContaining([['trade', 'history'], PORTFOLIO_QUERY_KEY]),
+      );
+      expect(gramsInput().value).toBe('1');
+    });
+
+    it('returns a purchase made in rupees to the grams form once settled', async () => {
+      const { rerender } = renderWithProviders(<BuyGold />, {
+        user: customerUser,
+      });
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
+      fireEvent.change(inrInput(), { target: { value: '14000' } });
+      await startPayment();
+      act(() => {
+        checkoutOptions().handler({
+          razorpay_payment_id: 'pay_1',
+          razorpay_order_id: 'order_1',
+          razorpay_signature: 'sig',
+        });
+      });
+
+      settlement = {
+        status: 'settled',
+        entry: {
+          gl_uuid: 'gl-1',
+          event_type: 'GOLD_PURCHASE',
+          payment_mode: 'ONLINE_PG',
+          weight_grams: 2,
+          total_amount_inr: 14000,
+          running_gold_balance_grams: 2,
+          final_rate_per_gram: 7000,
+          reference_id: 'pay_1',
+          created_at: '2026-10-01T10:00:00Z',
+        },
+      };
+      rerender(<BuyGold />);
+
+      expect(await screen.findByText('Gold credited')).toBeTruthy();
       expect(gramsInput().value).toBe('1');
     });
 
     it('tells the customer when confirmation is taking long', async () => {
-      const { rerender } = renderWithProviders(<BuyGold />, { user: customerUser });
+      const { rerender } = renderWithProviders(<BuyGold />, {
+        user: customerUser,
+      });
       await startPayment();
       act(() => {
         checkoutOptions().handler({
@@ -358,7 +435,9 @@ describe('BuyGold', () => {
       settlement = { status: 'timeout' };
       rerender(<BuyGold />);
 
-      expect(await screen.findByText(/Still processing your payment/)).toBeTruthy();
+      expect(
+        await screen.findByText(/Still processing your payment/),
+      ).toBeTruthy();
     });
 
     it('shows a message when the checkout is closed without paying', async () => {
@@ -412,9 +491,10 @@ describe('BuyGold', () => {
       expect(proceed().disabled).toBe(false);
     });
 
-    it('asks for KYC when the server refuses with 403', async () => {
+    it('asks for KYC when the server refuses with KYC_REQUIRED', async () => {
       mockedTrade.initiateBuy.mockRejectedValue({
         status: 403,
+        code: 'KYC_REQUIRED',
         message: 'KYC Verification is required for trades above 50,000 INR',
       });
       renderWithProviders(<BuyGold />, { user: customerUser });
@@ -423,12 +503,31 @@ describe('BuyGold', () => {
 
       expect(await screen.findByText('KYC verification required')).toBeTruthy();
       expect(
-        screen.getByText('KYC Verification is required for trades above 50,000 INR'),
+        screen.getByText(
+          'KYC Verification is required for trades above 50,000 INR',
+        ),
       ).toBeTruthy();
     });
 
+    it('does not call a suspended store a KYC problem', async () => {
+      mockedTrade.initiateBuy.mockRejectedValue({
+        status: 403,
+        code: 'TENANT_INACTIVE',
+        message: 'This store is currently unavailable.',
+      });
+      renderWithProviders(<BuyGold />, { user: customerUser });
+
+      fireEvent.click(proceed());
+
+      expect(await screen.findByText('Could not start payment')).toBeTruthy();
+      expect(screen.queryByText('KYC verification required')).toBeNull();
+    });
+
     it('reports other failures to start the payment', async () => {
-      mockedTrade.initiateBuy.mockRejectedValue({ status: 409, message: 'Live rate moved.' });
+      mockedTrade.initiateBuy.mockRejectedValue({
+        status: 409,
+        message: 'Live rate moved.',
+      });
       renderWithProviders(<BuyGold />, { user: customerUser });
 
       fireEvent.click(proceed());
@@ -439,7 +538,9 @@ describe('BuyGold', () => {
     });
 
     it('reports a checkout script that fails to load', async () => {
-      mockedLoad.mockRejectedValue(new Error('Failed to load Razorpay checkout script'));
+      mockedLoad.mockRejectedValue(
+        new Error('Failed to load Razorpay checkout script'),
+      );
       renderWithProviders(<BuyGold />, { user: customerUser });
 
       fireEvent.click(proceed());

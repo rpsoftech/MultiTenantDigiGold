@@ -7,7 +7,7 @@ describe('sessionEvents', () => {
     const offFirst = onSessionExpired(first);
     const offSecond = onSessionExpired(second);
 
-    emitSessionExpired();
+    emitSessionExpired('expired');
 
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).toHaveBeenCalledTimes(1);
@@ -20,12 +20,12 @@ describe('sessionEvents', () => {
     const off = onSessionExpired(handler);
 
     off();
-    emitSessionExpired();
+    emitSessionExpired('expired');
 
     expect(handler).not.toHaveBeenCalled();
   });
 
   it('does nothing when nobody is listening', () => {
-    expect(() => emitSessionExpired()).not.toThrow();
+    expect(() => emitSessionExpired('expired')).not.toThrow();
   });
 });
