@@ -112,6 +112,9 @@ func main() {
 	go rateHub.Start(ctx)
 
 	// 4. Build the Fiber app with every route (shared with the integration tests).
+	if err := server.CheckCORSConfig(env.Env.APP_ENV, os.Getenv("CORS_ALLOW_ORIGINS")); err != nil {
+		log.Fatalf("FATAL: %v", err)
+	}
 	app := server.NewApp(rateHub)
 
 	// 5. Swagger API Docs in Non-Production

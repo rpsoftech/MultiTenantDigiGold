@@ -21,6 +21,11 @@ let mockTenantConfig: TenantConfig | null = DEFAULT_TENANT_CONFIG;
 jest.mock('@/features/tenant/hooks/useTenantConfig', () => ({
   useTenantConfig: () => mockTenantConfig,
 }));
+// Until this host's tenant config arrives, jewellery (ecommerce) slides stay hidden.
+let mockTenantResolved = true;
+jest.mock('@/features/tenant/hooks/useTenantResolved', () => ({
+  useTenantResolved: () => mockTenantResolved,
+}));
 
 const slides = [
   {
@@ -203,6 +208,22 @@ describe('PromoCarousel', () => {
 
       expect(screen.queryByAltText('First offer')).toBeNull();
       expect(screen.getByAltText('Second offer')).toBeTruthy();
+    });
+
+    it('keeps a jewellery slide hidden until the tenant config has arrived', () => {
+      mockTenantResolved = false;
+      mockedConfig.mockReturnValue({
+        autoplayIntervalMs: 3000,
+        slides: [{ ...slides[0], module: 'ecommerce' as const }, slides[1]],
+      });
+      try {
+        render(<PromoCarousel />);
+
+        expect(screen.queryByAltText('First offer')).toBeNull();
+        expect(screen.getByAltText('Second offer')).toBeTruthy();
+      } finally {
+        mockTenantResolved = true;
+      }
     });
 
     it('shows a module-gated slide while its module is on', () => {

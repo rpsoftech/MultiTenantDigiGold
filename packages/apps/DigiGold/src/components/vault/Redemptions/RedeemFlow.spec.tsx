@@ -44,6 +44,18 @@ describe('RedeemFlow', () => {
     expect(screen.queryByLabelText('Weight to redeem (grams)')).toBeNull();
   });
 
+  it('explains the 1 g minimum when the vault holds less', () => {
+    render(withProviders(<RedeemFlow balanceGrams={0.75} />));
+    expect(screen.getByText(/You can collect gold from 1 g\. You have 0\.7500 g/)).toBeTruthy();
+    expect(screen.queryByLabelText('Weight to redeem (grams)')).toBeNull();
+  });
+
+  it('rejects less than the 1 g minimum', async () => {
+    render(withProviders(<RedeemFlow balanceGrams={5} />));
+    fireEvent.change(gramsInput(), { target: { value: '0.5' } });
+    expect(await screen.findByText('The minimum redemption is 1 g')).toBeTruthy();
+  });
+
   it('fills Max with the balance rounded down to 4 decimals', async () => {
     render(withProviders(<RedeemFlow balanceGrams={2.123456} />));
     fireEvent.click(screen.getByRole('button', { name: 'Max' }));
@@ -55,6 +67,22 @@ describe('RedeemFlow', () => {
     fireEvent.change(gramsInput(), { target: { value: '1.5' } });
     expect(await screen.findByText('You can redeem up to 1.0000 g')).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Continue' }).disabled).toBe(true);
+  });
+
+  // The balance refreshes while the customer types (a buy settles, a pickup is cancelled).
+  it('re-checks the entered weight when the balance changes', async () => {
+    const view = render(withProviders(<RedeemFlow balanceGrams={1} />));
+    fireEvent.change(gramsInput(), { target: { value: '1.5' } });
+    expect(await screen.findByText('You can redeem up to 1.0000 g')).toBeTruthy();
+
+    view.rerender(withProviders(<RedeemFlow balanceGrams={2} />));
+
+    await waitFor(() => expect(screen.queryByText(/You can redeem up to/)).toBeNull());
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Continue' }).disabled).toBe(false);
+
+    view.rerender(withProviders(<RedeemFlow balanceGrams={1.2} />));
+
+    expect(await screen.findByText('You can redeem up to 1.2000 g')).toBeTruthy();
   });
 
   it('confirms, debits through the API and shows the pickup code', async () => {

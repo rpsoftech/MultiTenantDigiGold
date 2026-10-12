@@ -99,6 +99,19 @@ func (f *fakeRazorpay) refundFor(paymentID string) (fakeRefund, bool) {
 	return fakeRefund{}, false
 }
 
+// refundCount returns how many refunds were issued for a payment.
+func (f *fakeRazorpay) refundCount(paymentID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, r := range f.refunds {
+		if r.PaymentID == paymentID {
+			n++
+		}
+	}
+	return n
+}
+
 // newPaymentID returns a unique fake Razorpay payment ID.
 func (f *fakeRazorpay) newPaymentID() string {
 	f.mu.Lock()

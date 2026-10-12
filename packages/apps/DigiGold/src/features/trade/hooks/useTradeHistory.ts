@@ -1,11 +1,15 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useSession } from '@/features/auth/hooks/useSession';
 import { tradeService } from '../trade.service';
 
 const PAGE_LIMIT = 20;
 
 export function useTradeHistory({ enabled = true }: { enabled?: boolean } = {}) {
+  const { user, sessionRevision } = useSession();
   const query = useInfiniteQuery({
-    queryKey: ['trade', 'history'],
+    // Per customer session (['trade', 'history'] still invalidates it), so one customer's
+    // passbook is never shown to the next who signs in on this browser.
+    queryKey: ['trade', 'history', user?.userId ?? '', sessionRevision],
     queryFn: ({ pageParam }) => tradeService.getHistory({ page: pageParam, limit: PAGE_LIMIT }),
     initialPageParam: 1,
     enabled,

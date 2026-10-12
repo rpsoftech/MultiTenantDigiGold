@@ -5,6 +5,8 @@
 //	go run ./cmd/dbtool migrate version     print the current schema version
 //	go run ./cmd/dbtool migrate force 1     mark version 1 as clean after a manual fix
 //	go run ./cmd/dbtool seed                insert demo tenants, admins and customers
+//	go run ./cmd/dbtool bootstrap           create the platform tenant and first super_admin
+//	                                        (safe in PRODUCTION; needs BOOTSTRAP_ADMIN_*)
 //
 // It reads the same env file and variables as the API (digiGold.env).
 package main
@@ -24,7 +26,8 @@ import (
 
 const usage = `usage:
   dbtool migrate up | down <steps> | version | force <version>
-  dbtool seed`
+  dbtool seed
+  dbtool bootstrap   (BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PHONE, BOOTSTRAP_ADMIN_PASSWORD)`
 
 func main() {
 	log.SetOutput(os.Stdout)
@@ -38,6 +41,8 @@ func main() {
 		runMigrate(os.Args[2:])
 	case "seed":
 		runSeed()
+	case "bootstrap":
+		runBootstrap()
 	default:
 		fail(usage)
 	}
@@ -80,6 +85,26 @@ func runSeed() {
 		RazorpayKeySecret:     envOr("SEED_RAZORPAY_KEY_SECRET", "placeholder_key_secret"),
 		RazorpayWebhookSecret: envOr("SEED_RAZORPAY_WEBHOOK_SECRET", "placeholder_webhook_secret"),
 	}))
+}
+
+// runBootstrap prepares an empty database for real use (no demo data). The password is
+// read from the environment and never printed; unset BOOTSTRAP_ADMIN_PASSWORD afterwards.
+func runBootstrap() {
+	db := postgres.GetPostgresDB().Db
+	must(database.MigrateUp(db))
+	result, err := database.Bootstrap(context.Background(), db, database.BootstrapOptions{
+		AdminUsername: os.Getenv("BOOTSTRAP_ADMIN_USERNAME"),
+		AdminPhone:    os.Getenv("BOOTSTRAP_ADMIN_PHONE"),
+		AdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
+	})
+	must(err)
+
+	log.Printf("✅ Platform tenant %s (%s)", result.PlatformTenantUUID, map[bool]string{true: "created", false: "already existed"}[result.TenantCreated])
+	if result.AdminCreated {
+		log.Println("✅ super_admin created: sign in with X-Tenant-ID set to the platform tenant UUID above, then set up TOTP")
+	} else {
+		log.Println("ℹ️ The platform already has a super_admin; none was created")
+	}
 }
 
 func envOr(key, fallback string) string {

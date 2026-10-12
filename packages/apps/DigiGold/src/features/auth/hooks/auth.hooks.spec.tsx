@@ -200,6 +200,39 @@ describe('useCompleteProfile', () => {
     expect(store.getState().session.isAuthenticated).toBe(true);
   });
 
+  // Per-user queries (portfolio) are keyed by it: an empty id would share cache entries.
+  it('takes the new customer id from the access token', async () => {
+    mockedAuth.completeProfile.mockResolvedValue({
+      success: true,
+      message: 'ok',
+      is_registered: true,
+      access_token: makeJwt({ user_uuid: 'new-user-7', phone: '9876543210' }),
+    });
+    const { result, store } = renderHookWithProviders(
+      () => useCompleteProfile(),
+      {
+        user: {
+          userId: '',
+          role: 'customer',
+          mobileNumber: '9876543210',
+          isNewUser: true,
+          kycStatus: 'not_started',
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        registrationToken: 'reg',
+        fullName: 'Jane Doe',
+        location: 'Pune',
+        emailId: '',
+      });
+    });
+
+    expect(store.getState().session.user?.userId).toBe('new-user-7');
+  });
+
   it('leaves the registration state alone when the request fails', async () => {
     mockedAuth.completeProfile.mockRejectedValue({
       status: 500,

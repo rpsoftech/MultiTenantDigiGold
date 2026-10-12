@@ -1,17 +1,15 @@
 'use client';
 
-import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useModuleShown } from '@/features/tenant/hooks/useModuleShown';
 import { useDashboardEssentialsConfig } from './useDashboardEssentialsConfig';
 import { EssentialCard } from './EssentialCard';
 import styles from './DashboardEssentials.module.scss';
 
 export function DashboardEssentials() {
-  const tenantConfig = useTenantConfig();
+  const moduleShown = useModuleShown();
   const { title, items } = useDashboardEssentialsConfig();
 
-  const visibleItems = items.filter(
-    (item) => !item.module || tenantConfig?.activeModules[item.module]
-  );
+  const visibleItems = items.filter((item) => moduleShown(item.module));
 
   if (!visibleItems.length) return null;
 

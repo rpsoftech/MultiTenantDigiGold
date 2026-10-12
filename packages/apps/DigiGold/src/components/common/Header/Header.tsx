@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useModuleShown } from '@/features/tenant/hooks/useModuleShown';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { Logo } from '@/components/common/Logo/Logo';
 import { ProfileMenu } from '@/components/common/ProfileMenu/ProfileMenu';
@@ -24,6 +25,7 @@ const BACK_NAVIGABLE_ROUTES: string[] = [ROUTES.otp, ROUTES.profileSetup];
 export function Header() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const tenantConfig = useTenantConfig();
+  const moduleShown = useModuleShown();
   const headerConfig = useHeaderConfig();
   const { isAuthenticated } = useSession();
   const pathname = usePathname();
@@ -39,9 +41,7 @@ export function Header() {
   );
   // Same idea for tenant modules: the static config tags items with a module, and a tenant
   // that has it switched off shouldn't be offered a link to an unavailable page.
-  const menus = headerConfig.menus.filter(
-    (item) => !item.module || (tenantConfig?.activeModules[item.module] ?? true)
-  );
+  const menus = headerConfig.menus.filter((item) => moduleShown(item.module));
 
   return (
     <header className={styles.header}>

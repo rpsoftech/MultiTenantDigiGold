@@ -1,7 +1,10 @@
 'use client';
 
 import { ToastProvider, useToast } from '@/components/common/Toast/Toast';
-import { restoreSessionUser } from '@/features/auth/session-restore';
+import {
+  restoreRegistration,
+  restoreSessionUser,
+} from '@/features/auth/session-restore';
 import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
 import { resolveTenantConfig } from '@/features/tenant/tenant.service';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
@@ -10,6 +13,7 @@ import { ROUTES } from '@/lib/constants/routes';
 import type { AppStore } from '@/store';
 import { makeStore } from '@/store';
 import {
+  registrationStarted,
   sessionCleared,
   sessionEstablished,
 } from '@/store/session/session.slice';
@@ -52,7 +56,12 @@ function SessionLifecycle({ store }: { store: AppStore }) {
 
   useEffect(() => {
     const restoredUser = restoreSessionUser();
-    if (restoredUser) store.dispatch(sessionEstablished(restoredUser));
+    if (restoredUser) {
+      store.dispatch(sessionEstablished(restoredUser));
+    } else {
+      const registration = restoreRegistration();
+      if (registration) store.dispatch(registrationStarted(registration));
+    }
 
     return onSessionExpired((reason) => {
       const { isAuthenticated } = store.getState().session;

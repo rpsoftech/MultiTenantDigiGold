@@ -46,6 +46,20 @@ async function cancelViaDialog() {
 }
 
 describe('RedemptionCard', () => {
+  // Stores and customers are in India: 20:00 UTC on 1 Jan is 01:30 on 2 Jan in IST, whatever
+  // the browser's own time zone.
+  it('shows times in IST', () => {
+    render(
+      withProviders(
+        <RedemptionCard
+          redemption={{ ...PENDING, created_at: '2026-01-01T20:00:00Z' }}
+        />,
+      ),
+    );
+
+    expect(screen.getByText(/^2\/1\/2026, 1:30:00\sam$/i)).toBeTruthy();
+  });
+
   it('explains a pickup locked after too many wrong codes, without the dead code', () => {
     render(
       withProviders(

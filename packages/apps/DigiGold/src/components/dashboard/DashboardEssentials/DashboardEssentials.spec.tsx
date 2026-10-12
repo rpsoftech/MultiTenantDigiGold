@@ -128,6 +128,17 @@ describe('DashboardEssentials', () => {
     expect(screen.queryByText('My Digital Passbook')).toBeNull();
   });
 
+  // The build-time default has ecommerce on; a tenant with it off must not see jewellery
+  // flash in before /tenant/info answers. Other modules keep the default meanwhile.
+  it("hides the jewellery card until this host's tenant config has arrived", () => {
+    renderWithProviders(<DashboardEssentials />, {
+      preloaded: { tenant: { config: DEFAULT_TENANT_CONFIG, resolved: false } },
+    });
+
+    expect(screen.queryByText('Explore Jewellery')).toBeNull();
+    expect(screen.getByText('My Digital Passbook')).toBeTruthy();
+  });
+
   it('shows only module free cards until the tenant is known', () => {
     renderWithProviders(<DashboardEssentials />, {
       preloaded: { tenant: { config: null } },

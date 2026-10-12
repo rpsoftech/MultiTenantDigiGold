@@ -127,11 +127,13 @@ func (r *RedisClientStruct) GetStringData(ctx context.Context, key string) (stri
 	return r.Client.Get(ctx, r.GetRedisKey(key)).Result()
 }
 
+// RemoveKey deletes the keys (prefixed). The caller's slice is left as it was.
 func (r *RedisClientStruct) RemoveKey(ctx context.Context, key ...string) error {
+	prefixed := make([]string, len(key))
 	for i, k := range key {
-		key[i] = r.GetRedisKey(k)
+		prefixed[i] = r.GetRedisKey(k)
 	}
-	return r.Client.Del(ctx, key...).Err()
+	return r.Client.Del(ctx, prefixed...).Err()
 }
 
 func (r *RedisClientStruct) SetStringDataKeepTTL(ctx context.Context, key string, value string) error {

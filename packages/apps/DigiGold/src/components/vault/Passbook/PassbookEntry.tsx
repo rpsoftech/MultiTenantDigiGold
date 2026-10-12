@@ -44,7 +44,9 @@ export function PassbookEntry({ entry }: { entry: TradeHistoryEntry }) {
           {EVENT_LABELS[entry.event_type] ?? entry.event_type}
         </Badge>
         <span className={styles.date}>
-          {new Date(entry.created_at).toLocaleString('en-IN')}
+          {new Date(entry.created_at).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+          })}
         </span>
       </div>
 

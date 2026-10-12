@@ -22,7 +22,7 @@ Nx monorepo (yarn, Node), Windows development machine.
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/apps/DigiGold`                  | The main web app: Next.js 16, **static export** (`output: 'export'`), React Query, Redux Toolkit, SCSS modules, Jest (SWC). Customer app + admin panel (`/admin/*`). |
 | `packages/servers/MainServerGo`           | Go API + worker: Fiber v3, PostgreSQL 18 (needs `uuidv7()`), Redis, golang-migrate.                                                                                  |
-| `packages/apps/admin-app`, `consumer-app` | Angular apps (built in CI; not the focus of recent work).                                                                                                            |
+| `packages/apps/admin-app`, `consumer-app` | Angular apps (linted but not built in CI; not the focus of recent work).                                                                                             |
 | `packages/libs/*`                         | Shared libs (`core` is tested in CI).                                                                                                                                |
 
 DigiGold `src/`: `app/` (routes), `components/<area>/<Component>/` (component, `.module.scss`,
@@ -123,11 +123,26 @@ return errors to `GlobalErrorHandler` and never send `err.Error()` to clients.
 
 - Migrations: `migrations/NNNNNN_name.{up,down}.sql`, embedded; never edit one that has run.
   Current: 000001 init, 000002 user city, 000003 ledger reference index, 000004 KYC review,
-  000005 pickup code attempts.
+  000005 pickup code attempts, 000006 release hardening (unique ledger reference, tenant
+  active flag, tenant KYC columns, unique admin username per store).
+- Caches are invalidated after the transaction commits (`InvalidateTenantCaches`,
+  `InvalidateConfigCache`, `InvalidateMarginCache`), never inside it.
+- Payments: a captured-payment webhook first checks the ledger for the payment ID (settled ⇒
+  no-op) and a refund checks for a `TRADE_PAYMENT_REFUNDED` event, so a repeated webhook
+  never credits or refunds twice.
+- Sessions: customer and admin refresh tokens are single use, recorded in Redis by `jti`
+  (`UserSessionService`, `AdminAuthService`); `POST /auth/refresh`, `POST /auth/logout`.
+- Stores can be suspended (`PATCH /admin/tenants/{uuid}/status {"is_active"}`);
+  `TenantInterceptor` refuses them with `403 TENANT_INACTIVE` within 30 s.
+- New production database: `dbtool bootstrap` (platform tenant + first super_admin).
+- Hedging LP fills are simulated only with `ENABLE_MOCK_LP_HEDGING=true` (never in
+  PRODUCTION); otherwise the cron is off. PRODUCTION refuses to start without
+  `CORS_ALLOW_ORIGINS`.
 - `system_events.tenant_id` holds either the tenant UUID or its internal numeric ID depending
   on the producer; `GET /admin/events` resolves both and returns the UUID.
 - The event consumer (`internal/worker/event_consumer.go`) only acts on `OTPReqEvent` (sends
-  the WhatsApp OTP); other events are audit-only and are marked processed.
+  the WhatsApp OTP, reading the code from the Redis OTP session; the event carries none);
+  other events are audit-only and are marked processed.
 - Go files are LF (`.gitattributes`); run `gofmt`.
 
 ## Environment flags (DigiGold)
@@ -138,8 +153,9 @@ return errors to `GlobalErrorHandler` and never send `err.Error()` to clients.
 | `NEXT_PUBLIC_ENABLE_JEWELLERY`                                                      | `true` shows the jewellery catalogue, `false` hides it everywhere; **unset = on in `next dev`/tests, off in `next build`**. Production keeps it off until the catalogue API exists |
 | `NEXT_PUBLIC_USE_MOCK_MARKETPLACE` / `…_MARKETPLACE_CATEGORY`                       | Home jewellery sections / jewellery pages use sample data (pages then show a "Sample catalogue" notice)                                                                            |
 | `NEXT_PUBLIC_USE_MOCK_ADMIN`                                                        | Admin panel data from sample mocks (`isAdminDataSample()`); `false` in production                                                                                                  |
-| `NEXT_PUBLIC_USE_MOCK_AUTH`, `…_ADMIN_AUTH`, `…_MARKET`, `…_PORTFOLIO`              | Other mocks; all `false` in production                                                                                                                                             |
-| `NEXT_PUBLIC_RAZORPAY_KEY_ID`                                                       | Razorpay key ID only (secret stays on MainServer)                                                                                                                                  |
+| `NEXT_PUBLIC_USE_MOCK_AUTH`, `…_ADMIN_AUTH`, `…_MARKET`, `…_PORTFOLIO`              | Other mocks; all `false` in production. `next build` refuses these (and `…_MOCK_ADMIN`) unless `ALLOW_MOCK_DATA_IN_BUILD=true`                                                     |
+
+Razorpay needs no frontend key: `/trade/buy/initiate` returns the store's `key_id`.
 
 Templates: `.env.example` (development) and `.env.production.example`. The production
 frontend is built from a hand-made, git-ignored `.env.production`, not in CI.
@@ -168,10 +184,14 @@ gated by `StoreAccessGate` / `AuditAccessGate`; MainServer enforces roles on eve
 
 ## Open items before release to main
 
-- Run the new integration tests and migrations 000004/000005 locally or confirm CI is green.
-- OTP codes and payment-gateway secrets are still stored in plain text in `system_events`
-  payloads (masked only when read); the OTP must reach the WhatsApp sender another way first.
-- GitHub Production environment and secrets; rotate the Razorpay test key; legal pages.
+- Run the integration tests and migrations 000004–000006 locally or confirm CI is green.
+- `OTPReqEvent` rows written before the release-hardening change still hold OTP codes (masked
+  when read); new events and `TenantConfigUpdated` payloads no longer store secrets.
+- GitHub Production environment and secrets; set `CORS_ALLOW_ORIGINS`; run `dbtool
+bootstrap` on the production database; rotate the Razorpay test key; legal pages.
+- Frontend hosting: no workflow deploys the DigiGold static export yet (the unused Firebase
+  placeholder config was removed).
+- No liquidity provider integration yet (hedging exposure only accumulates).
 - Decisions: PAN encryption at rest; KYC required before physical redemption; the hard-coded
   "Market Trading Gate" badge.
 - Jewellery catalogue: needs MainServer catalogue endpoints (they must send `categoryId`);

@@ -4,6 +4,7 @@ import {
   renderHookWithProviders,
 } from '@/test-utils/renderWithProviders';
 import { kycService } from '../kyc.service';
+import { sessionEstablished } from '@/store/session/session.slice';
 import { KYC_STATUS_QUERY_KEY, useKycStatus } from './useKycStatus';
 
 jest.mock('../kyc.service', () => ({
@@ -29,10 +30,43 @@ describe('useKycStatus', () => {
 
     await waitFor(() => expect(result.current.status).toBe('verified'));
     expect(mockedService.getStatus).toHaveBeenCalledTimes(1);
-    expect(queryClient.getQueryData(KYC_STATUS_QUERY_KEY)).toEqual({
+    expect(
+      queryClient.getQueriesData({ queryKey: KYC_STATUS_QUERY_KEY }),
+    ).toEqual([
+      [
+        expect.arrayContaining([...KYC_STATUS_QUERY_KEY]),
+        { success: true, kyc_status: 'verified' },
+      ],
+    ]);
+  });
+
+  // The next customer to sign in on this browser must not see this one's status.
+  it("keeps each customer session's status apart", async () => {
+    mockedService.getStatus.mockResolvedValue({
       success: true,
       kyc_status: 'verified',
     });
+    const { result, store } = renderHookWithProviders(() => useKycStatus());
+    await waitFor(() => expect(result.current.status).toBe('verified'));
+
+    mockedService.getStatus.mockResolvedValue({
+      success: true,
+      kyc_status: 'pending',
+    });
+    act(() => {
+      store.dispatch(
+        sessionEstablished({
+          userId: 'second-customer',
+          role: 'customer',
+          mobileNumber: '9000000002',
+          isNewUser: false,
+          kycStatus: 'not_started',
+        }),
+      );
+    });
+
+    expect(result.current.status).toBeUndefined();
+    await waitFor(() => expect(result.current.status).toBe('pending'));
   });
 
   it('reports no status, not "not_started", while the request is in flight', () => {

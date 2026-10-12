@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,6 +17,7 @@ import {
   type RedemptionFormValues,
 } from '@/features/redemption/redemption.schema';
 import {
+  MIN_REDEMPTION_GRAMS,
   floorGrams,
   formatGrams,
 } from '@/features/redemption/redemption.utils';
@@ -27,7 +28,7 @@ import { cn } from '@/lib/utils/cn';
 import { PickupCodeCard } from './PickupCodeCard';
 import styles from './RedeemFlow.module.scss';
 
-const QUICK_GRAMS = [0.5, 1, 5, 10];
+const QUICK_GRAMS = [1, 2, 5, 10];
 
 const PICKUP_STEPS = ['Request the weight', 'Get your pickup code', 'Collect it in store'];
 
@@ -54,12 +55,20 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
     handleSubmit,
     setValue,
     reset,
+    trigger,
+    getValues,
     formState: { errors, isValid },
   } = useForm<RedemptionFormValues>({
     resolver: zodResolver(schema),
     mode: 'onChange',
     defaultValues: { grams: '' },
   });
+
+  // The balance can change while a weight is entered (a buy settles, a pickup is cancelled):
+  // re-check the weight against it, or a stale "too much" (or "fine") verdict stays shown.
+  useEffect(() => {
+    if (getValues('grams')) void trigger('grams');
+  }, [schema, getValues, trigger]);
 
   const setGrams = (grams: number) =>
     setValue('grams', String(grams), {
@@ -88,13 +97,14 @@ export function RedeemFlow({ balanceGrams }: { balanceGrams: number }) {
     setStep({ name: 'form' });
   };
 
-  if (maxGrams <= 0 && step.name === 'form') {
+  if (maxGrams < MIN_REDEMPTION_GRAMS && step.name === 'form') {
     return (
       <Card className={cn(styles.card, styles.centered)}>
         <h2 className={styles.title}>Redeem physical gold</h2>
         <p className={styles.subtitle}>
-          Your vault is empty. Buy some gold first, then come back to collect it
-          at the store.
+          {maxGrams <= 0
+            ? 'Your vault is empty. Buy some gold first, then come back to collect it at the store.'
+            : `You can collect gold from ${MIN_REDEMPTION_GRAMS} g. You have ${formatGrams(maxGrams)}: buy a little more, then come back to collect it at the store.`}
         </p>
         <Link href={ROUTES.home} className={styles.link}>
           Buy gold

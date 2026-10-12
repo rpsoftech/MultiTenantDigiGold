@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppDispatch } from '@/store/hooks';
 import { sessionCleared } from '@/store/session/session.slice';
 import { clearTokens, clearRegistrationToken } from '@/lib/auth/tokenStorage';
+import { authService } from '../auth.service';
 import { ROUTES } from '@/lib/constants/routes';
 
 export function useLogout() {
@@ -11,6 +12,8 @@ export function useLogout() {
   const queryClient = useQueryClient();
 
   return () => {
+    // Started before the tokens are cleared: it reads the refresh token synchronously.
+    void authService.logout();
     clearTokens();
     clearRegistrationToken();
     dispatch(sessionCleared());

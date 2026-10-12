@@ -278,6 +278,21 @@ func (r *EventRepository) PublishAsync(evts ...*events.BaseEvent) {
 	}
 }
 
+// PaymentRefundRecorded reports whether a TRADE_PAYMENT_REFUNDED event exists for the
+// payment, i.e. it was already refunded. Only the refund path calls it, so it scans the
+// tenant's events without an index of its own.
+func (r *EventRepository) PaymentRefundRecorded(ctx context.Context, tenantID, paymentID string) (bool, error) {
+	query := fmt.Sprintf(
+		`SELECT EXISTS (SELECT 1 FROM %s WHERE %s = $1 AND %s = $2 AND %s->>'payment_id' = $3)`,
+		schema.TableSystemEvents, schema.ColTenantId, schema.ColEventName, schema.ColPayload,
+	)
+	var exists bool
+	if err := r.DB.Db.QueryRowContext(ctx, query, tenantID, events.TradeEventPaymentRefunded, paymentID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check refund for payment %s: %w", paymentID, err)
+	}
+	return exists, nil
+}
+
 // ClaimEvent atomically marks an unprocessed event as processed. It returns false
 // when the event does not exist (yet) or another consumer already claimed it.
 func (r *EventRepository) ClaimEvent(ctx context.Context, eventID string) (bool, error) {

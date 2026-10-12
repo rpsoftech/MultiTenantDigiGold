@@ -177,9 +177,9 @@ describe('admin API authentication', () => {
   });
 
   it('still supports message-shaped server errors and leaves customer failures alone', async () => {
-    let requests = 0;
+    const urls: (string | undefined)[] = [];
     apiClient.defaults.adapter = async (config) => {
-      requests += 1;
+      urls.push(config.url);
       throw httpError(config, 401, { message: 'Customer session expired' });
     };
 
@@ -187,7 +187,8 @@ describe('admin API authentication', () => {
       message: 'Customer session expired',
       status: 401,
     });
-    expect(requests).toBe(1);
+    // The customer session tries its own refresh; the admin session is never touched.
+    expect(urls).toEqual(['/wallet', '/auth/refresh']);
     expect(getAdminRefreshToken()).toBe('admin-refresh');
   });
 

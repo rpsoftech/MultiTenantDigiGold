@@ -18,6 +18,10 @@ import (
 // requests grams in the app, the grams are debited at once, and the customer
 // collects the physical gold at the store counter with a pickup code.
 
+// MinRedemptionGrams is the smallest weight a customer can collect at the counter (the
+// redeem form in the app enforces the same).
+const MinRedemptionGrams = 1.0
+
 // newPickupCode returns a random 6-digit code.
 func newPickupCode() (string, error) {
 	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
@@ -33,6 +37,9 @@ func (s *TradeService) RequestRedemption(ctx context.Context, tenantID, userID i
 	weight := math.Round(weightGrams*10000) / 10000
 	if weight <= 0 {
 		return nil, interfaces.ErrInvalidTradePayload
+	}
+	if weight < MinRedemptionGrams {
+		return nil, interfaces.ErrRedemptionBelowMinimum
 	}
 
 	code, err := newPickupCode()

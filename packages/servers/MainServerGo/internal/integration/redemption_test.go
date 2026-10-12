@@ -80,7 +80,7 @@ func TestRedemption_CustomerCancelReturnsGold(t *testing.T) {
 	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
 	before := balance(t, database.SeedVerifiedCustomerUUID)
 
-	rr := requestRedemption(t, verifiedCustomer(t), 0.5)
+	rr := requestRedemption(t, verifiedCustomer(t), 1)
 	id := str(rr["redemption_uuid"])
 
 	r := call(t, "POST", "/trade/redemptions/"+id+"/cancel", verifiedCustomer(t), database.SeedDemoTenantUUID, nil)
@@ -103,7 +103,7 @@ func TestRedemption_CustomerCancelReturnsGold(t *testing.T) {
 func TestRedemption_StaffCancelReturnsGold(t *testing.T) {
 	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
 	before := balance(t, database.SeedVerifiedCustomerUUID)
-	rr := requestRedemption(t, verifiedCustomer(t), 0.25)
+	rr := requestRedemption(t, verifiedCustomer(t), 1)
 
 	r := call(t, "POST", "/admin/store/redemptions/cancel", demoManager(t), database.SeedDemoTenantUUID,
 		map[string]string{"redemption_uuid": str(rr["redemption_uuid"])})
@@ -113,7 +113,7 @@ func TestRedemption_StaffCancelReturnsGold(t *testing.T) {
 
 func TestRedemption_CannotCancelAnotherCustomersRequest(t *testing.T) {
 	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
-	rr := requestRedemption(t, verifiedCustomer(t), 0.1)
+	rr := requestRedemption(t, verifiedCustomer(t), 1)
 
 	r := call(t, "POST", "/trade/redemptions/"+str(rr["redemption_uuid"])+"/cancel",
 		pendingCustomer(t), database.SeedDemoTenantUUID, nil)
@@ -125,6 +125,13 @@ func TestRedemption_CannotOverdraw(t *testing.T) {
 	r := call(t, "POST", "/trade/redeem", verifiedCustomer(t), database.SeedDemoTenantUUID,
 		map[string]any{"weight_grams": grams})
 	expectError(t, r, http.StatusBadRequest, "ERROR_INSUFFICIENT_BALANCE")
+}
+
+func TestRedemption_RejectsLessThanTheMinimum(t *testing.T) {
+	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
+	r := call(t, "POST", "/trade/redeem", verifiedCustomer(t), database.SeedDemoTenantUUID,
+		map[string]any{"weight_grams": 0.5})
+	expectError(t, r, http.StatusBadRequest, "REDEMPTION_BELOW_MINIMUM")
 }
 
 func TestRedemption_RejectsZeroOrNegativeWeight(t *testing.T) {
@@ -140,11 +147,11 @@ func TestRedemption_RejectsZeroOrNegativeWeight(t *testing.T) {
 // Regression: cached users lost their internal ID, so every request after the
 // first one ran as user 0 and failed with "user not found".
 func TestCustomer_RepeatedRequestsUseTheRightUser(t *testing.T) {
-	counterBuy(t, database.SeedVerifiedCustomerUUID, 0.5)
+	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
 	for i := 0; i < 3; i++ {
 		expectStatus(t, call(t, "GET", "/user/portfolio", verifiedCustomer(t), database.SeedDemoTenantUUID, nil), http.StatusOK)
 	}
-	rr := requestRedemption(t, verifiedCustomer(t), 0.1)
+	rr := requestRedemption(t, verifiedCustomer(t), 1)
 	cancel := call(t, "POST", "/trade/redemptions/"+str(rr["redemption_uuid"])+"/cancel",
 		verifiedCustomer(t), database.SeedDemoTenantUUID, nil)
 	expectStatus(t, cancel, http.StatusOK)
@@ -173,7 +180,7 @@ func wrongCode(code string) string {
 func TestRedemption_WrongCodesLockThePickup(t *testing.T) {
 	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
 	before := balance(t, database.SeedVerifiedCustomerUUID)
-	rr := requestRedemption(t, verifiedCustomer(t), 0.5)
+	rr := requestRedemption(t, verifiedCustomer(t), 1)
 	id, code := str(rr["redemption_uuid"]), str(rr["pickup_code"])
 
 	for left := 4; left >= 1; left-- {
@@ -207,7 +214,7 @@ func TestRedemption_WrongCodesLockThePickup(t *testing.T) {
 
 func TestRedemption_CollectedTodayListsTheHandover(t *testing.T) {
 	counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
-	rr := requestRedemption(t, verifiedCustomer(t), 0.25)
+	rr := requestRedemption(t, verifiedCustomer(t), 1)
 	id := str(rr["redemption_uuid"])
 	expectStatus(t, collect(t, id, str(rr["pickup_code"])), http.StatusOK)
 

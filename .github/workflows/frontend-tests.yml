@@ -11,6 +11,8 @@ on:
       - 'nx.json'
       - 'tsconfig.base.json'
       - '.github/workflows/frontend-tests.yml'
+  # Same paths as pull_request: a push that changes only shared config or this workflow
+  # must still be tested.
   push:
     branches: [staging, main]
     paths:
@@ -18,6 +20,10 @@ on:
       - 'packages/libs/**'
       - 'package.json'
       - 'yarn.lock'
+      - '.yarnrc.yml'
+      - 'nx.json'
+      - 'tsconfig.base.json'
+      - '.github/workflows/frontend-tests.yml'
 
 jobs:
   test:
@@ -49,9 +55,10 @@ jobs:
       - name: Unit tests
         run: yarn nx run-many -t test -p DigiGold core --outputStyle=static
 
-      # Also generates next-env.d.ts, which the typecheck below needs.
+      # Also generates next-env.d.ts, which the typecheck below needs. Only DigiGold ships;
+      # the Angular apps (Consumer, AdminApp) are not built here.
       - name: Build
-        run: yarn nx run-many -t build -p DigiGold Consumer AdminApp --outputStyle=static
+        run: yarn nx run-many -t build -p DigiGold --outputStyle=static
 
       - name: Typecheck DigiGold (app and specs)
         run: >-

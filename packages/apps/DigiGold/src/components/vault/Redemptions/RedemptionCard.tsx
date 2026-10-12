@@ -18,7 +18,9 @@ import { PickupCodeCard } from './PickupCodeCard';
 import styles from './RedemptionCard.module.scss';
 
 function formatDate(isoTimestamp: string): string {
-  return new Date(isoTimestamp).toLocaleString('en-IN');
+  return new Date(isoTimestamp).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+  });
 }
 
 export function RedemptionCard({ redemption }: { redemption: Redemption }) {

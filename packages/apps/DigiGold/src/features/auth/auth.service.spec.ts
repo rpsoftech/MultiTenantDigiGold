@@ -128,4 +128,38 @@ describe('authService', () => {
       'new-refresh-token',
     );
   });
+
+  describe('logout', () => {
+    it('revokes the stored refresh token on MainServer', async () => {
+      window.localStorage.setItem('refresh_token', 'refresh-1');
+      const postSpy = jest
+        .spyOn(apiClient, 'post')
+        .mockResolvedValue({ data: { success: true } });
+
+      await authService.logout();
+
+      expect(postSpy).toHaveBeenCalledWith('/auth/logout', {
+        refresh_token: 'refresh-1',
+      });
+    });
+
+    it('does nothing without a refresh token', async () => {
+      const postSpy = jest.spyOn(apiClient, 'post');
+
+      await authService.logout();
+
+      expect(postSpy).not.toHaveBeenCalled();
+    });
+
+    it('never fails the sign-out when the server call does', async () => {
+      window.localStorage.setItem('refresh_token', 'refresh-1');
+      jest.spyOn(apiClient, 'post').mockRejectedValue({
+        status: null,
+        code: 'ERR_NETWORK',
+        message: 'offline',
+      });
+
+      await expect(authService.logout()).resolves.toBeUndefined();
+    });
+  });
 });

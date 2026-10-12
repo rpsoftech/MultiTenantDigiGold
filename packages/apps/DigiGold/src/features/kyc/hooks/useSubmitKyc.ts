@@ -2,16 +2,17 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { isNormalizedApiError } from '@/lib/api/client';
 import { kycService } from '../kyc.service';
 import type { KycStatusResult } from '../kyc.types';
-import { KYC_STATUS_QUERY_KEY } from './useKycStatus';
+import { KYC_STATUS_QUERY_KEY, useKycStatusQueryKey } from './useKycStatus';
 
 export function useSubmitKyc() {
   const queryClient = useQueryClient();
+  const statusQueryKey = useKycStatusQueryKey();
 
   return useMutation({
     mutationFn: kycService.submitKyc,
     // A successful submit always moves the customer to pending server-side.
     onSuccess: () => {
-      queryClient.setQueryData<KycStatusResult>(KYC_STATUS_QUERY_KEY, {
+      queryClient.setQueryData<KycStatusResult>(statusQueryKey, {
         success: true,
         kyc_status: 'pending',
       });

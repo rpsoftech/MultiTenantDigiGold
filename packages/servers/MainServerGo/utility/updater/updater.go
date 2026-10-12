@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	utility_functions_gzip "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions/gzip"
@@ -81,6 +82,18 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// validateRelease rejects a release record that can't be installed safely: the download
+// must be HTTPS and the hash a full SHA-256, or a hash mismatch could never be detected.
+func validateRelease(kv KVResponse) error {
+	if !strings.HasPrefix(kv.URL, "https://") {
+		return fmt.Errorf("release v%d has no HTTPS download URL (%q)", kv.Version, kv.URL)
+	}
+	if decoded, err := hex.DecodeString(kv.SHA256); err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("release v%d has no valid SHA-256 (%q)", kv.Version, kv.SHA256)
+	}
+	return nil
+}
+
 func GetFileKey(envName string, component string, os string, arch string) string {
 	return fmt.Sprintf("%s_digigold_%s_%s_%s", envName, component, os, arch)
 }
@@ -106,6 +119,10 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 	}
 
 	log.Printf("⚠️ Update found for %s! Current: v%d | Latest: v%d\n", componentName, currentVersion, kvData.Version)
+
+	if err := validateRelease(kvData); err != nil {
+		return false, err
+	}
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -156,7 +173,9 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 		gzFile.Close()
 		return false, fmt.Errorf("download interrupted: %w", err)
 	}
-	gzFile.Close()
+	if err := gzFile.Close(); err != nil {
+		return false, fmt.Errorf("failed to write downloaded update: %w", err)
+	}
 
 	// 5. Verify the SHA256 integrity using the hash we just calculated in RAM
 	downloadedHash := hex.EncodeToString(h.Sum(nil))

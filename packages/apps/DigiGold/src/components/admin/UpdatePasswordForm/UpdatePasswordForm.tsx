@@ -8,6 +8,7 @@ import { Input } from '@/components/common/Input/Input';
 import { Button } from '@/components/common/Button/Button';
 import { useToast } from '@/components/common/Toast/Toast';
 import { useUpdateAdminPassword } from '@/features/admin-auth/hooks/useUpdateAdminPassword';
+import { describeApiError } from '@/lib/api/client';
 import styles from '../adminFormCard.module.scss';
 
 const updatePasswordSchema = z
@@ -50,11 +51,12 @@ export function UpdatePasswordForm() {
       });
       showToast({ variant: 'success', title: 'Password updated' });
       reset();
-    } catch {
+    } catch (error) {
       showToast({
         variant: 'danger',
         title: 'Could not update password',
-        description: 'Please check your current password and try again.',
+        description:
+          describeApiError(error) ?? 'Please check your current password and try again.',
       });
     }
   };

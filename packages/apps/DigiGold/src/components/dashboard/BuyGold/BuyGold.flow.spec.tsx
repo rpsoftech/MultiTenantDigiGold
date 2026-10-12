@@ -72,6 +72,7 @@ const RATE = {
 
 const quote = (overrides: Record<string, unknown> = {}) => ({
   success: true,
+  key_id: 'rzp_test_tenant_key',
   order_id: 'order_1',
   amount: 7000,
   weight_grams: 1,
@@ -96,8 +97,6 @@ async function startPayment() {
 }
 
 describe('BuyGold', () => {
-  const originalKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-
   beforeEach(() => {
     jest.clearAllMocks();
     liveRate = { data: RATE, isLoading: false };
@@ -107,14 +106,8 @@ describe('BuyGold', () => {
       theme: { colors: { primary: '#123456' } },
     };
     settlement = { status: 'polling' };
-    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = 'rzp_test_key';
     mockedTrade.initiateBuy.mockResolvedValue(quote());
     mockedLoad.mockResolvedValue(jest.fn() as unknown as RazorpayConstructor);
-  });
-
-  afterEach(() => {
-    if (originalKey === undefined) delete process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-    else process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = originalKey;
   });
 
   describe('display', () => {
@@ -200,15 +193,39 @@ describe('BuyGold', () => {
       expect(gramsInput().value).toBe('2.0000');
     });
 
-    it('adds quick rupee amounts', () => {
+    it('adds quick rupee amounts exactly', () => {
       renderWithProviders(<BuyGold />);
       fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
 
       fireEvent.click(screen.getByRole('button', { name: '+₹1,000' }));
 
-      // The weight is stored to 4 decimals (8000 / 7000 = 1.1429 g), so the amount shown
-      // back can drift by a few paise; it must stay within that rounding.
-      expect(Math.abs(Number(inrInput().value) - 8000)).toBeLessThan(0.5);
+      expect(inrInput().value).toBe('8000');
+    });
+
+    it('keeps the rupee amount as typed', () => {
+      renderWithProviders(<BuyGold />);
+      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+
+      // Typed one character at a time: each keystroke must stay as entered (it used to be
+      // converted to grams and back, turning "1" into "0.70").
+      for (const value of ['', '1', '12', '125', '1250', '1250.', '1250.5']) {
+        fireEvent.change(inrInput(), { target: { value } });
+        expect(inrInput().value).toBe(value);
+      }
+    });
+
+    it('pays exactly the rupee amount entered', async () => {
+      renderWithProviders(<BuyGold />, { user: customerUser });
+      fireEvent.click(screen.getByRole('button', { name: 'Buy in Rupees (₹)' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear amount' }));
+      fireEvent.click(screen.getByRole('button', { name: '+₹1,000' }));
+
+      await startPayment();
+
+      expect(mockedTrade.initiateBuy.mock.calls[0][0]).toEqual({
+        total_amount_inr: 1000,
+        requested_rate_per_gram: PRICE,
+      });
     });
 
     it('clears the rupee amount', () => {
@@ -253,7 +270,8 @@ describe('BuyGold', () => {
       });
       const options = checkoutOptions();
       expect(options).toMatchObject({
-        key: 'rzp_test_key',
+        // The store's own key from MainServer, not a build-time one.
+        key: 'rzp_test_tenant_key',
         amount: 700000,
         currency: 'INR',
         order_id: 'order_1',
@@ -383,8 +401,8 @@ describe('BuyGold', () => {
   });
 
   describe('failures', () => {
-    it('explains that checkout is not configured and does not open it', async () => {
-      delete process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+    it('explains that online payment is not set up when the store has no key', async () => {
+      mockedTrade.initiateBuy.mockResolvedValue(quote({ key_id: '' }));
       renderWithProviders(<BuyGold />, { user: customerUser });
 
       fireEvent.click(proceed());

@@ -82,3 +82,21 @@ func TestTokenKindsAreNotInterchangeable(t *testing.T) {
 	_, err = s.ValidateRefreshToken(adminRefresh)
 	reject("admin refresh as user refresh", err)
 }
+
+// Customer refresh tokens carry a unique ID: UserSessionService records it server-side so
+// each refresh token works once and logout can revoke it.
+func TestUserRefreshTokensHaveAUniqueID(t *testing.T) {
+	s := newTestJWTService()
+	_, refresh, refreshID, err := s.GenerateUserTokenPair("user-1", "tenant-1", "9999999999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := s.ValidateRefreshToken(refresh)
+	if err != nil || claims.ID == "" || claims.ID != refreshID {
+		t.Fatalf("refresh token ID = %q (err %v), want %q", claims.ID, err, refreshID)
+	}
+	_, _, otherID, _ := s.GenerateUserTokenPair("user-1", "tenant-1", "9999999999")
+	if otherID == refreshID {
+		t.Fatal("two sessions got the same refresh token ID")
+	}
+}

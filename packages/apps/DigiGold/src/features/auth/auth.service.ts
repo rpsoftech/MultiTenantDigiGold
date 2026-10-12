@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api/client';
-import { setTokens } from '@/lib/auth/tokenStorage';
+import { getRefreshToken, setTokens } from '@/lib/auth/tokenStorage';
 import type {
   RequestOtpPayload,
   RequestOtpResult,
@@ -45,7 +45,14 @@ export const authService = {
   completeProfile: async (
     payload: CompleteProfilePayload,
   ): Promise<VerifyOtpResult> => {
-    if (shouldUseMockAuth()) return mockCompleteProfile(payload);
+    if (shouldUseMockAuth()) {
+      const result = await mockCompleteProfile(payload);
+      setTokens({
+        accessToken: result.access_token,
+        refreshToken: result.refresh_token,
+      });
+      return result;
+    }
     const response = await apiClient.post<VerifyOtpResult>('/auth/register', {
       registration_token: payload.registrationToken,
       full_name: payload.fullName,
@@ -57,5 +64,17 @@ export const authService = {
       refreshToken: response.data.refresh_token,
     });
     return response.data;
+  },
+
+  // Revokes the stored refresh token on MainServer so a copy of it stops working once the
+  // customer signs out. Best effort: signing out locally must not wait for (or fail on) it.
+  logout: async (): Promise<void> => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken || shouldUseMockAuth()) return;
+    try {
+      await apiClient.post('/auth/logout', { refresh_token: refreshToken });
+    } catch {
+      // Already expired or revoked, or offline: the local session ends either way.
+    }
   },
 };

@@ -118,8 +118,11 @@ func (tc *CustomerTradeController) InitiateBuy(c fiber.Ctx) error {
 		return err
 	}
 
+	// key_id is the tenant's public Razorpay key: Checkout must open with the same account
+	// the order was created on, so the storefront takes it from here, not from its build.
 	return c.JSON(fiber.Map{
 		"success":             true,
+		"key_id":              config.PaymentConfig.KeyID,
 		"order_id":            orderID,
 		"amount":              quote.TotalAmountINR,
 		"weight_grams":        quote.WeightGrams,

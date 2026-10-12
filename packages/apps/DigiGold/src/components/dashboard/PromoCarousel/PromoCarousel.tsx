@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
+import { useModuleShown } from '@/features/tenant/hooks/useModuleShown';
 import { usePromoCarouselConfig } from './usePromoCarouselConfig';
 import { cn } from '@/lib/utils/cn';
 import styles from './PromoCarousel.module.scss';
@@ -11,11 +11,8 @@ import styles from './PromoCarousel.module.scss';
 export function PromoCarousel() {
   const { slides: configuredSlides, autoplayIntervalMs } =
     usePromoCarouselConfig();
-  const tenantConfig = useTenantConfig();
-  const slides = configuredSlides.filter(
-    (slide) =>
-      !slide.module || (tenantConfig?.activeModules[slide.module] ?? true),
-  );
+  const moduleShown = useModuleShown();
+  const slides = configuredSlides.filter((slide) => moduleShown(slide.module));
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAppSelector } from '@/store/hooks';
 import { selectAdminUser } from '@/store/session/session.slice';
 import { useAdminLogout } from '@/features/admin-auth/hooks/useAdminLogout';
+import { adminAccountPagesAvailable } from '@/features/admin-auth/admin-auth.service';
 import { ROUTES } from '@/lib/constants/routes';
 import { ChevronDownIcon, KeyIcon, LogOutIcon, UserIcon } from '@/components/common/icons/Icons';
 import { cn } from '@/lib/utils/cn';
@@ -35,15 +36,20 @@ export function AdminProfileMenu() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={styles.content} align="end" sideOffset={8}>
-          <Link href={ROUTES.adminUpdatePassword} className={styles.item}>
-            <KeyIcon width={16} height={16} />
-            Update Password
-          </Link>
-          <Link href={ROUTES.adminProfile} className={styles.item}>
-            <UserIcon width={16} height={16} />
-            Profile
-          </Link>
-          <div className={styles.separator} />
+          {/* Only where they work: MainServer has no profile or password endpoints yet. */}
+          {adminAccountPagesAvailable() && (
+            <>
+              <Link href={ROUTES.adminUpdatePassword} className={styles.item}>
+                <KeyIcon width={16} height={16} />
+                Update Password
+              </Link>
+              <Link href={ROUTES.adminProfile} className={styles.item}>
+                <UserIcon width={16} height={16} />
+                Profile
+              </Link>
+              <div className={styles.separator} />
+            </>
+          )}
           <button type="button" className={cn(styles.item, styles.logoutItem)} onClick={logout}>
             <LogOutIcon width={16} height={16} />
             Logout

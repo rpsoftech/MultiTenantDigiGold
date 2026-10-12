@@ -36,6 +36,12 @@ function shouldUseMockAdminAuth() {
   return process.env.NEXT_PUBLIC_USE_MOCK_ADMIN_AUTH === 'true';
 }
 
+// MainServer has no admin profile or change-password endpoints yet (GET/PATCH
+// /admin/profile, POST /admin/change-password), so those pages only work on sample sign-in.
+export function adminAccountPagesAvailable(): boolean {
+  return shouldUseMockAdminAuth();
+}
+
 export const adminAuthService = {
   login: async (payload: AdminLoginPayload): Promise<AdminLoginResult> => {
     if (shouldUseMockAdminAuth()) return mockAdminLogin(payload);

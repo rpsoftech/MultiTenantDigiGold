@@ -1,5 +1,10 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
-import { getAccessToken, clearTokens } from '@/lib/auth/tokenStorage';
+import {
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  setTokens,
+} from '@/lib/auth/tokenStorage';
 import { emitSessionExpired } from '@/lib/auth/sessionEvents';
 import { isJwtExpired } from '@/lib/utils/jwt';
 
@@ -78,9 +83,9 @@ function normalizeApiError(error: unknown): NormalizedApiError {
 }
 
 // Admin and customer sessions are separate: /admin/* (except its public auth routes) uses
-// the admin tokens in admin-tokens.ts with refresh-and-retry; everything else uses the
-// customer token in tokenStorage.ts, which has no refresh endpoint and expires the
-// session instead.
+// the admin tokens in admin-tokens.ts, everything else the customer tokens in
+// tokenStorage.ts. Both refresh an expired access token (single-use refresh tokens) and
+// retry a rejected request once.
 function isProtectedAdminEndpoint(url: string | undefined): boolean {
   return url?.startsWith('/admin/') === true && !isPublicAuthEndpoint(url);
 }
@@ -97,7 +102,7 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
-apiClient.interceptors.request.use((config) => {
+apiClient.interceptors.request.use(async (config) => {
   const tenantUuid = process.env.NEXT_PUBLIC_TENANT_UUID;
   if (tenantUuid) config.headers.set('X-Tenant-ID', tenantUuid);
   // Never forward a token the caller (or a retried config) carried in; set it fresh below.
@@ -120,19 +125,99 @@ apiClient.interceptors.request.use((config) => {
     return config;
   }
 
-  const accessToken = getAccessToken();
-  if (accessToken && !isJwtExpired(accessToken)) {
-    config.headers.set('X-Api-Token', accessToken);
-  } else if (accessToken) {
-    // Token expired client-side — there's no customer-facing refresh endpoint to fall
-    // back to. Clear it without redirecting: this request may be a public one, and if it
-    // isn't, the server's 401 below triggers the redirect.
-    clearTokens();
-    emitSessionExpired('expired');
+  let accessToken = getAccessToken();
+  if (accessToken && isJwtExpired(accessToken)) {
+    // Renew it first (the access token lasts 15 minutes). If the session can't be renewed,
+    // clear it without redirecting: this request may be a public one, and if it isn't, the
+    // server's 401 below triggers the redirect.
+    accessToken = await refreshCustomerTokens();
+    if (!accessToken) {
+      clearTokens();
+      emitSessionExpired('expired');
+    }
   }
+  if (accessToken) config.headers.set('X-Api-Token', accessToken);
 
   return config;
 });
+
+const CUSTOMER_REFRESH_LOCK = 'digigold-customer-refresh';
+
+let pendingCustomerRefresh:
+  | { token: string; promise: Promise<string | null> }
+  | undefined;
+
+// Exchanges the customer's refresh token for a new pair and returns the new access token,
+// or null when the session can't be renewed (no refresh token, or MainServer rejected it).
+// Refresh tokens are single use, so concurrent requests share one exchange and tabs take
+// turns under a lock; a tab that waited adopts the pair the other one stored. A transient
+// failure (offline, 5xx) is thrown and leaves the tokens in place.
+export function refreshCustomerTokens(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  // Mock sign-in has no MainServer session to renew.
+  if (!refreshToken || process.env.NEXT_PUBLIC_USE_MOCK_AUTH === 'true') {
+    return Promise.resolve(null);
+  }
+  if (pendingCustomerRefresh?.token === refreshToken) {
+    return pendingCustomerRefresh.promise;
+  }
+
+  const adoptRotated = (): string | null => {
+    const latestRefresh = getRefreshToken();
+    const latestAccess = getAccessToken();
+    return latestRefresh &&
+      latestRefresh !== refreshToken &&
+      latestAccess &&
+      !isJwtExpired(latestAccess)
+      ? latestAccess
+      : null;
+  };
+
+  const promise = withRefreshLock(CUSTOMER_REFRESH_LOCK, async () => {
+    if (getRefreshToken() !== refreshToken) return adoptRotated();
+
+    const { data } = await apiClient.post<{
+      access_token?: unknown;
+      refresh_token?: unknown;
+    }>('/auth/refresh', { refresh_token: refreshToken });
+    // Signed out (or another customer signed in) while the exchange was in flight.
+    if (getRefreshToken() !== refreshToken) return null;
+    if (
+      typeof data?.access_token !== 'string' ||
+      !data.access_token ||
+      typeof data?.refresh_token !== 'string' ||
+      !data.refresh_token
+    ) {
+      return null;
+    }
+    setTokens({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+    });
+    return data.access_token;
+  })
+    .catch((error: unknown) => {
+      const rotated = adoptRotated();
+      if (rotated) return rotated;
+      const normalizedError = normalizeApiError(error);
+      if (
+        normalizedError.status === 400 ||
+        normalizedError.status === 401 ||
+        normalizedError.status === 403
+      ) {
+        return null;
+      }
+      throw normalizedError;
+    })
+    .finally(() => {
+      if (pendingCustomerRefresh?.promise === promise) {
+        pendingCustomerRefresh = undefined;
+      }
+    });
+
+  pendingCustomerRefresh = { token: refreshToken, promise };
+  return promise;
+}
 
 function adminSessionChangedError(): NormalizedApiError {
   return {
@@ -165,11 +250,15 @@ const ADMIN_REFRESH_LOCK = 'digigold-admin-refresh';
 
 // Runs `task` while holding a lock shared by every tab of this origin (Web Locks API).
 // Where the API is missing (old browsers, jsdom) the task runs directly; the
-// adopt-after-rejection fallback in refreshAdminTokens then covers most cross-tab races.
-function withAdminRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+// adopt-after-rejection fallbacks in the refresh functions then cover most cross-tab races.
+function withRefreshLock<T>(name: string, task: () => Promise<T>): Promise<T> {
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
   if (!locks?.request) return task();
-  return locks.request(ADMIN_REFRESH_LOCK, task);
+  return locks.request(name, task);
+}
+
+function withAdminRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  return withRefreshLock(ADMIN_REFRESH_LOCK, task);
 }
 
 let pendingAdminRefresh:
@@ -285,6 +374,7 @@ export function refreshAdminTokens(): Promise<AdminTokens> {
 type AdminRetryConfig = InternalAxiosRequestConfig & {
   adminAuthRetried?: boolean;
   adminSessionId?: string | null;
+  customerAuthRetried?: boolean;
 };
 
 apiClient.interceptors.response.use(
@@ -297,12 +387,40 @@ apiClient.interceptors.response.use(
 
     if (normalizedError.status !== 401 || !config) throw normalizedError;
 
-    // Customer routes: no refresh endpoint exists, so a 401 ends the customer session.
+    // Customer routes: renew the session and retry once; a second 401, or a session that
+    // can't be renewed, ends it.
     if (!isProtectedAdminEndpoint(config.url)) {
-      if (!isPublicAuthEndpoint(config.url)) {
-        clearTokens();
-        emitSessionExpired('rejected');
+      if (isPublicAuthEndpoint(config.url)) throw normalizedError;
+
+      const sentToken = config.headers.get('X-Api-Token');
+      if (!config.customerAuthRetried && getRefreshToken()) {
+        config.customerAuthRetried = true;
+        const current = getAccessToken();
+        let renewed: string | null;
+        try {
+          // Another request may already have renewed the token before this 401 arrived.
+          renewed =
+            current && current !== sentToken && !isJwtExpired(current)
+              ? current
+              : await refreshCustomerTokens();
+        } catch {
+          throw normalizedError; // Transient: keep the session.
+        }
+        if (renewed) return apiClient.request(config);
       }
+
+      // Do not let an older request end a session that was renewed (or started) since.
+      const current = getAccessToken();
+      if (
+        current &&
+        sentToken &&
+        current !== sentToken &&
+        !isJwtExpired(current)
+      ) {
+        throw normalizedError;
+      }
+      clearTokens();
+      emitSessionExpired('rejected');
       throw normalizedError;
     }
 

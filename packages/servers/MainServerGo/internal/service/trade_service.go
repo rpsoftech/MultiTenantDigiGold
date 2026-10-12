@@ -395,7 +395,11 @@ func (s *TradeService) recordLedgerMovementWithTX(ctx context.Context, tx *sql.T
 		return nil, nil, fmt.Errorf("failed to save trade event: %w", err)
 	}
 
-	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, entry.TenantID, "GOLD", entry.WeightGrams); err != nil {
+	// Only a new purchase uses up the store's credit. A redemption returns grams, and reversing
+	// one (cancelling a pickup) must work even when the store is at its limit, or the
+	// customer's gold would be stuck in a pickup nobody can cancel.
+	enforceCreditLimit := entry.EventType == ledgerEventPurchase
+	if err := s.MarginRepo.IncrementUnliftedGramsWithTx(ctx, tx, entry.TenantID, "GOLD", entry.WeightGrams, enforceCreditLimit); err != nil {
 		return nil, nil, err
 	}
 	return result, &tradeEvent.BaseEvent, nil

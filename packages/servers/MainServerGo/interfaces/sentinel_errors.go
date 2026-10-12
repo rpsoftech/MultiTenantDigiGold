@@ -7,6 +7,7 @@ import (
 
 var (
 	ErrTenantNotFound       = errors.New("invalid or missing tenant")
+	ErrTenantInactive       = errors.New("tenant is suspended")
 	ErrTenantConfigNotFound = errors.New("Tenant Config not found")
 	ErrUserNotFound         = errors.New("USER_NOT_FOUND")
 	ErrInvalidToken         = errors.New("invalid token signature")
@@ -27,24 +28,26 @@ var (
 
 // Ledger / Trade Errors
 var (
-	ErrInsufficientBalance   = errors.New("insufficient gold balance")
-	ErrLedgerEntryNotFound   = errors.New("ledger entry not found")
-	ErrLedgerAlreadyReversed = errors.New("ledger entry is already reversed")
-	ErrLedgerNotReversible   = errors.New("ledger entry cannot be reversed")
-	ErrSlippageExceeded      = errors.New("live rate moved beyond allowable tolerance")
-	ErrInvalidTradePayload   = errors.New("must specify a positive weight_grams or total_amount_inr")
-	ErrCreditLimitExceeded   = errors.New("trade exceeds the store's available gold credit")
-	ErrRedemptionNotPending  = errors.New("redemption is not pending")
-	ErrRedemptionNotFound    = errors.New("redemption request not found")
-	ErrInvalidPickupCode     = errors.New("pickup code does not match")
-	ErrCashLimitExceeded     = errors.New("cash received from this customer today would reach 2,00,000 INR")
-	ErrCounterQuoteExpired   = errors.New("counter sale quote expired or not found")
-	ErrCounterSaleInProgress = errors.New("this counter sale is already being recorded")
+	ErrInsufficientBalance    = errors.New("insufficient gold balance")
+	ErrLedgerEntryNotFound    = errors.New("ledger entry not found")
+	ErrLedgerAlreadyReversed  = errors.New("ledger entry is already reversed")
+	ErrLedgerNotReversible    = errors.New("ledger entry cannot be reversed")
+	ErrSlippageExceeded       = errors.New("live rate moved beyond allowable tolerance")
+	ErrInvalidTradePayload    = errors.New("must specify a positive weight_grams or total_amount_inr")
+	ErrCreditLimitExceeded    = errors.New("trade exceeds the store's available gold credit")
+	ErrRedemptionNotPending   = errors.New("redemption is not pending")
+	ErrRedemptionNotFound     = errors.New("redemption request not found")
+	ErrRedemptionBelowMinimum = errors.New("redemption is below the minimum weight")
+	ErrInvalidPickupCode      = errors.New("pickup code does not match")
+	ErrCashLimitExceeded      = errors.New("cash received from this customer today would reach 2,00,000 INR")
+	ErrCounterQuoteExpired    = errors.New("counter sale quote expired or not found")
+	ErrCounterSaleInProgress  = errors.New("this counter sale is already being recorded")
 )
 
 // KYC review errors
 var (
 	ErrKYCNotAwaitingReview = errors.New("customer has no KYC submission waiting for review")
+	ErrTenantKYCDocNotFound = errors.New("tenant KYC document not found")
 )
 
 // Counter pickup errors

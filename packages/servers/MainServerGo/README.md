@@ -101,8 +101,7 @@ pkg/              Payment and WhatsApp provider clients
 utility/          Postgres/Redis clients, OTA updater, OpenTelemetry, helpers
 scripts/deploy.go Build and publish binaries for the OTA updater
 migrations/       Versioned SQL migrations (source of truth for the schema), embedded in the binaries
-cmd/dbtool/       CLI: migrate up/down/version/force, seed
-schema.sql          Legacy MySQL schema. Not used.
+cmd/dbtool/       CLI: migrate up/down/version/force, seed, bootstrap
 ```
 
 ---
@@ -175,6 +174,26 @@ Admin password and TOTP secret come from `SEED_ADMIN_PASSWORD` (default `DigiGol
 authenticator app). Store Razorpay keys come from `SEED_RAZORPAY_KEY_ID`,
 `SEED_RAZORPAY_KEY_SECRET` and `SEED_RAZORPAY_WEBHOOK_SECRET`.
 
+### Production bootstrap
+
+`seed` refuses `PRODUCTION`. A new production database gets the platform tenant (`default`,
+whose config is the fallback for every store) and its first `super_admin` from `bootstrap`,
+which writes no demo data and is safe to run again:
+
+```sh
+cd cmd/api
+BOOTSTRAP_ADMIN_USERNAME=platform-root \
+BOOTSTRAP_ADMIN_PHONE=9000000001 \
+BOOTSTRAP_ADMIN_PASSWORD='at-least-12-characters' \
+go run ../dbtool bootstrap
+```
+
+It prints the platform tenant UUID. The super_admin signs in with `X-Tenant-ID` set to that
+UUID (an admin panel build whose `NEXT_PUBLIC_TENANT_UUID` is the platform tenant), then
+sets up TOTP. Stores are then created with `POST /admin/tenants/stub`, which also creates
+the store's root admin (a `manager`) with the password given. Unset
+`BOOTSTRAP_ADMIN_PASSWORD` afterwards; it is stored only as a bcrypt hash.
+
 ### Schema migrations
 
 Files live in `migrations/` as `NNNNNN_name.up.sql` / `.down.sql`. The API and the worker
@@ -207,19 +226,21 @@ up to date first; the collections may lag behind.
 All variables are read from `digiGold.env` in the working directory, then from the
 process environment.
 
-| Variable                                                                       | Required | Notes                                                                  |
-| ------------------------------------------------------------------------------ | -------- | ---------------------------------------------------------------------- |
-| `APP_ENV`                                                                      | yes      | `LOCAL`, `DEVELOP`, `CI`, `STAGING`, `PRODUCTION`                      |
-| `PORT`                                                                         | yes      | HTTP port for the API                                                  |
-| `ACCESS_TOKEN_KEY`                                                             | yes      | HMAC key for access and registration tokens, 100+ chars                |
-| `REFRESH_TOKEN_KEY`                                                            | yes      | HMAC key for refresh tokens, 100+ chars, different from the access key |
-| `PG_HOST`, `PG_PORT`, `PG_USERNAME`, `PG_PASSWORD`, `PG_DATABASE`, `PG_SCHEMA` | yes      | PostgreSQL connection                                                  |
-| `REDIS_DB_HOST`, `REDIS_DB_PORT`, `REDIS_DB_PASSWORD`                          | yes      | Redis connection. Password must not be empty                           |
-| `REDIS_DB_USERNAME`                                                            | no       | Redis ACL user                                                         |
-| `REDIS_DB_DATABASE`                                                            | yes      | Redis DB index (0-100)                                                 |
-| `REDIS_DEFAULT_KEY`                                                            | yes      | Prefix for app keys (e.g. `digiGold:`)                                 |
-| `REDIS_DEFAULT_CHANNEL`                                                        | yes      | Prefix for event channels (e.g. `digiGold:`)                           |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                  | no       | OTLP gRPC collector for traces and metrics (default `localhost:4317`)  |
+| Variable                                                                       | Required | Notes                                                                                 |
+| ------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------- |
+| `APP_ENV`                                                                      | yes      | `LOCAL`, `DEVELOP`, `CI`, `STAGING`, `PRODUCTION`                                     |
+| `PORT`                                                                         | yes      | HTTP port for the API                                                                 |
+| `ACCESS_TOKEN_KEY`                                                             | yes      | HMAC key for access and registration tokens, 100+ chars                               |
+| `REFRESH_TOKEN_KEY`                                                            | yes      | HMAC key for refresh tokens, 100+ chars, different from the access key                |
+| `PG_HOST`, `PG_PORT`, `PG_USERNAME`, `PG_PASSWORD`, `PG_DATABASE`, `PG_SCHEMA` | yes      | PostgreSQL connection                                                                 |
+| `REDIS_DB_HOST`, `REDIS_DB_PORT`, `REDIS_DB_PASSWORD`                          | yes      | Redis connection. Password must not be empty                                          |
+| `REDIS_DB_USERNAME`                                                            | no       | Redis ACL user                                                                        |
+| `REDIS_DB_DATABASE`                                                            | yes      | Redis DB index (0-100)                                                                |
+| `REDIS_DEFAULT_KEY`                                                            | yes      | Prefix for app keys (e.g. `digiGold:`)                                                |
+| `REDIS_DEFAULT_CHANNEL`                                                        | yes      | Prefix for event channels (e.g. `digiGold:`)                                          |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                  | no       | OTLP gRPC collector for traces and metrics (default `localhost:4317`)                 |
+| `CORS_ALLOW_ORIGINS`                                                           | prod     | Comma-separated frontend origins. Unset allows `*`; PRODUCTION won't start without it |
+| `ENABLE_MOCK_LP_HEDGING`                                                       | no       | `true` runs the hedging cron with simulated LP fills. Ignored in PRODUCTION           |
 
 Per-tenant secrets (Razorpay keys, webhook secret, WhatsApp credentials) are stored
 in `tenant_internal_configs` and set through `PATCH /admin/tenants/{uuid}/config`.
@@ -243,6 +264,11 @@ Every tenant-scoped request carries `X-Tenant-ID` (tenant UUID).
 Fiber locals. Controllers read it with `middleware.GetTenantIntID(c)`, never from the
 request body. Every repository query on tenant data filters by tenant ID.
 
+A store can be suspended (`PATCH /admin/tenants/{uuid}/status {"is_active": false}`). The
+interceptor then refuses it with `403 TENANT_INACTIVE`; each API instance re-reads the flag
+at least every 30 seconds. Payments already captured still settle (the webhook doesn't go
+through the interceptor).
+
 ### Customer login (OTP)
 
 ```
@@ -251,10 +277,17 @@ POST /auth/otp/verify    {phone, otp}       → access + refresh token   (regist
                                             → registration_token       (new user)
 POST /auth/register      {registration_token, full_name, location, email_id?}
                                             → access + refresh token
+POST /auth/refresh       {refresh_token}    → new access + refresh token (single use)
+POST /auth/logout        {refresh_token}    → revokes the refresh token
 ```
 
-OTP rules: 30 s cooldown, resend limit per 10-minute window, verify attempts limited.
-OTP state lives in Redis.
+OTP rules: 10-digit phone and 6-digit code (validated), 30 s cooldown, 5 sends per
+10-minute window, 5 guesses per code (counted atomically, so parallel guesses can't exceed
+it). OTP state lives in Redis only: the `OTPReqEvent` carries no code, and the WhatsApp
+worker reads it from the live session when it sends.
+
+Customer refresh tokens are recorded in Redis by their `jti` (like admin ones), so each
+works once and logout revokes it. Access tokens last 15 minutes.
 
 ### Admin login (password + TOTP)
 
@@ -265,9 +298,11 @@ POST /admin/auth/totp/verify  {temp_token, code}   → access + refresh token
 POST /admin/auth/refresh      {refresh_token}      → new token pair
 ```
 
-Roles in the schema: `super_admin` (platform), `manager` (shop), `custom`. Tenant
-onboarding creates the store's root admin as `manager`. The event log also
-accepts `auditor`, but the `tu_role` CHECK constraint does not allow that value yet.
+Roles in the schema: `super_admin` (platform), `manager` (shop), `custom` (unused). Tenant
+onboarding creates the store's root admin as `manager`. Staff (`/admin/admins`): a
+`super_admin` manages any store's admins; a `manager` manages only their own store's, can
+give only the `manager` role and can't change a `super_admin`. Nobody can deactivate their
+own account or change their own role.
 
 ### Live rates
 
@@ -365,9 +400,11 @@ exposure; also emitted for redemptions and reversals with signed grams).
 
 ### Hedging
 
-The hedging cron (API process, every 10 s) locks `master_hedging_state`. When unhedged
-exposure reaches 100 g it books whole 100 g lots as `master_hedging_orders`. The
-liquidity provider call is **mocked** (fixed rate).
+Every ledger movement adds its signed grams to `master_hedging_state.unhedged_grams`. No
+liquidity provider is integrated yet, so the hedging cron is **off** by default and the
+exposure simply accumulates. With `ENABLE_MOCK_LP_HEDGING=true` (never in PRODUCTION) the
+cron runs every 10 s and books whole 100 g lots as `master_hedging_orders` with simulated
+fills (fixed rate, `LP_MOCK_` references).
 
 ---
 
@@ -380,11 +417,14 @@ liquidity provider call is **mocked** (fixed rate).
 - **Customer isolation:** the customer token's tenant must equal `X-Tenant-ID`.
 - **Admin isolation:** the admin token's tenant must equal `X-Tenant-ID`, except for
   `super_admin`. Give `super_admin` to platform staff only, never to shop owners.
-- **Roles:** checked with `middleware.RequireRole(...)` on each admin route group.
+- **Roles:** checked with `middleware.RequireRole(...)` on each admin route group; staff
+  management (`/admin/admins`) also scopes a manager to their own store.
 - **Rate limits:** `/auth/*` and `/admin/auth/*` allow 10 requests per minute per IP and
   route (in memory, per API instance).
 - **Money safety:** balance checks run under a row lock; reversals are locked and
-  single-use; webhook trades check event type, tenant and amount.
+  single-use; webhook trades check event type, tenant and amount. A payment, counter quote
+  or reversal reference can be in the ledger only once (unique index), and a repeated
+  webhook for a payment already credited or refunded does nothing.
 - **Errors:** 5xx responses never include internal error text.
 - **Secrets:** env files and binaries are git-ignored. Per-tenant secrets live in the database.
 
@@ -527,9 +567,9 @@ must restart them.
 
 ## Known gaps
 
-- Liquidity provider hedging is mocked.
-- OTP codes are stored in `system_events` payloads. This is by design: only platform
-  staff can read the event log.
+- No liquidity provider integration: hedging exposure accumulates (see Hedging).
+- `OTPReqEvent` rows written before this change still contain the code;
+  the event log API redacts it.
 - Some admin routes return `{"error": "..."}` instead of the standard error shape.
-- Customer OTP login is not covered by the integration tests (it needs WhatsApp).
-- The `auditor` role is referenced in code but not allowed by the schema.
+- WhatsApp delivery itself is not covered by the integration tests (they read the code
+  from Redis).
