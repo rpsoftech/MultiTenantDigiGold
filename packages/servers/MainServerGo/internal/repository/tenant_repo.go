@@ -269,7 +269,9 @@ func (r *TenantRepository) readCachedData(ctx context.Context, key string) *mode
 }
 
 // createTenantCaches caches a copy of t: callers may be serialising t to a response at the
-// same time, so it must not be modified here.
+// same time, so it must not be modified here. Reads call it before returning, not in a
+// goroutine: a write that lands after a later update's invalidation would cache the old row
+// for tenantCacheTTL.
 func (r *TenantRepository) createTenantCaches(ctx context.Context, t *models.Tenant) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -317,19 +319,29 @@ func (r *TenantRepository) scanFullRetrieval(row *sql.Row) (*models.Tenant, erro
 // refuses a suspended tenant with ErrTenantInactive. The answer is kept for activeTenantTTL,
 // so a suspension reaches every API instance within that time. Use TenantUUIDtoID where a
 // suspended tenant must still be reachable (platform admin edits, reactivation).
+//
+// It reads the database, not the Redis row cache: a cached row can be stale for
+// tenantCacheTTL (a read that raced the suspension can cache the active row again after the
+// invalidation), and a stale row must not keep a suspended store open.
 func (r *TenantRepository) ResolveActiveTenantID(ctx context.Context, uuid string) (int64, error) {
 	r.activeTenantsMu.RLock()
 	entry, ok := r.activeTenants[uuid]
 	r.activeTenantsMu.RUnlock()
 
 	if !ok || time.Since(entry.checkedAt) > activeTenantTTL {
-		t, err := r.GetFullTenantByUUID(ctx, uuid)
+		t, err := r.scanFullRetrieval(r.stmtGetFullByUUID.QueryRowContext(ctx, uuid))
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, interfaces.ErrTenantNotFound
+		}
 		if err != nil {
 			return 0, err
 		}
 		entry = activeTenantEntry{id: t.ID, active: t.IsActive, checkedAt: time.Now()}
 		r.activeTenantsMu.Lock()
-		r.activeTenants[uuid] = entry
+		// Copy the key: uuid comes from a request header, and Fiber reuses that memory for
+		// later requests, which would change the key in place (lookups then miss or hit the
+		// wrong entry, and InvalidateTenantCaches can't delete it).
+		r.activeTenants[strings.Clone(uuid)] = entry
 		r.activeTenantsMu.Unlock()
 	}
 	if !entry.active {
@@ -359,7 +371,7 @@ func (r *TenantRepository) TenantUUIDtoID(ctx context.Context, uuid string) (int
 		}
 		id = entity.ID
 		r.uuidMapMutex.Lock()
-		r.tenantUUIDtoID[uuid] = id
+		r.tenantUUIDtoID[strings.Clone(uuid)] = id // copied: see ResolveActiveTenantID
 		r.uuidMapMutex.Unlock()
 
 	}
@@ -479,7 +491,7 @@ func (r *TenantRepository) GetFullTenantByUUID(ctx context.Context, uuid string)
 		return nil, err // Safe pass-through for real DB errors
 	}
 
-	go r.createTenantCaches(context.Background(), t)
+	r.createTenantCaches(ctx, t)
 	return t, nil
 }
 
@@ -498,7 +510,7 @@ func (r *TenantRepository) GetFullTenantByShortName(ctx context.Context, shortNa
 		return nil, err // Safe pass-through for real DB errors
 	}
 
-	go r.createTenantCaches(context.Background(), t)
+	r.createTenantCaches(ctx, t)
 	return t, nil
 }
 
@@ -517,7 +529,7 @@ func (r *TenantRepository) GetFullTenantByDomain(ctx context.Context, domain str
 		return nil, err // Safe pass-through for real DB errors
 	}
 
-	go r.createTenantCaches(context.Background(), t)
+	r.createTenantCaches(ctx, t)
 	return t, nil
 }
 
