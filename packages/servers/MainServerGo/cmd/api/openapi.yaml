@@ -593,6 +593,13 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: >-
+            `ALREADY_EXISTS`: this phone number already has an account in the store (e.g. the
+            form was submitted twice).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /auth/refresh:
     post:
@@ -1781,6 +1788,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Status' }
+        '400':
+          description: >-
+            `INVALID_INPUT`: an unknown `sell_margin_type`, a negative value, `gst_percentage`
+            outside 0-100, or a commodity the store has no margin for.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/tenants/{uuid}/kyc:
     get:

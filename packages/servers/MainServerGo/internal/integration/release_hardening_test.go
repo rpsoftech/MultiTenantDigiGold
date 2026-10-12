@@ -114,14 +114,16 @@ func TestOnlineBuy_RefundIsNotRepeated(t *testing.T) {
 	if _, ok := razorpay.refundFor(paymentID); !ok {
 		t.Fatal("the mismatched payment was not refunded")
 	}
-	refundsBefore := razorpay.refundCount(paymentID)
+	requestsBefore := razorpay.refundRequestCount(paymentID)
 
 	if err := rdb.Del(context.Background(), "digiGold:lock:payment:"+paymentID).Err(); err != nil {
 		t.Fatal(err)
 	}
 	expectStatus(t, webhook(t, orderID, paymentID, 100, webhookSecret), http.StatusOK)
-	if got := razorpay.refundCount(paymentID); got != refundsBefore {
-		t.Fatalf("refunds for the payment = %d, want %d (no second refund)", got, refundsBefore)
+	// The recorded refund stops the repeat before Razorpay is asked again (Razorpay would
+	// refuse a second refund anyway, so counting issued refunds would not show it).
+	if got := razorpay.refundRequestCount(paymentID); got != requestsBefore {
+		t.Fatalf("refund requests for the payment = %d, want %d (Razorpay not asked again)", got, requestsBefore)
 	}
 }
 

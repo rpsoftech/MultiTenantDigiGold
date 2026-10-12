@@ -18,7 +18,9 @@ type fakeRazorpay struct {
 	mu      sync.Mutex
 	orders  map[string]fakeOrder
 	refunds []fakeRefund
-	nextID  int
+	// refundRequests counts every refund asked for, per payment, including refused ones.
+	refundRequests map[string]int
+	nextID         int
 }
 
 type fakeOrder struct {
@@ -66,6 +68,10 @@ func (f *fakeRazorpay) refund(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	f.mu.Lock()
+	if f.refundRequests == nil {
+		f.refundRequests = map[string]int{}
+	}
+	f.refundRequests[r.PathValue("id")]++
 	// Like Razorpay, refuse to refund a payment that was already fully refunded.
 	for _, earlier := range f.refunds {
 		if earlier.PaymentID == r.PathValue("id") {
@@ -118,6 +124,13 @@ func (f *fakeRazorpay) refundOutsideTheServer(paymentID string, amountPaise int6
 	defer f.mu.Unlock()
 	f.nextID++
 	f.refunds = append(f.refunds, fakeRefund{ID: fmt.Sprintf("rfnd_test_%d", f.nextID), PaymentID: paymentID, AmountPaise: amountPaise})
+}
+
+// refundRequestCount returns how many refunds were asked for a payment, refused ones included.
+func (f *fakeRazorpay) refundRequestCount(paymentID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.refundRequests[paymentID]
 }
 
 // refundCount returns how many refunds were issued for a payment.
