@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../../dist/out-tsc",
+    "types": ["node"],
+    "lib": ["es2022", "dom"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../../libs/angular-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/shared-ui/tsconfig.lib.json"
+    }
+  ]
+}

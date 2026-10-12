@@ -1,0 +1,14 @@
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  background: color-mix(
+    in srgb,
+    var(--brand-primary) 14%,
+    var(--color-surface)
+  );
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  border-radius: var(--radius-md, 8px);
+}

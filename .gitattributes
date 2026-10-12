@@ -1,0 +1,3 @@
+# gofmt always writes LF. Without this, Windows checkouts (core.autocrlf) get CRLF Go files
+# that gofmt / the Go lint target rewrites, showing every file as modified.
+*.go text eol=lf

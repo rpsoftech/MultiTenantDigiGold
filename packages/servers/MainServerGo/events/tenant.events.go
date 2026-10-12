@@ -7,10 +7,31 @@ type tenantEvent struct {
 }
 
 const (
-	TenantCreatedEvent = "TenantCreated"
-	TenantUpdatedEvent = "TenantUpdated"
-	TenantDeletedEvent = "TenantDeleted"
+	TenantCreatedEvent     = "TenantCreated"
+	TenantUpdatedEvent     = "TenantUpdated"
+	TenantDeletedEvent     = "TenantDeleted"
+	TenantActivatedEvent   = "TENANT_ACTIVATED"
+	TenantDeactivatedEvent = "TENANT_DEACTIVATED"
 )
+
+// CreateNewTenantStatusChanged logs a store being reactivated or suspended.
+func CreateNewTenantStatusChanged(entity *models.Tenant, adminId string) *tenantEvent {
+	name := TenantDeactivatedEvent
+	if entity.IsActive {
+		name = TenantActivatedEvent
+	}
+	event := &tenantEvent{
+		BaseEvent: &BaseEvent{
+			KeyId:     entity.UUID,
+			TenantId:  entity.UUID,
+			AdminId:   adminId,
+			Payload:   map[string]any{"tenant_uuid": entity.UUID, "is_active": entity.IsActive},
+			EventName: name,
+		},
+	}
+	event.Add()
+	return event
+}
 
 func (base *tenantEvent) Add() *tenantEvent {
 	base.ParentNames = []string{base.EventName, "TenantEvent"}

@@ -1,5 +1,9 @@
 # DigiGold
 
+> **Backend developers:** start with [`packages/servers/MainServerGo/README.md`](packages/servers/MainServerGo/README.md)
+> (setup, architecture, conventions). API reference: [`cmd/api/openapi.yaml`](packages/servers/MainServerGo/cmd/api/openapi.yaml),
+> served as Swagger UI at `http://localhost:8080/docs` in local/dev/staging.
+
 <a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
 
 ✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.

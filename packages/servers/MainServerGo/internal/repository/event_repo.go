@@ -15,6 +15,7 @@ import (
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
 
 	// Ensure this import matches your actual Redis utility path
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
@@ -25,7 +26,11 @@ type EventRepository struct {
 	// Prepared Statements
 	stmtInsertEvent      *sql.Stmt
 	stmtMarkProcessed    *sql.Stmt
+	stmtClaim            *sql.Stmt
+	stmtRelease          *sql.Stmt
 	stmtFetchUnprocessed *sql.Stmt
+	stmtGetEvents        *sql.Stmt
+	stmtCountEvents      *sql.Stmt
 }
 
 var (
@@ -65,6 +70,21 @@ func GetEventRepository() *EventRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare MarkEventProcessed: %v", err))
 		}
 
+		// 2b. CLAIM / RELEASE: atomic compare-and-set so that only one consumer
+		// (API process, worker process, or cron republish) handles an event.
+		stmtClaim, err := db.Db.Prepare(fmt.Sprintf(`UPDATE %s SET %s = true WHERE %s = $1 AND %s = false`,
+			schema.TableSystemEvents, schema.ColIsProcessed, schema.ColEventId, schema.ColIsProcessed,
+		))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare ClaimEvent: %v", err))
+		}
+		stmtRelease, err := db.Db.Prepare(fmt.Sprintf(`UPDATE %s SET %s = false WHERE %s = $1`,
+			schema.TableSystemEvents, schema.ColIsProcessed, schema.ColEventId,
+		))
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare ReleaseEvent: %v", err))
+		}
+
 		// 3. FETCH UNPROCESSED (Using Schema Constants)
 		queryFetch := fmt.Sprintf(`
             SELECT 
@@ -85,12 +105,63 @@ func GetEventRepository() *EventRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare FetchUnprocessedEvents: %v", err))
 		}
 
+		// Events record their tenant either as its UUID or, for trades, redemptions, refunds
+		// and admin logins, as its internal numeric ID. A tenant filter ($1, a UUID) matches
+		// both, and every row is returned with the UUID so callers can name the tenant. From
+		// and to ($3, $4) are timestamps with a zone offset.
+		eventFilter := fmt.Sprintf(`
+			WHERE ($1 = '' OR e.%[1]s = $1
+			       OR e.%[1]s = (SELECT t.%[4]s::text FROM %[5]s t WHERE t.%[6]s::text = $1))
+			  AND ($2 = '' OR e.%[2]s = $2)
+			  AND ($3 = '' OR e.%[3]s >= cast(nullif($3, '') as timestamptz))
+			  AND ($4 = '' OR e.%[3]s <= cast(nullif($4, '') as timestamptz))`,
+			schema.ColTenantId, schema.ColEventName, schema.ColOccurredAt,
+			schema.ColTenantID, schema.TableTenants, schema.ColTenantUUID,
+		)
+
+		queryGetEvents := fmt.Sprintf(`
+			SELECT
+				e.%s, e.%s, COALESCE(tn.%s::text, e.%s), e.%s, e.%s, e.%s, e.%s, e.%s, e.%s
+			FROM %s e
+			LEFT JOIN %s tn ON tn.%s::text = e.%s
+			%s
+			ORDER BY e.%s DESC, e.%s DESC
+			LIMIT $5 OFFSET $6`,
+			schema.ColEventId, schema.ColKeyId, schema.ColTenantUUID, schema.ColTenantId, schema.ColEventName,
+			schema.ColParentNames, schema.ColPayload, schema.ColIpAddressOccurredFrom, schema.ColAdminId, schema.ColOccurredAt,
+			schema.TableSystemEvents,
+			schema.TableTenants, schema.ColTenantID, schema.ColTenantId,
+			eventFilter,
+			schema.ColOccurredAt, schema.ColEventId,
+		)
+
+		stmtGetEvents, err := db.Db.Prepare(queryGetEvents)
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtGetEvents: %v", err))
+		}
+
+		queryCountEvents := fmt.Sprintf(`
+			SELECT COUNT(*)
+			FROM %s e
+			%s`,
+			schema.TableSystemEvents, eventFilter,
+		)
+
+		stmtCountEvents, err := db.Db.Prepare(queryCountEvents)
+		if err != nil {
+			panic(fmt.Sprintf("FATAL: Failed to prepare stmtCountEvents: %v", err))
+		}
+
 		eventRepoInstance = &EventRepository{
 			DB:                   db,
 			Redis:                rdb,
 			stmtInsertEvent:      stmtInsert,
 			stmtMarkProcessed:    stmtMark,
+			stmtClaim:            stmtClaim,
+			stmtRelease:          stmtRelease,
 			stmtFetchUnprocessed: stmtFetch,
+			stmtGetEvents:        stmtGetEvents,
+			stmtCountEvents:      stmtCountEvents,
 		}
 	})
 	return eventRepoInstance
@@ -155,7 +226,7 @@ func (r *EventRepository) SaveEventWithContext(ctx context.Context, event *event
 		if pubErr := r.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
 			// Trigger a critical log here so you know Redis dropped the message.
 			// Your PostgreSQL Cron job will pick this up automatically because is_processed is still false!
-			fmt.Printf("CRITICAL: Failed to publish Event %s to Redis: %v\n", evt.Id, pubErr)
+			monitoring.Critical(bgCtx, monitoring.KindEventPublish, fmt.Errorf("event %s not published to Redis: %w", evt.Id, pubErr))
 		}
 	}(event)
 
@@ -188,20 +259,67 @@ func (r *EventRepository) SaveEventWithTx(ctx context.Context, tx *sql.Tx, event
 		ipAddress, adminID, event.OccurredAt,
 	)
 
-	if err != nil {
-		return err // The Service layer will catch this and Rollback() everything
+	// The event is NOT published here: the transaction may still roll back.
+	// Callers publish with PublishAsync after Commit; anything not published
+	// is picked up by the outbox recovery cron.
+	return err // The Service layer will catch this and Rollback() everything
+}
+
+// PublishAsync dispatches already-committed events to Redis without blocking the caller.
+func (r *EventRepository) PublishAsync(evts ...*events.BaseEvent) {
+	for _, evt := range evts {
+		go func(evt *events.BaseEvent) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if pubErr := r.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
+				monitoring.Critical(bgCtx, monitoring.KindEventPublish, fmt.Errorf("event %s not published to Redis: %w", evt.Id, pubErr))
+			}
+		}(evt)
 	}
+}
 
-	// 2. FIRE AND FORGET REDIS DISPATCH
-	go func(evt *events.BaseEvent) {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if pubErr := r.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
-			fmt.Printf("CRITICAL: Failed to publish Event %s to Redis: %v\n", evt.Id, pubErr)
-		}
-	}(event)
+// PaymentRefundRecorded reports whether a TRADE_PAYMENT_REFUNDED event exists for the
+// payment, i.e. it was already refunded. Only the refund path calls it, so it scans the
+// tenant's events without an index of its own.
+func (r *EventRepository) PaymentRefundRecorded(ctx context.Context, tenantID, paymentID string) (bool, error) {
+	query := fmt.Sprintf(
+		`SELECT EXISTS (SELECT 1 FROM %s WHERE %s = $1 AND %s = $2 AND %s->>'payment_id' = $3)`,
+		schema.TableSystemEvents, schema.ColTenantId, schema.ColEventName, schema.ColPayload,
+	)
+	var exists bool
+	if err := r.DB.Db.QueryRowContext(ctx, query, tenantID, events.TradeEventPaymentRefunded, paymentID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check refund for payment %s: %w", paymentID, err)
+	}
+	return exists, nil
+}
 
-	return nil
+// ClaimEvent atomically marks an unprocessed event as processed. It returns false
+// when the event does not exist (yet) or another consumer already claimed it.
+func (r *EventRepository) ClaimEvent(ctx context.Context, eventID string) (bool, error) {
+	return claim(r.stmtClaim.ExecContext(ctx, eventID))
+}
+
+// ClaimEventWithTx claims an event inside tx, so the claim commits or rolls back
+// together with the side effects of processing it (exactly-once).
+func (r *EventRepository) ClaimEventWithTx(ctx context.Context, tx *sql.Tx, eventID string) (bool, error) {
+	return claim(tx.StmtContext(ctx, r.stmtClaim).ExecContext(ctx, eventID))
+}
+
+// ReleaseEvent returns a claimed event to the outbox so the recovery cron retries it.
+func (r *EventRepository) ReleaseEvent(ctx context.Context, eventID string) error {
+	_, err := r.stmtRelease.ExecContext(ctx, eventID)
+	return err
+}
+
+func claim(res sql.Result, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
 }
 
 // MarkEventAsProcessed is called by the background worker instantly after success
@@ -267,4 +385,57 @@ func (r *EventRepository) FetchUnprocessedEvents(ctx context.Context) ([]*events
 	}
 
 	return unprocessedEvents, nil
+}
+
+func (r *EventRepository) GetEventsPaginated(ctx context.Context, tenantUUID, eventType, from, to string, limit, offset int) ([]*events.BaseEvent, int64, error) {
+	var total int64
+	err := r.stmtCountEvents.QueryRowContext(ctx, tenantUUID, eventType, from, to).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.stmtGetEvents.QueryContext(ctx, tenantUUID, eventType, from, to, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	// Non-nil so an empty page marshals as [] rather than null.
+	pagedEvents := []*events.BaseEvent{}
+	for rows.Next() {
+		var evt events.BaseEvent
+		var payloadBytes []byte
+		var parentNames pq.StringArray
+		var ipAddress sql.NullString
+		var adminID sql.NullString
+
+		if err := rows.Scan(
+			&evt.Id, &evt.KeyId, &evt.TenantId, &evt.EventName, &parentNames,
+			&payloadBytes, &ipAddress, &adminID, &evt.OccurredAt,
+		); err != nil {
+			return nil, 0, err
+		}
+
+		evt.ParentNames = parentNames
+
+		if err := json.Unmarshal(payloadBytes, &evt.Payload); err != nil {
+			return nil, 0, err
+		}
+
+		if adminID.Valid {
+			evt.AdminId = adminID.String
+		}
+		if ipAddress.Valid {
+			evt.IpAddressAOccurredFrom = ipAddress.String
+		}
+
+		evt.ObjId = evt.Id
+		pagedEvents = append(pagedEvents, &evt)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return pagedEvents, total, nil
 }

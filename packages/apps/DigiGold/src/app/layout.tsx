@@ -1,4 +1,7 @@
-import './global.css';
+import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
+import { computeTenantCssVars } from '@/features/tenant/tenantCssVars';
+import { Providers } from './providers';
+import './globals.scss';
 
 export const metadata = {
   title: 'Welcome to DigiGold',
@@ -10,9 +13,29 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // next.config.js sets `output: 'export'` (fully static export, no server runtime), so
+  // this can only ever render once at build time — it must stay a static, brand-neutral
+  // default. Providers resolves the real tenant config client-side on mount, which is the
+  // only place per-request/per-host resolution is possible in a static export.
+  const cssVars = computeTenantCssVars(DEFAULT_TENANT_CONFIG)
+    .map(([name, value]) => `${name}:${value}`)
+    .join(';');
+
   return (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <style
+          id="tenant-theme-vars"
+          dangerouslySetInnerHTML={{ __html: `:root{${cssVars}}` }}
+        />
+        <style>
+          @import
+          url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&display=swap');
+        </style>
+      </head>
+      <body>
+        <Providers initialTenantConfig={DEFAULT_TENANT_CONFIG}>{children}</Providers>
+      </body>
     </html>
   );
 }

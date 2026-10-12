@@ -1,6 +1,8 @@
 package validator
 
 import (
+	"log"
+
 	"github.com/go-playground/validator/v10"
 )
 
@@ -30,7 +32,7 @@ type (
 var Validator *XValidator
 
 func init() {
-	println("Registered")
+	log.Println("Validator Registered")
 	Validator = &XValidator{
 		validator: validator.New(),
 	}

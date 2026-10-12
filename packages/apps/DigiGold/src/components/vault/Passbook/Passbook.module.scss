@@ -1,0 +1,109 @@
+@use '@/styles/mixins' as *;
+
+.section {
+  max-width: 1280px;
+  margin-inline: auto;
+  padding: var(--space-6) var(--space-4);
+
+  @include lg {
+    padding: var(--space-8);
+  }
+}
+
+.heading {
+  font-family: var(--font-headline);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.filterRow {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
+  // Hidden on purpose: the global thin scrollbar would otherwise show under the chips.
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.filterChip {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+
+  @include reduced-motion {
+    transition: none;
+  }
+}
+
+.filterChipActive {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--color-on-brand);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  @include md {
+    max-width: 640px;
+    margin-inline: auto;
+  }
+}
+
+.entryList {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+
+  @include md {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include lg {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  @include xl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.stateRow {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) 0;
+}
+
+.emptyState {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-4) 0;
+}
+
+.loadMoreButton {
+  width: auto;
+  align-self: center;
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.8125rem;
+}

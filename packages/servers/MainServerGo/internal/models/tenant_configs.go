@@ -64,6 +64,9 @@ type PaymentConfigJSON struct {
 	ProviderType string `json:"provider_type"` // "DEFAULT" (Voltra) or "CUSTOM"
 	KeyID        string `json:"key_id,omitempty"`
 	KeySecret    string `json:"key_secret,omitempty"`
+	// WebhookSecret is the secret configured on the Razorpay webhook. It is
+	// different from KeySecret; KeySecret is used only as a legacy fallback.
+	WebhookSecret string `json:"webhook_secret,omitempty"`
 }
 
 // OthersConfigJSON handles outbound webhooks for the tenant's own external systems

@@ -1,7 +1,10 @@
 package middleware
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 )
 
@@ -21,11 +24,12 @@ func TenantInterceptor(c fiber.Ctx) error {
 		})
 	}
 
-	// 2. Translate UUID to Internal int64 ID (Using our cached RWMutex repo)
+	// 2. Translate UUID to the internal ID, refusing a suspended store (403 TENANT_INACTIVE).
 	tenantRepo := repository.GetTenantRepository()
-
-	// CRITICAL: We use c.UserContext() to pass a standard context.Context to the database
-	tenantIntID, err := tenantRepo.TenantUUIDtoID(c.Context(), tenantUUID)
+	tenantIntID, err := tenantRepo.ResolveActiveTenantID(c.Context(), tenantUUID)
+	if errors.Is(err, interfaces.ErrTenantInactive) {
+		return err
+	}
 
 	if err != nil || tenantIntID == 0 {
 		// Do not leak database errors to the frontend; just deny access.

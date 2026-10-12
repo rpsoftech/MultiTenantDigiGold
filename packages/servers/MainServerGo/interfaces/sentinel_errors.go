@@ -1,9 +1,13 @@
 package interfaces
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrTenantNotFound       = errors.New("invalid or missing tenant")
+	ErrTenantInactive       = errors.New("tenant is suspended")
 	ErrTenantConfigNotFound = errors.New("Tenant Config not found")
 	ErrUserNotFound         = errors.New("USER_NOT_FOUND")
 	ErrInvalidToken         = errors.New("invalid token signature")
@@ -21,3 +25,43 @@ var (
 	ErrMaxResendAttempts = errors.New("maximum OTP resend attempts reached, try again later")
 	ErrMaxVerifyAttempts = errors.New("too many incorrect guesses, OTP invalidated")
 )
+
+// Ledger / Trade Errors
+var (
+	ErrInsufficientBalance    = errors.New("insufficient gold balance")
+	ErrLedgerEntryNotFound    = errors.New("ledger entry not found")
+	ErrLedgerAlreadyReversed  = errors.New("ledger entry is already reversed")
+	ErrLedgerNotReversible    = errors.New("ledger entry cannot be reversed")
+	ErrSlippageExceeded       = errors.New("live rate moved beyond allowable tolerance")
+	ErrInvalidTradePayload    = errors.New("must specify a positive weight_grams or total_amount_inr")
+	ErrCreditLimitExceeded    = errors.New("trade exceeds the store's available gold credit")
+	ErrRedemptionNotPending   = errors.New("redemption is not pending")
+	ErrRedemptionNotFound     = errors.New("redemption request not found")
+	ErrRedemptionBelowMinimum = errors.New("redemption is below the minimum weight")
+	ErrInvalidPickupCode      = errors.New("pickup code does not match")
+	ErrCashLimitExceeded      = errors.New("cash received from this customer today would reach 2,00,000 INR")
+	ErrCounterQuoteExpired    = errors.New("counter sale quote expired or not found")
+	ErrCounterSaleInProgress  = errors.New("this counter sale is already being recorded")
+)
+
+// KYC review errors
+var (
+	ErrKYCNotAwaitingReview = errors.New("customer has no KYC submission waiting for review")
+	ErrTenantKYCDocNotFound = errors.New("tenant KYC document not found")
+)
+
+// Counter pickup errors
+var (
+	ErrPickupCodeLocked = errors.New("too many wrong pickup codes; the pickup can only be cancelled")
+)
+
+// PickupCodeMismatchError is ErrInvalidPickupCode with the tries left before the pickup locks.
+type PickupCodeMismatchError struct {
+	AttemptsLeft int
+}
+
+func (e *PickupCodeMismatchError) Error() string {
+	return fmt.Sprintf("%v (%d attempts left)", ErrInvalidPickupCode, e.AttemptsLeft)
+}
+
+func (e *PickupCodeMismatchError) Unwrap() error { return ErrInvalidPickupCode }

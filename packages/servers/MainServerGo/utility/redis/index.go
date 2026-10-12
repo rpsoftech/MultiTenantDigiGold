@@ -83,7 +83,7 @@ func InitRedisClient() *RedisClientStruct {
 			Client: client,
 			Config: config,
 		}
-		println("Redis Client Initialized Successfully")
+		log.Println("Redis Client Initialized Successfully")
 		log.Printf("🔗 Redis Target: %s", client.Options().Addr)
 	})
 
@@ -115,19 +115,25 @@ func (r *RedisClientStruct) PublishCustomEvent(ctx context.Context, event string
 	return r.Client.Publish(ctx, r.GetRedisEventKey(event), payload).Err()
 }
 
-// func (r *RedisClientStruct) GetHashValue(ctx context.Context, key string) (map[string]string, error) {
-// 	return r.Client.HGetAll(ctx, key).Result()
-// }
+func (r *RedisClientStruct) GetHashKeyWithOriginalKey(ctx context.Context, key, field string) (string, error) {
+	return r.Client.HGet(ctx, key, field).Result()
+}
+
+func (r *RedisClientStruct) GetHashValue(ctx context.Context, key string) (map[string]string, error) {
+	return r.Client.HGetAll(ctx, key).Result()
+}
 
 func (r *RedisClientStruct) GetStringData(ctx context.Context, key string) (string, error) {
 	return r.Client.Get(ctx, r.GetRedisKey(key)).Result()
 }
 
+// RemoveKey deletes the keys (prefixed). The caller's slice is left as it was.
 func (r *RedisClientStruct) RemoveKey(ctx context.Context, key ...string) error {
+	prefixed := make([]string, len(key))
 	for i, k := range key {
-		key[i] = r.GetRedisKey(k)
+		prefixed[i] = r.GetRedisKey(k)
 	}
-	return r.Client.Del(ctx, key...).Err()
+	return r.Client.Del(ctx, prefixed...).Err()
 }
 
 func (r *RedisClientStruct) SetStringDataKeepTTL(ctx context.Context, key string, value string) error {

@@ -1,0 +1,160 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Digi Gold Core API",
+    "description": "The central microservice API for the Digi Gold application ecosystem.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080/api/v1",
+      "description": "Local Development Server"
+    },
+    {
+      "url": "https://api.staging.digigold.com/api/v1",
+      "description": "Staging Environment"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "OTP Generation and Verification"
+    },
+    {
+      "name": "Rates",
+      "description": "Live Redis Spot Rate Engine Streams"
+    }
+  ],
+  "paths": {
+    "/auth/otp/request": {
+      "post": {
+        "summary": "Request a new OTP",
+        "tags": ["Auth"],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "tnt-1234-abcd-5678"
+            },
+            "description": "The UUID of the retail shop tenant."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "example": "+919876543210"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP requested successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/otp/verify": {
+      "post": {
+        "summary": "Verify an OTP",
+        "tags": ["Auth"],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "tnt-1234-abcd-5678"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "example": "+919876543210"
+                  },
+                  "otp": {
+                    "type": "string",
+                    "example": "123456"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP verified successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "token": {
+                      "type": "string",
+                      "description": "JWT Access Token"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rates/stream": {
+      "get": {
+        "summary": "Live Spot Rate Stream (SSE)",
+        "tags": ["Rates"],
+        "description": "Connect to this endpoint using an EventSource to receive live tick updates.",
+        "responses": {
+          "200": {
+            "description": "Stream connected successfully",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

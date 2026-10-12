@@ -1,0 +1,117 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-family: var(--font-headline);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.rateList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.rateRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+}
+
+.rateRowMuted {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+
+  span:last-child {
+    font-family: var(--font-headline);
+    font-weight: 700;
+  }
+}
+
+.rateLabel {
+  min-width: 0;
+}
+
+.rateCaption {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.rateValue {
+  flex-shrink: 0;
+  font-family: var(--font-headline);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-primary);
+}
+
+.rateUnit {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.rateUnavailable {
+  flex-shrink: 0;
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.footnote {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.footnoteWithIcon {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+}
+
+.footerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}

@@ -1,0 +1,162 @@
+// Package server builds the DigiGold HTTP application. cmd/api serves it and
+// the integration tests drive it in-process.
+package server
+
+import (
+	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
+
+	"github.com/rpsoftech/DigiGold/MainServerGo/env"
+	admin_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/admin"
+	auth_controllers "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/auth"
+	rates_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/rates"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/api/tenant"
+	trade_api "github.com/rpsoftech/DigiGold/MainServerGo/internal/api/trade"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/middleware"
+)
+
+// corsAllowOriginsKey lists the frontend origins allowed to call the API, comma-separated
+// (e.g. "https://shop.example.com,https://admin.example.com"). Unset keeps the wildcard,
+// which is only meant for development: tokens travel in the X-Api-Token header (not
+// cookies), so "*" is not a CSRF hole, but production must name its own domains, so
+// PRODUCTION refuses to start without them (CheckCORSConfig).
+const corsAllowOriginsKey = "CORS_ALLOW_ORIGINS"
+
+func parseCORSOrigins(value string) []string {
+	var origins []string
+	for _, origin := range strings.Split(value, ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
+}
+
+func corsAllowedOrigins() []string {
+	origins := parseCORSOrigins(os.Getenv(corsAllowOriginsKey))
+	if len(origins) == 0 {
+		return []string{"*"}
+	}
+	return origins
+}
+
+// CheckCORSConfig fails in PRODUCTION when CORS_ALLOW_ORIGINS is unset or allows any origin.
+func CheckCORSConfig(appEnv env.AppEnv, value string) error {
+	if appEnv != env.APP_ENV_PRODUCTION {
+		return nil
+	}
+	origins := parseCORSOrigins(value)
+	if len(origins) == 0 || slices.Contains(origins, "*") {
+		return fmt.Errorf("%s must list the storefront and admin origins in PRODUCTION (it is %q)", corsAllowOriginsKey, value)
+	}
+	return nil
+}
+
+func corsMiddleware() fiber.Handler {
+	return cors.New(cors.Config{
+		AllowOrigins: corsAllowedOrigins(),
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-Id", env.XApiToken},
+	})
+}
+
+// appConfig is the Fiber configuration of the API.
+func appConfig() fiber.Config {
+	return fiber.Config{
+		// Values read from a request (headers such as X-Tenant-ID, params, the client IP) are
+		// used after the handler returns: PublishAsync marshals events in a goroutine, spans
+		// are exported later, and repositories keep UUIDs in in-memory maps. By default Fiber
+		// returns strings backed by the request buffer, which the next request overwrites, so
+		// those values must be copies.
+		Immutable:   true,
+		ReadTimeout: 5 * time.Second,
+		// WriteTimeout: 10 * time.Second,
+		WriteTimeout: 0, // Set to 0 for persistent SSE streaming connections!
+		AppName:      "Digi Gold API v1",
+		ErrorHandler: middleware.GlobalErrorHandler, // Centralized Error Handling
+		TrustProxy:   true,
+		ProxyHeader:  fiber.HeaderXForwardedFor,
+		TrustProxyConfig: fiber.TrustProxyConfig{
+			Loopback: true, // True if Nginx is on 127.0.0.1
+		},
+	}
+}
+
+// NewApp returns the Fiber app with all middleware and routes registered.
+// PostgreSQL, Redis and the env must already be initialised.
+func NewApp(rateHub *rates_api.RateHub) *fiber.App {
+	app := fiber.New(appConfig())
+
+	// Add OpenTelemetry Tracing Middleware
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+	}))
+	app.Use(corsMiddleware())
+
+	app.Use(middleware.OtelInterceptor)
+
+	app.Use(logger.New(logger.Config{
+		// Define your exact output log format using Fiber v3 tags
+		Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
+		// X-Real-IP
+		// Optional: Customize the time format
+		TimeFormat: "2006-01-02 15:04:05",
+		// Optional: Define a timezone
+		TimeZone: "Local",
+	}))
+	// 5. Initialize Controllers
+	authController := auth_controllers.NewAuthController()
+
+	// 6. Setup Route Groups & Apply Tenancy Middleware
+	api := app.Group("/api/v1")
+	// The middleware is attached to the /auth group, protecting everything inside it
+	auth := api.Group("/auth", middleware.AuthRateLimiter(), middleware.TenantInterceptor)
+	authController.RegisterRoutes(auth)
+
+	// Rates Route (Public Stream)
+	rateController := rates_api.NewRateController(rateHub)
+	ratesGroup := api.Group("/rates")
+	rateController.RegisterRoutes(ratesGroup)
+
+	// Admin Routes
+	// Note: auth/* is public (login, totp/setup, totp/verify — no JWT required)
+	//       tenants/* is guarded inside RegisterRoutes via TenantInterceptor + AdminJWTMiddleware + RequireRole
+	adminGroup := api.Group("/admin")
+	adminAuthController := admin_controllers.NewAdminAuthController()
+	adminAuthController.RegisterRoutes(adminGroup)
+
+	adminTenantController := admin_controllers.NewAdminTenantController()
+	adminTenantController.RegisterRoutes(adminGroup)
+
+	adminUserController := admin_controllers.NewAdminUserController()
+	adminUserController.RegisterRoutes(adminGroup)
+
+	adminEventsController := admin_controllers.NewAdminEventsController()
+	adminEventsController.RegisterRoutes(adminGroup)
+
+	adminStoreController := admin_controllers.NewAdminStoreController()
+	adminStoreController.RegisterRoutes(adminGroup)
+
+	// Customer Routes
+	// Middleware is attached to the /trade and /user groups only. Attaching it to
+	// a "/" group would also run it on every route registered later under /api/v1
+	// (webhook, tenant info) and reject them with 401.
+	customerTradeController := trade_api.NewCustomerTradeController(rateHub)
+	customerTradeController.RegisterRoutes(api, middleware.TenantInterceptor, middleware.GetAuthMiddleware().Intercept)
+
+	tenantController := tenant.NewTenantController()
+	tenantController.RegisterRoutes(api)
+
+	// Webhooks (Public)
+	webhookController := trade_api.NewWebhookController()
+	webhookController.RegisterRoutes(api)
+
+	return app
+}

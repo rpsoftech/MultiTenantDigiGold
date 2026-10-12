@@ -2,10 +2,12 @@ package workers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
 )
 
@@ -69,7 +71,7 @@ func runOutboxSweep(ctx context.Context, repo *repository.EventRepository) {
 
 			// Notice we simply call PublishEvent. We do NOT re-insert into PostgreSQL.
 			if pubErr := repo.Redis.PublishEvent(bgCtx, evt); pubErr != nil {
-				log.Printf("CRITICAL: Cron failed to republish event %s: %v\n", evt.Id, pubErr)
+				monitoring.Critical(bgCtx, monitoring.KindOutboxRepublish, fmt.Errorf("event %s not republished: %w", evt.Id, pubErr))
 			} else {
 				log.Printf("✅ Cron successfully recovered and republished event %s (%s)\n", evt.Id, evt.EventName)
 			}

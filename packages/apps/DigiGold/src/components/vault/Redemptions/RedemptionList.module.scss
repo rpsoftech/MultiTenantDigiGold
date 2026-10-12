@@ -1,0 +1,47 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: var(--space-2);
+  background: var(--color-surface-secondary);
+  font-family: var(--font-headline);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.stateRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+}
+
+.emptyState {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  margin: 0;
+}
+
+.smallButton {
+  width: auto;
+  align-self: center;
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.8125rem;
+}

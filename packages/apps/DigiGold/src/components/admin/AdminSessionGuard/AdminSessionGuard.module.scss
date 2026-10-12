@@ -1,0 +1,26 @@
+// DigiGold styles with SCSS modules and design tokens; Tailwind isn't set up in this app,
+// so utility class names here would render unstyled.
+.screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+  background: var(--color-surface-secondary);
+}
+
+.panel {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  max-width: 24rem;
+  text-align: center;
+}
+
+.message {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}

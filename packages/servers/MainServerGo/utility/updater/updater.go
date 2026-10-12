@@ -4,21 +4,66 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	utility_functions_gzip "github.com/rpsoftech/DigiGold/MainServerGo/utility/functions/gzip"
 )
 
+// KVBaseURL is where the deploy script publishes release records and servers poll for them.
+const KVBaseURL = "https://keyvalue.rpso.in/public/"
+
+// BrowserUserAgent gets requests past the anti-bot filter in front of the KV and file servers.
+const BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+// ErrKVNotFound means the KV store has no record for the key yet.
+var ErrKVNotFound = errors.New("KV key not found")
+
 type KVResponse struct {
 	Version int    `json:"version"`
 	URL     string `json:"url"`
 	SHA256  string `json:"sha256"`
+}
+
+// SetBrowserHeaders sets the browser-like headers the KV and file servers expect.
+func SetBrowserHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", BrowserUserAgent)
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+}
+
+// FetchKV reads the release record stored under key. It returns ErrKVNotFound on a 404.
+func FetchKV(client *http.Client, kvBaseURL, key string) (KVResponse, error) {
+	var kvData KVResponse
+	req, err := http.NewRequest("GET", kvBaseURL+key, nil)
+	if err != nil {
+		return kvData, fmt.Errorf("failed to create request: %w", err)
+	}
+	SetBrowserHeaders(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		return kvData, fmt.Errorf("failed to reach KV server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return kvData, ErrKVNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return kvData, fmt.Errorf("KV server returned status: %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&kvData); err != nil {
+		return kvData, fmt.Errorf("invalid KV response: %w", err)
+	}
+	return kvData, nil
 }
 
 // HashFile is a great utility function for general use, but we will skip it
@@ -37,6 +82,18 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// validateRelease rejects a release record that can't be installed safely: the download
+// must be HTTPS and the hash a full SHA-256, or a hash mismatch could never be detected.
+func validateRelease(kv KVResponse) error {
+	if !strings.HasPrefix(kv.URL, "https://") {
+		return fmt.Errorf("release v%d has no HTTPS download URL (%q)", kv.Version, kv.URL)
+	}
+	if decoded, err := hex.DecodeString(kv.SHA256); err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("release v%d has no valid SHA-256 (%q)", kv.Version, kv.SHA256)
+	}
+	return nil
+}
+
 func GetFileKey(envName string, component string, os string, arch string) string {
 	return fmt.Sprintf("%s_digigold_%s_%s_%s", envName, component, os, arch)
 }
@@ -45,41 +102,27 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 	osName := runtime.GOOS
 	archName := runtime.GOARCH
 	kvKey := GetFileKey(envName, componentName, osName, archName)
-	kvServerURL := kvBaseURL + kvKey
 
 	log.Printf("🔍 Checking for updates at KV Key: %s", kvKey)
 
 	// 1. Fetch latest version info from KV Server
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequest("GET", kvServerURL, nil)
+	client := &http.Client{Timeout: 10 * time.Minute}
+	kvData, err := FetchKV(client, kvBaseURL, kvKey)
 	if err != nil {
-		log.Fatalf("Failed to create request: %v", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("failed to reach KV server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("KV server returned status: %d", resp.StatusCode)
-	}
-
-	var kvData KVResponse
-	if err := json.NewDecoder(resp.Body).Decode(&kvData); err != nil {
-		return false, fmt.Errorf("invalid KV response: %w", err)
+		return false, err
 	}
 
 	// 2. Compare Integer Versions
 	if currentVersion >= kvData.Version {
-		log.Printf("✅ %s binary is up to date (Version %d).\n", componentName, currentVersion)
+		// log.Printf("✅ %s binary is up to date (Version %d).\n", componentName, currentVersion)
 		return false, nil
 	}
 
 	log.Printf("⚠️ Update found for %s! Current: v%d | Latest: v%d\n", componentName, currentVersion, kvData.Version)
+
+	if err := validateRelease(kvData); err != nil {
+		return false, err
+	}
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -94,17 +137,34 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 
 	// 3. Download the GZIP archive
 	log.Printf("📥 Downloading update from %s...", kvData.URL)
-	downloadResp, err := client.Get(kvData.URL)
+
+	downReq, err := http.NewRequest("GET", kvData.URL, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create download request: %w", err)
+	}
+
+	// 1. Mirror the anti-bot headers so your file server doesn't block the download
+	downReq.Header.Set("User-Agent", BrowserUserAgent)
+	downReq.Header.Set("Accept", "*/*")
+
+	// 2. Prevent Go and the server from auto-decompressing the .gz file in transit
+	downReq.Header.Set("Accept-Encoding", "identity")
+
+	downloadResp, err := client.Do(downReq)
 	if err != nil {
 		return false, fmt.Errorf("failed to download update: %w", err)
 	}
 	defer downloadResp.Body.Close()
 
+	// 3. THE CRITICAL FIX: Ensure we actually got the file, not a 404/403 HTML page!
+	if downloadResp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("file server rejected download with status: %d", downloadResp.StatusCode)
+	}
+
 	gzFile, err := os.Create(gzTmpPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to create temp gz file: %w", err)
 	}
-
 	// 4. THE OPTIMIZATION: Hash the file exactly as it streams from the internet
 	h := sha256.New()
 	multiWriter := io.MultiWriter(gzFile, h)
@@ -113,7 +173,9 @@ func CheckAndUpdate(envName, kvBaseURL, componentName string, currentVersion int
 		gzFile.Close()
 		return false, fmt.Errorf("download interrupted: %w", err)
 	}
-	gzFile.Close()
+	if err := gzFile.Close(); err != nil {
+		return false, fmt.Errorf("failed to write downloaded update: %w", err)
+	}
 
 	// 5. Verify the SHA256 integrity using the hash we just calculated in RAM
 	downloadedHash := hex.EncodeToString(h.Sum(nil))

@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-func GzipCompressFile(src string, dst string) error {
+func GzipCompressFile(src string, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -17,17 +17,27 @@ func GzipCompressFile(src string, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	// Closing flushes the file to disk, so its error must reach the caller.
+	defer func() {
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+	}()
 
 	gz := gzip.NewWriter(out)
-	defer gz.Close()
-
-	_, err = io.Copy(gz, in)
-
-	return err
+	if _, err = io.Copy(gz, in); err != nil {
+		gz.Close()
+		return err
+	}
+	// Close writes the final block and the gzip trailer.
+	return gz.Close()
 }
-func GzipDecompressFile(src string, dst string) error {
 
+// GzipDecompressFile writes the decompressed src to dst. The OTA updater swaps dst in as the
+// running binary, so every error (including the gzip checksum, checked when the reader
+// reaches the end, and the final flush on Close) must reach the caller rather than leave a
+// truncated binary behind.
+func GzipDecompressFile(src string, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -38,15 +48,22 @@ func GzipDecompressFile(src string, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer func() {
+		if cerr := gz.Close(); err == nil {
+			err = cerr
+		}
+	}()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+	}()
 
 	_, err = io.Copy(out, gz)
-
 	return err
 }
