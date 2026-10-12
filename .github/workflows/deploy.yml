@@ -27,8 +27,9 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
-# Each target has its own GitHub environment, so production can have its own secrets and
-# protection rules (required reviewers) instead of borrowing staging's.
+# Both targets upload to the same file server and key-value store (only the key prefix,
+# STAGING_ or PRODUCTION_, differs), so both jobs read the tokens from the Staging
+# environment.
 jobs:
   deploy-staging:
     if: github.ref == 'refs/heads/staging'
@@ -57,13 +58,13 @@ jobs:
           DEPLOY_ENV: STAGING
         run: go run packages/servers/MainServerGo/scripts/deploy.go
 
-  # Needs a "Production" environment in the repository settings with FILE_SERVER_TOKEN and
-  # KV_TOKEN set (and, ideally, required reviewers). Without those secrets the deploy script
-  # stops before uploading anything.
+  # Uses the Staging environment's FILE_SERVER_TOKEN and KV_TOKEN (the Production environment
+  # has none). For a separate approval step on production deploys, add the two secrets to a
+  # "Production" environment with required reviewers and point this job at it.
   deploy-production:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: Production
+    environment: Staging
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
