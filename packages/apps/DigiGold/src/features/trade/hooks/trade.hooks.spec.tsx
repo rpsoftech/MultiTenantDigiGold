@@ -38,6 +38,7 @@ describe('useInitiateBuy', () => {
   it('locks a quote for the requested amount', async () => {
     const quote = {
       success: true,
+      key_id: 'rzp_test_key',
       order_id: 'order_1',
       amount: 7000,
       weight_grams: 1,

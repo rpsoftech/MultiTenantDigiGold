@@ -399,11 +399,12 @@ const MOCK_AUDIT_EVENTS: AuditEvent[] = [
   {
     id: 'evt-1002',
     key: 'key-1002',
-    tenantId: '7',
+    tenantId: MOCK_TENANT_UUID,
     eventName: 'TRADE_GOLD_PURCHASE',
     isProcessed: true,
     parentNames: [],
     payload: {
+      event_type: 'GOLD_PURCHASE',
       weightGrams: 1.2,
       amountInr: 8672.47,
       nested: { ref: 'pay_demo_9931' },

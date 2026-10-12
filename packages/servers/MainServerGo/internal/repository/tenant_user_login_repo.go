@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -172,6 +173,16 @@ func (r *TenantUserLoginRepository) generateCacheKey(a *models.TenantUserLogin) 
 func (r *TenantUserLoginRepository) invalidateAdminCaches(ctx context.Context, a *models.TenantUserLogin) {
 	keys := r.generateCacheKey(a)
 	r.Redis.RemoveKey(ctx, keys...)
+}
+
+// InvalidateAdminCaches drops the admin's cached rows. Call it after the transaction that
+// changed the admin commits too: the drop inside the transaction can be undone by a read
+// that re-caches the old row before the commit (a deactivated admin could then still
+// refresh their session until the cache expired).
+func (r *TenantUserLoginRepository) InvalidateAdminCaches(ctx context.Context, a *models.TenantUserLogin) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	r.invalidateAdminCaches(timeoutCtx, a)
 }
 
 func (r *TenantUserLoginRepository) scanFullRetrieval(row *sql.Row) (*models.TenantUserLogin, error) {

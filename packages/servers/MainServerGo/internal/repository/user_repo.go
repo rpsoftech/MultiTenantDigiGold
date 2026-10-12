@@ -125,13 +125,14 @@ func (r *UserRepository) invalidateUserCaches(ctx context.Context, u *models.Use
 	r.Redis.RemoveKey(ctx, keys...)
 }
 
-// userCacheEntry is the Redis form of a user. models.User hides ID and
-// TenantID from API JSON (json:"-"), so the cache stores them separately;
+// userCacheEntry is the Redis form of a user. models.User hides ID, TenantID and
+// StatusApprovedBy from API JSON (json:"-"), so the cache stores them separately;
 // without them every cached read returned user ID 0.
 type userCacheEntry struct {
 	*models.User
-	CachedID       int64 `json:"_cached_id"`
-	CachedTenantID int64 `json:"_cached_tenant_id"`
+	CachedID               int64  `json:"_cached_id"`
+	CachedTenantID         int64  `json:"_cached_tenant_id"`
+	CachedStatusApprovedBy *int64 `json:"_cached_status_approved_by,omitempty"`
 }
 
 // decodeUserCache returns the cached user, or false for a miss or an entry
@@ -143,12 +144,14 @@ func decodeUserCache(cached string) (*models.User, bool) {
 	}
 	entry.User.ID = entry.CachedID
 	entry.User.TenantID = entry.CachedTenantID
+	entry.User.StatusApprovedBy = entry.CachedStatusApprovedBy
 	return entry.User, true
 }
 
 func (r *UserRepository) createUserCaches(ctx context.Context, u *models.User) {
 	keys := r.generateCacheKey(u)
-	if jsonData, err := json.Marshal(userCacheEntry{User: u, CachedID: u.ID, CachedTenantID: u.TenantID}); err == nil {
+	entry := userCacheEntry{User: u, CachedID: u.ID, CachedTenantID: u.TenantID, CachedStatusApprovedBy: u.StatusApprovedBy}
+	if jsonData, err := json.Marshal(entry); err == nil {
 		for _, cacheKey := range keys {
 			r.Redis.SetStringDataWithExpiry(ctx, cacheKey, string(jsonData), userCacheTTL)
 		}
@@ -266,10 +269,11 @@ func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, 
 
 	// 3. CACHE MISS: Query the Database using the pre-compiled stmtGetFullUUID
 	// Notice we pass tenantID (int64) first, then userUUID (string) matching the $1 and $2 in our SQL
+	// scanFullRetrieval maps a missing row (or another tenant's user) to ErrUserNotFound; any
+	// other error is a real database failure and is returned as such, not as a 404.
 	u, err := r.scanFullRetrieval(r.stmtGetFullUUID.QueryRowContext(ctx, tenantID, userUUID))
 	if err != nil {
-		return nil, interfaces.ErrUserNotFound
-		// return nil, err // Returns sql.ErrNoRows if not found or if the user belongs to a different tenant
+		return nil, err
 	}
 
 	// 4. Populate Cache in Background
@@ -281,7 +285,7 @@ func (r *UserRepository) GetFullUserByUUID(ctx context.Context, tenantID int64, 
 func (r *UserRepository) GetUsersByTenant(ctx context.Context, tenantID int64, limit int, offset int) ([]*models.User, error) {
 	query := fmt.Sprintf(`
 		SELECT 
-			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+			%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, user_modified_at
 		FROM %s
 		WHERE %s = $1
 		ORDER BY %s DESC
@@ -306,7 +310,7 @@ func (r *UserRepository) GetUsersByTenant(ctx context.Context, tenantID int64, l
 
 		err := rows.Scan(
 			&u.UUID, &fullName, &u.PhoneNumber, &emailID, &u.City,
-			&u.KYCStatus, &approvedBy, &docJSON, &erpID, &u.VaultBalance, &u.CreatedAt,
+			&u.KYCStatus, &approvedBy, &docJSON, &erpID, &u.VaultBalance, &u.CreatedAt, &u.ModifiedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user row: %w", err)
@@ -326,6 +330,9 @@ func (r *UserRepository) GetUsersByTenant(ctx context.Context, tenantID int64, l
 		}
 		u.DocumentJSON = docJSON
 		users = append(users, &u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read tenant users: %w", err)
 	}
 	return users, nil
 }
@@ -390,7 +397,7 @@ func (r *UserRepository) SubmitKYCDocuments(ctx context.Context, u *models.User,
 
 func (r *UserRepository) GetPendingKYCUsersByTenant(ctx context.Context, tenantID int64, limit, offset int) ([]*models.User, error) {
 	query := `
-		SELECT user_id, user_uuid, user_tenant_id, user_full_name, user_phone_number, user_email_id, user_city, user_kyc_status, user_document_json, user_total_vault_balance, user_kyc_submitted_at
+		SELECT user_id, user_uuid, user_tenant_id, user_full_name, user_phone_number, user_email_id, user_city, user_kyc_status, user_document_json, user_total_vault_balance, user_kyc_submitted_at, user_created_at, user_modified_at
 		FROM users
 		WHERE user_tenant_id = $1 AND ` + kycAwaitingReviewCondition + `
 		-- Oldest submission first; user_id breaks ties so pages never overlap.
@@ -409,6 +416,7 @@ func (r *UserRepository) GetPendingKYCUsersByTenant(ctx context.Context, tenantI
 		var docJSON []byte
 		if err := rows.Scan(
 			&u.ID, &u.UUID, &u.TenantID, &u.FullName, &u.PhoneNumber, &u.EmailID, &u.City, &u.KYCStatus, &docJSON, &u.VaultBalance, &u.KYCSubmittedAt,
+			&u.CreatedAt, &u.ModifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -416,6 +424,9 @@ func (r *UserRepository) GetPendingKYCUsersByTenant(ctx context.Context, tenantI
 			u.DocumentJSON = docJSON
 		}
 		users = append(users, &u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read pending kyc users: %w", err)
 	}
 	return users, nil
 }

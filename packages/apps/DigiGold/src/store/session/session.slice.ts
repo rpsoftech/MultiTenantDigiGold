@@ -51,9 +51,17 @@ const sessionSlice = createSlice({
         kycStatus: 'not_started',
       };
     },
-    profileCompleted: (state) => {
+    // userId comes from the new account's access token: until then the session's user had
+    // none, and per-user queries (portfolio) were keyed by an empty id.
+    profileCompleted: (
+      state,
+      action: PayloadAction<{ userId: string } | undefined>,
+    ) => {
       state.revision += 1;
-      if (state.user) state.user.isNewUser = false;
+      if (state.user) {
+        state.user.isNewUser = false;
+        if (action.payload?.userId) state.user.userId = action.payload.userId;
+      }
       state.isAuthenticated = true;
       state.registrationToken = null;
       state.registrationPhone = null;

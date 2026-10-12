@@ -81,12 +81,13 @@ func InitMarginRepository() *MarginRepository {
 			panic(fmt.Errorf("error preparing stmtGetMarginForUpdate: %w", err))
 		}
 
+		// Updates the row locked by stmtGetMarginForUpdate, by its primary key.
 		queryUpdate := fmt.Sprintf(
 			"UPDATE %s SET %s = $1, %s = NOW() WHERE %s = $2",
 			schema.TableMarginConfigs,
 			schema.ColMCTenantUnliftedGrams,
 			schema.ColMCModifiedAt,
-			schema.ColMCTenantID,
+			schema.ColMCID,
 		)
 		stmtUpdate, err := db.Db.Prepare(queryUpdate)
 		if err != nil {
@@ -229,8 +230,17 @@ func (r *MarginRepository) updateCache(ctx context.Context, tenantID int64, comm
 	}
 }
 
-// IncrementUnliftedGramsWithTx locks the margin config and increases the unlifted grams
-func (r *MarginRepository) IncrementUnliftedGramsWithTx(ctx context.Context, tx *sql.Tx, tenantID int64, commodityType string, tradeWeight float64) error {
+// InvalidateMarginCache drops the cached margin config. Call it after the transaction that
+// changed the config commits: dropping it earlier lets a concurrent read cache the old row again.
+func (r *MarginRepository) InvalidateMarginCache(ctx context.Context, tenantID int64, commodityType string) {
+	r.Redis.RemoveKey(ctx, r.createCacheKey(tenantID, commodityType))
+}
+
+// IncrementUnliftedGramsWithTx locks the margin config and adds tradeWeight (signed) to the
+// tenant's unlifted grams. enforceCreditLimit rejects a movement that would take them above
+// the credit limit; only new purchases pass it. Returning grams (a redemption, or reversing
+// one) must never be blocked, even when the store is at or over its limit.
+func (r *MarginRepository) IncrementUnliftedGramsWithTx(ctx context.Context, tx *sql.Tx, tenantID int64, commodityType string, tradeWeight float64, enforceCreditLimit bool) error {
 	var margin models.MarginConfig
 
 	err := tx.StmtContext(ctx, r.stmtGetMarginForUpdate).QueryRowContext(ctx, tenantID, commodityType).Scan(
@@ -254,24 +264,20 @@ func (r *MarginRepository) IncrementUnliftedGramsWithTx(ctx context.Context, tx 
 	}
 
 	newUnliftedGrams := margin.TenantUnLiftedGrams + tradeWeight
-	if newUnliftedGrams > margin.TenantCreditLimitGrams {
+	if enforceCreditLimit && tradeWeight > 0 && newUnliftedGrams > margin.TenantCreditLimitGrams {
 		return fmt.Errorf("%w: trade of %f grams exceeds available capacity", interfaces.ErrCreditLimitExceeded, tradeWeight)
 	}
 
-	_, err = tx.StmtContext(ctx, r.stmtUpdateUnliftedGrams).ExecContext(ctx, newUnliftedGrams, margin.ID)
+	result, err := tx.StmtContext(ctx, r.stmtUpdateUnliftedGrams).ExecContext(ctx, newUnliftedGrams, margin.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update unlifted grams: %w", err)
 	}
+	if n, err := result.RowsAffected(); err != nil || n != 1 {
+		return fmt.Errorf("failed to update unlifted grams: %d rows updated for margin %d (%v)", n, margin.ID, err)
+	}
 
-	margin.TenantUnLiftedGrams = newUnliftedGrams
-
-	// Invalidate cache asynchronously
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		r.updateCache(bgCtx, tenantID, commodityType, &margin)
-	}()
-
+	// The cache is left alone: pricing reads only the margin and GST settings from it, which a
+	// trade doesn't change, and writing here would publish a value this transaction may roll back.
 	return nil
 }
 
@@ -322,14 +328,8 @@ func (r *MarginRepository) UpdateMarginConfigWithTx(ctx context.Context, tx *sql
 	margin.IsActive = current.IsActive
 	margin.CreatedAt = current.CreatedAt
 
-	// Cache Invalidation (Strict Delete)
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		cacheKey := r.createCacheKey(margin.TenantID, margin.CommodityType)
-		r.Redis.RemoveKey(bgCtx, cacheKey)
-	}()
-
+	// The caller drops the cache (InvalidateMarginCache) after commit; dropping it here, before
+	// commit, let a concurrent quote re-cache the old margins for 24 hours.
 	return nil
 }
 

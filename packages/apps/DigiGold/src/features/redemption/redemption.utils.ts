@@ -4,6 +4,9 @@ import type { RedemptionStatus } from './redemption.types';
 // MainServer rounds redemption weights to 4 decimals.
 export const GRAMS_DECIMALS = 4;
 
+// The smallest weight MainServer lets a customer collect (MinRedemptionGrams).
+export const MIN_REDEMPTION_GRAMS = 1;
+
 export const REDEMPTION_STATUS_LABELS: Record<RedemptionStatus, string> = {
   PENDING: 'Pending',
   COLLECTED: 'Collected',

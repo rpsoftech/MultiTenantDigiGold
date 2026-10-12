@@ -151,6 +151,17 @@ describe('NavMenu', () => {
       ).toBe('/vault/redemptions');
     });
 
+    // Client-side navigation keeps the header mounted: the dropdown stayed open over the
+    // new page.
+    it('closes the dropdown when one of its links is chosen', () => {
+      render(<NavMenu items={items} />);
+      openMenu('Vault');
+
+      fireEvent.click(screen.getByRole('link', { name: 'Passbook' }));
+
+      expect(screen.queryByRole('link', { name: 'Passbook' })).toBeNull();
+    });
+
     it('marks the parent active when one of its children is the current page', () => {
       pathname = '/vault/redemptions';
       render(<NavMenu items={items} />);

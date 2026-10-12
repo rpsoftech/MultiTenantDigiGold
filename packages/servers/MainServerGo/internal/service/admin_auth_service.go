@@ -347,6 +347,8 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 		_ = s.RevokeAdminRefreshToken(context.Background(), refreshToken)
 		return "", "", fmt.Errorf("failed to commit transaction: %w", commitErr)
 	}
+	s.AdminRepo.InvalidateAdminCaches(ctx, admin)
+	s.EventRepo.PublishAsync(&loginEvent.BaseEvent)
 
 	s.Redis.Client.Del(ctx, fmt.Sprintf("auth:temp_token_attempts:%s", tempToken))
 	return accessToken, refreshToken, nil

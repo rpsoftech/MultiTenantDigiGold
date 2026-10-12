@@ -1,4 +1,10 @@
-import { getAccessToken, clearTokens } from '@/lib/auth/tokenStorage';
+import {
+  clearRegistrationToken,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  getRegistrationToken,
+} from '@/lib/auth/tokenStorage';
 import { decodeJwtPayload, isJwtExpired } from '@/lib/utils/jwt';
 import type { SessionUser } from '@/store/session/session.types';
 
@@ -7,15 +13,18 @@ import type { SessionUser } from '@/store/session/session.types';
 // token; screens that need it fetch it from the real endpoint once mounted).
 type UserAccessTokenClaims = { user_uuid: string; phone: string };
 
-// Called once on app mount to turn a still-valid stored access token back into Redux
-// session state after a full page refresh. Returns null if there's nothing to restore
-// (never logged in) or the stored token turned out to be expired/malformed — in that
-// second case it also clears the stale token so it isn't retried on every request.
+// Called once on app mount to turn the stored tokens back into Redux session state after a
+// full page refresh. An expired access token is fine while the refresh token is still
+// valid: apiClient renews it on the first request. Returns null if there's nothing to
+// restore (never logged in) or the session can't be renewed — in that second case it also
+// clears the stale tokens so they aren't retried on every request.
 export function restoreSessionUser(): SessionUser | null {
   const accessToken = getAccessToken();
   if (!accessToken) return null;
 
-  if (isJwtExpired(accessToken)) {
+  const refreshToken = getRefreshToken();
+  const renewable = refreshToken !== null && !isJwtExpired(refreshToken);
+  if (isJwtExpired(accessToken) && !renewable) {
     clearTokens();
     return null;
   }
@@ -33,4 +42,22 @@ export function restoreSessionUser(): SessionUser | null {
     isNewUser: false,
     kycStatus: 'not_started',
   };
+}
+
+// MainServer's RegistrationClaims (10-minute token handed out by /auth/otp/verify for a new
+// number).
+type RegistrationTokenClaims = { phone?: string };
+
+// Restores a sign-up in progress (OTP verified, profile not yet completed) after a page
+// refresh, so /profile-setup doesn't bounce the customer back to the login page. The
+// registration token lives in sessionStorage and carries the phone number.
+export function restoreRegistration(): { token: string; phone: string } | null {
+  const token = getRegistrationToken();
+  if (!token) return null;
+  const claims = decodeJwtPayload<RegistrationTokenClaims>(token);
+  if (isJwtExpired(token) || !claims?.phone) {
+    clearRegistrationToken();
+    return null;
+  }
+  return { token, phone: claims.phone };
 }

@@ -3,9 +3,11 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/schema"
 	"github.com/rpsoftech/DigiGold/MainServerGo/utility/postgres"
@@ -39,9 +41,15 @@ func GetTenantKYCRepository() *TenantKYCRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare CreateKYCDoc: %v", err))
 		}
 
+		// tkd_verified_by references tenant_user_logins.tu_id; callers know the admin by UUID.
 		queryUpdate := fmt.Sprintf(`
-			UPDATE %s SET %s = $1, %s = $2 WHERE %s = $3 AND %s = $4 RETURNING %s
-		`, schema.TableTenantKYCDocuments, schema.ColTKDStatus, schema.ColTKDVerifiedBy,
+			UPDATE %s SET %s = $1,
+				%s = (SELECT %s FROM %s WHERE %s = $2),
+				%s = NOW(), %s = NOW()
+			WHERE %s = $3 AND %s = $4 RETURNING %s
+		`, schema.TableTenantKYCDocuments, schema.ColTKDStatus,
+			schema.ColTKDVerifiedBy, schema.ColTUID, schema.TableTenantUserLogins, schema.ColTUUID,
+			schema.ColTKDVerifiedAt, schema.ColTKDModifiedAt,
 			schema.ColTKDTenantID, schema.ColTKDUUID, schema.ColTKDModifiedAt)
 
 		stmtVerify, err := db.Db.Prepare(queryUpdate)
@@ -49,13 +57,16 @@ func GetTenantKYCRepository() *TenantKYCRepository {
 			panic(fmt.Sprintf("FATAL: Failed to prepare VerifyKYCDoc: %v", err))
 		}
 
+		// The verifying admin is returned by UUID, never by internal ID.
 		querySelectByTenant := fmt.Sprintf(`
-			SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s
-			FROM %s WHERE %s = $1 ORDER BY %s DESC
+			SELECT d.%s, d.%s, d.%s, d.%s, d.%s, d.%s, a.%s::text, d.%s, d.%s
+			FROM %s d LEFT JOIN %s a ON a.%s = d.%s
+			WHERE d.%s = $1 ORDER BY d.%s DESC
 		`, schema.ColTKDID, schema.ColTKDUUID, schema.ColTKDTenantID, schema.ColTKDDocumentType,
-			schema.ColTKDDocumentURL, schema.ColTKDStatus, schema.ColTKDVerifiedBy,
+			schema.ColTKDDocumentURL, schema.ColTKDStatus, schema.ColTUUID,
 			schema.ColTKDCreatedAt, schema.ColTKDModifiedAt,
-			schema.TableTenantKYCDocuments, schema.ColTKDTenantID, schema.ColTKDCreatedAt)
+			schema.TableTenantKYCDocuments, schema.TableTenantUserLogins, schema.ColTUID, schema.ColTKDVerifiedBy,
+			schema.ColTKDTenantID, schema.ColTKDCreatedAt)
 
 		stmtGetByTenant, err := db.Db.Prepare(querySelectByTenant)
 		if err != nil {
@@ -83,15 +94,16 @@ func (r *TenantKYCRepository) CreateKYCDocWithTx(ctx context.Context, tx *sql.Tx
 	return nil
 }
 
+// VerifyKYCDocWithTx records an admin's decision on a tenant document. doc.VerifiedBy is the
+// admin's UUID.
 func (r *TenantKYCRepository) VerifyKYCDocWithTx(ctx context.Context, tx *sql.Tx, doc *models.TenantKYCDocument) error {
 	err := tx.StmtContext(ctx, r.stmtVerifyKYCDoc).QueryRowContext(ctx,
 		doc.Status, doc.VerifiedBy, doc.TenantID, doc.UUID,
 	).Scan(&doc.ModifiedAt)
-
-	if err != nil {
-		return err
+	if errors.Is(err, sql.ErrNoRows) {
+		return interfaces.ErrTenantKYCDocNotFound
 	}
-	return nil
+	return err
 }
 
 func (r *TenantKYCRepository) GetKYCDocsByTenantID(ctx context.Context, tenantID int64) ([]*models.TenantKYCDocument, error) {
@@ -101,7 +113,7 @@ func (r *TenantKYCRepository) GetKYCDocsByTenantID(ctx context.Context, tenantID
 	}
 	defer rows.Close()
 
-	var docs []*models.TenantKYCDocument
+	docs := []*models.TenantKYCDocument{}
 	for rows.Next() {
 		var doc models.TenantKYCDocument
 		var verifiedBy sql.NullString

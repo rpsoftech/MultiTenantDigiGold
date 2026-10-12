@@ -136,22 +136,26 @@ func (r *TenantConfigRepository) UpsertConfigWithTx(ctx context.Context, tx *sql
 		webhookBytes,
 	).Scan(&config.ID, &config.UUID, &config.CreatedAt, &config.ModifiedAt)
 
-	if err == nil {
-		go func(uuid string) {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			// FIXED: Guaranteeing the invalidation key matches the generation key
-			cacheKey := fmt.Sprintf("tenant_config/%s", uuid)
-			r.Redis.RemoveKey(bgCtx, cacheKey)
-		}(config.UUID)
-	}
-
+	// The caller drops the cache after commit (InvalidateConfigCache). This used to delete a
+	// key by the config's own UUID, which GetConfigByTenantUUID never reads, so changed
+	// gateway or WhatsApp credentials stayed cached for 24 hours.
 	return err
 }
 
+func configCacheKey(tenantUUID string) string {
+	return fmt.Sprintf("tenant_config:%s", tenantUUID)
+}
+
+// InvalidateConfigCache drops the tenant's cached config. Call it after the transaction that
+// changed the config commits: dropping it earlier lets a concurrent read cache the old config.
+func (r *TenantConfigRepository) InvalidateConfigCache(ctx context.Context, tenantUUID string) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	r.Redis.RemoveKey(timeoutCtx, configCacheKey(tenantUUID))
+}
+
 func (r *TenantConfigRepository) GetConfigByTenantUUID(ctx context.Context, tenantUUID string) (*models.TenantInternalConfig, error) {
-	// FIXED: Standardized the cache key formatting to match the Upsert function
-	cacheKey := fmt.Sprintf("tenant_config:%s", tenantUUID)
+	cacheKey := configCacheKey(tenantUUID)
 
 	if cachedData, err := r.Redis.GetStringData(ctx, cacheKey); err == nil && cachedData != "" {
 		var config models.TenantInternalConfig

@@ -74,3 +74,24 @@ func TestCORSUsesConfiguredOrigins(t *testing.T) {
 		t.Errorf("unlisted origin allowed as %q, want none", got)
 	}
 }
+
+func TestCheckCORSConfigRequiresOriginsInProduction(t *testing.T) {
+	cases := []struct {
+		appEnv  env.AppEnv
+		value   string
+		wantErr bool
+	}{
+		{env.APP_ENV_LOCAL, "", false},
+		{env.APP_ENV_STAGING, "", false},
+		{env.APP_ENV_PRODUCTION, "", true},
+		{env.APP_ENV_PRODUCTION, " , ", true},
+		{env.APP_ENV_PRODUCTION, "*", true},
+		{env.APP_ENV_PRODUCTION, "https://shop.example.com,*", true},
+		{env.APP_ENV_PRODUCTION, "https://shop.example.com, https://admin.example.com", false},
+	}
+	for _, c := range cases {
+		if err := CheckCORSConfig(c.appEnv, c.value); (err != nil) != c.wantErr {
+			t.Errorf("CheckCORSConfig(%s, %q) = %v, want error %v", c.appEnv, c.value, err, c.wantErr)
+		}
+	}
+}

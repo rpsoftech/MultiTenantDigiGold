@@ -45,10 +45,10 @@ describe('RedeemFlow', () => {
   });
 
   it('only offers quick amounts that fit in the vault, plus Max', () => {
-    renderWithProviders(<RedeemFlow balanceGrams={1.5} />);
+    renderWithProviders(<RedeemFlow balanceGrams={2.5} />);
 
-    expect(screen.getByRole('button', { name: '0.5 g' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '1 g' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '2 g' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '5 g' })).toBeNull();
     expect(screen.queryByRole('button', { name: '10 g' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Max' })).toBeTruthy();

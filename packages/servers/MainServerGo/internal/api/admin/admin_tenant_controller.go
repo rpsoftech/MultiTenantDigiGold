@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
@@ -61,9 +62,15 @@ func (c *AdminTenantController) RegisterRoutes(router fiber.Router) {
 	tenantsGroup.Patch("/:uuid/ui-layout", c.UpdateUILayout)
 }
 
+// CreateStubRequest is a new store and its root admin. The admin's password is taken here
+// (models.TenantUserLogin never decodes one) and stored only as a bcrypt hash.
 type CreateStubRequest struct {
-	Tenant    models.Tenant          `json:"tenant"`
-	AdminUser models.TenantUserLogin `json:"admin_user"`
+	Tenant    models.Tenant `json:"tenant"`
+	AdminUser struct {
+		Username    string `json:"username"`
+		PhoneNumber string `json:"phone_number"`
+		Password    string `json:"password"`
+	} `json:"admin_user"`
 }
 
 // CreateStub — Stage 1
@@ -77,13 +84,19 @@ func (c *AdminTenantController) CreateStub(ctx fiber.Ctx) error {
 
 	adminUUID := middleware.GetAdminUUID(ctx)
 
-	if err := c.tenantConfigService.CreateTenant(ctx.Context(), &req.Tenant, &req.AdminUser, adminUUID); err != nil {
+	storeAdmin, err := c.tenantConfigService.CreateTenant(ctx.Context(), &req.Tenant, service.StoreAdminInput{
+		Username:    req.AdminUser.Username,
+		PhoneNumber: req.AdminUser.PhoneNumber,
+		Password:    req.AdminUser.Password,
+	}, adminUUID)
+	if err != nil {
 		return err
 	}
 
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":      "success",
 		"tenant_uuid": req.Tenant.UUID,
+		"admin_uuid":  storeAdmin.UUID,
 	})
 }
 
@@ -91,16 +104,30 @@ func (c *AdminTenantController) CreateStub(ctx fiber.Ctx) error {
 // :uuid in the path is the TARGET tenant's UUID.
 // TenantInterceptor resolves the master tenant from X-Tenant-ID; the path param
 // is passed directly to the service which does its own UUID-based UPDATE.
+//
+// The request is applied on top of the current row, so a field the admin leaves out keeps
+// its value. (Binding into an empty Tenant used to clear every omitted column, including
+// the storefront layout.) The active flag is changed only through UpdateStatus.
 func (c *AdminTenantController) UpdateProfile(ctx fiber.Ctx) error {
-	var tenant models.Tenant
-	if err := ctx.Bind().Body(&tenant); err != nil {
+	tenantUUID := ctx.Params("uuid")
+	current, err := c.tenantConfigService.GetTenantByUUID(ctx.Context(), tenantUUID)
+	if err != nil {
+		return err
+	}
+	previous := *current
+
+	updated := *current
+	if err := json.Unmarshal(ctx.Body(), &updated); err != nil {
 		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
+	updated.ID = current.ID
+	updated.ExportID = 0
+	updated.UUID = tenantUUID
+	updated.IsActive = current.IsActive
+	updated.CreatedAt = current.CreatedAt
 
-	tenant.UUID = ctx.Params("uuid")
 	adminUUID := middleware.GetAdminUUID(ctx)
-
-	if err := c.tenantConfigService.UpdateTenantProfile(ctx.Context(), &tenant, adminUUID); err != nil {
+	if err := c.tenantConfigService.UpdateTenantProfile(ctx.Context(), &updated, &previous, adminUUID); err != nil {
 		return err
 	}
 
@@ -181,21 +208,26 @@ func (c *AdminTenantController) VerifyKYC(ctx fiber.Ctx) error {
 	return ctx.JSON(fiber.Map{"status": "success"})
 }
 
-// UpdateStatus — Stage 7
+// UpdateStatusRequest suspends ({"is_active": false}) or reactivates a store.
+type UpdateStatusRequest struct {
+	IsActive *bool `json:"is_active"`
+}
+
+// UpdateStatus — Stage 7. Changes only the store's active flag. It used to bind a whole
+// Tenant and overwrite every column with whatever the body held.
 func (c *AdminTenantController) UpdateStatus(ctx fiber.Ctx) error {
-	var tenant models.Tenant
-	if err := ctx.Bind().Body(&tenant); err != nil {
-		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	var req UpdateStatusRequest
+	if err := ctx.Bind().Body(&req); err != nil || req.IsActive == nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "is_active (true or false) is required"})
 	}
 
-	tenant.UUID = ctx.Params("uuid")
 	adminUUID := middleware.GetAdminUUID(ctx)
-
-	if err := c.tenantConfigService.UpdateTenantStatus(ctx.Context(), &tenant, adminUUID); err != nil {
+	tenant, err := c.tenantConfigService.UpdateTenantStatus(ctx.Context(), ctx.Params("uuid"), *req.IsActive, adminUUID)
+	if err != nil {
 		return err
 	}
 
-	return ctx.JSON(fiber.Map{"status": "success"})
+	return ctx.JSON(fiber.Map{"status": "success", "is_active": tenant.IsActive})
 }
 
 // ==========================================
@@ -212,7 +244,7 @@ func (c *AdminTenantController) GetTenantsList(ctx fiber.Ctx) error {
 	if page < 1 {
 		page = 1
 	}
-	if limit < 1 {
+	if limit < 1 || limit > 100 {
 		limit = 20
 	}
 

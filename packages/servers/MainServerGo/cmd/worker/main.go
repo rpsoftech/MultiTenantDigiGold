@@ -83,6 +83,7 @@ func main() {
 
 	// 3. Pre-flight Checks: Ping infrastructure before starting the consumer
 	db := postgres.GetPostgresDB()
+	defer db.Db.Close()
 	if err := db.Db.PingContext(ctx); err != nil {
 		log.Fatalf("FATAL: PostgreSQL connection failed: %v", err)
 	}
@@ -93,6 +94,7 @@ func main() {
 	log.Println("✅ PostgreSQL connected successfully.")
 
 	rdb := redis_client.InitRedisClient()
+	defer rdb.Client.Close()
 	if err := rdb.Client.Ping(ctx).Err(); err != nil {
 		log.Fatalf("FATAL: Redis connection failed: %v", err)
 	}

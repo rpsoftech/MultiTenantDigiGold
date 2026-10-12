@@ -102,10 +102,20 @@ describe('PassbookEntry', () => {
     expect(screen.getByText('CRYPTO')).toBeTruthy();
   });
 
-  it('shows the date in Indian format', () => {
+  // In IST whatever the browser's (or CI's) time zone: 10:00 UTC is 15:30 IST, and 20:00 UTC
+  // on 1 Oct is already 2 Oct in India.
+  it('shows the date in Indian format, in IST', () => {
     render(<PassbookEntry entry={makeEntry()} />);
+    expect(screen.getByText(/^1\/10\/2026, 3:30:00\spm$/i)).toBeTruthy();
 
-    const expected = new Date('2026-10-01T10:00:00Z').toLocaleString('en-IN');
-    expect(screen.getByText(expected)).toBeTruthy();
+    render(
+      <PassbookEntry
+        entry={makeEntry({
+          gl_uuid: 'late',
+          created_at: '2026-10-01T20:00:00Z',
+        })}
+      />,
+    );
+    expect(screen.getByText(/^2\/10\/2026, 1:30:00\sam$/i)).toBeTruthy();
   });
 });

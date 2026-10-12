@@ -12,6 +12,7 @@ import { useToast } from '@/components/common/Toast/Toast';
 import { useAdminProfile } from '@/features/admin-auth/hooks/useAdminProfile';
 import { useUpdateAdminProfile } from '@/features/admin-auth/hooks/useUpdateAdminProfile';
 import { EMAIL_PATTERN, MOBILE_NUMBER_PATTERN } from '@/lib/constants/regex';
+import { describeApiError } from '@/lib/api/client';
 import styles from '../adminFormCard.module.scss';
 
 const profileSchema = z.object({
@@ -28,7 +29,7 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export function AdminProfileView() {
-  const { data: profile, isLoading } = useAdminProfile();
+  const { data: profile, isLoading, isError, error } = useAdminProfile();
   const updateProfile = useUpdateAdminProfile();
   const { showToast } = useToast();
 
@@ -53,14 +54,28 @@ export function AdminProfileView() {
     try {
       await updateProfile.mutateAsync(values);
       showToast({ variant: 'success', title: 'Profile updated' });
-    } catch {
+    } catch (updateError) {
       showToast({
         variant: 'danger',
         title: 'Could not update profile',
-        description: 'Please try again.',
+        description: describeApiError(updateError) ?? 'Please try again.',
       });
     }
   };
+
+  // A failed load used to leave the loader spinning forever.
+  if (isError) {
+    return (
+      <div className={styles.wrapper}>
+        <Card className={styles.card}>
+          <h1 className={styles.title}>Admin Profile</h1>
+          <p role="alert">
+            {describeApiError(error) ?? 'Your profile could not be loaded.'}
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   if (isLoading || !profile) {
     return <Loader />;

@@ -7,6 +7,7 @@ import {
   setRegistrationToken,
   setTokens,
 } from '@/lib/auth/tokenStorage';
+import { apiClient } from '@/lib/api/client';
 import { useLogout } from './useLogout';
 
 const push = jest.fn();
@@ -15,10 +16,30 @@ jest.mock('next/navigation', () => ({
 }));
 
 describe('useLogout', () => {
+  let post: jest.SpiedFunction<typeof apiClient.post>;
+
   beforeEach(() => {
     jest.clearAllMocks();
     window.localStorage.clear();
     window.sessionStorage.clear();
+    post = jest
+      .spyOn(apiClient, 'post')
+      .mockResolvedValue({ data: { success: true } });
+  });
+
+  afterEach(() => post.mockRestore());
+
+  // A copy of the refresh token must stop working once the customer signs out.
+  it('revokes the refresh token on MainServer', () => {
+    setTokens({ accessToken: 'access', refreshToken: 'refresh' });
+    const { result } = renderHookWithProviders(() => useLogout());
+
+    act(() => result.current());
+
+    expect(post).toHaveBeenCalledWith('/auth/logout', {
+      refresh_token: 'refresh',
+    });
+    expect(getRefreshToken()).toBeNull();
   });
 
   it('forgets the tokens, the session and every cached query, then goes to login', () => {

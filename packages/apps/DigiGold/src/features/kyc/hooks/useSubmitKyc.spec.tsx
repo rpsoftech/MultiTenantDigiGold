@@ -24,6 +24,8 @@ describe('useSubmitKyc', () => {
     const { result, queryClient, store } = renderHookWithProviders(() =>
       useSubmitKyc(),
     );
+    // Asserted on the call: the test client garbage-collects an unobserved entry at once.
+    const setData = jest.spyOn(queryClient, 'setQueryData');
 
     await act(async () => {
       await result.current.mutateAsync(payload);
@@ -31,10 +33,15 @@ describe('useSubmitKyc', () => {
 
     // TanStack Query adds a mutation-context argument, so only the payload is compared.
     expect(mockedService.submitKyc.mock.calls[0][0]).toEqual(payload);
-    expect(
-      queryClient.getQueryData<KycStatusResult>(KYC_STATUS_QUERY_KEY)
-        ?.kyc_status,
-    ).toBe('pending');
+    // The signed-in customer's own entry.
+    expect(setData).toHaveBeenCalledWith(
+      [
+        ...KYC_STATUS_QUERY_KEY,
+        store.getState().session.user?.userId,
+        store.getState().session.revision,
+      ],
+      { success: true, kyc_status: 'pending' } satisfies KycStatusResult,
+    );
     expect(store.getState().session.user?.kycStatus).toBe('not_started');
   });
 
@@ -73,7 +80,9 @@ describe('useSubmitKyc', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(queryClient.getQueryData(KYC_STATUS_QUERY_KEY)).toBeUndefined();
+    expect(
+      queryClient.getQueriesData({ queryKey: KYC_STATUS_QUERY_KEY }),
+    ).toHaveLength(0);
     expect(invalidate).not.toHaveBeenCalled();
   });
 });

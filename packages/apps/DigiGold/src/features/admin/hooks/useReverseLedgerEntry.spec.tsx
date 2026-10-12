@@ -29,6 +29,7 @@ function setup() {
     ledger: adminQueryKeys.ledgerPage(1, 20),
     customers: adminQueryKeys.customerPage(1, 20),
     analytics: adminQueryKeys.analytics,
+    pendingPickups: adminQueryKeys.redemptionsPendingPage(1, 20, ''),
   };
   Object.values(keys).forEach((key) => client.setQueryData(key, page));
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -39,7 +40,7 @@ function setup() {
 }
 
 describe('useReverseLedgerEntry', () => {
-  it('refreshes the ledger, customers and analytics after a reversal', async () => {
+  it('refreshes the ledger, customers, analytics and pending pickups after a reversal', async () => {
     const reverse = jest
       .spyOn(adminService, 'reverseLedgerEntry')
       .mockResolvedValue(undefined);
@@ -53,6 +54,7 @@ describe('useReverseLedgerEntry', () => {
     expect(client.getQueryState(keys.ledger)?.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.customers)?.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.analytics)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(keys.pendingPickups)?.isInvalidated).toBe(true);
     hook.unmount();
     client.clear();
   });

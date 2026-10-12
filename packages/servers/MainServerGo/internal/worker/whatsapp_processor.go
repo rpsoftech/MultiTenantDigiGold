@@ -31,6 +31,16 @@ func (c *EventConsumer) processWhatsAppOTP(ctx context.Context, baseEvent events
 		return nil // Return nil to drop the malformed event permanently
 	}
 
+	// The code lives only in the OTP session, not in the event log.
+	otpCode, live, err := c.PendingOTPCode(ctx, otpReq.TenantId, otpReq.Phone, otpReq.ReqId)
+	if err != nil {
+		return err // Redis unavailable: released for the outbox cron to retry.
+	}
+	if !live {
+		return nil // Verified, expired or replaced by a resend: nothing to send.
+	}
+	otpReq.OtpCode = otpCode
+
 	tenant, err := c.TenantRepo.GetPartialTenantByUUID(ctx, otpReq.TenantId)
 	if err != nil {
 		c.handleCriticalError(otpReq.TenantId, baseEvent.EventName, fmt.Errorf("failed to fetch tenant: %w", err))
@@ -70,7 +80,7 @@ func (c *EventConsumer) processWhatsAppOTP(ctx context.Context, baseEvent events
 			c.handleCriticalError(otpReq.TenantId, baseEvent.EventName, fmt.Errorf("official config selected but credentials missing"))
 			return nil
 		}
-		apiErr = c.sendMetaOfficialAPI(waConfig.OfficialConfig, template.Name, templateVars, otpReq.Phone)
+		apiErr = c.sendMetaOfficialAPI(waConfig.OfficialConfig, template, templateVars, otpReq.Phone)
 
 	case models.UNOFFICIAL:
 		if waConfig.UnofficialConfig == nil {
@@ -97,6 +107,10 @@ func (c *EventConsumer) processWhatsAppOTP(ctx context.Context, baseEvent events
 
 // sendCustomUnofficialAPI sends the fully Regex-compiled string to a custom endpoint
 func (c *EventConsumer) sendCustomUnofficialAPI(creds *models.WhatsappUnofficialTemplateConfig, compiledMessage string, phone string) error {
+	if creds.WhatsappProviderApiEndpoint == nil {
+		c.handleCriticalError("", "OTPEvent", fmt.Errorf("unofficial WhatsApp credentials are not configured"))
+		return nil
+	}
 	payload := &UnofficialWhatsappSendTextBody{
 		To:  []string{phone},
 		Msg: compiledMessage,
@@ -104,28 +118,44 @@ func (c *EventConsumer) sendCustomUnofficialAPI(creds *models.WhatsappUnofficial
 	return c.sendWhatsappTextMessage(creds.APIEndpoint, creds.AuthToken, payload)
 }
 
-// sendDefaultAPI uses your own fixed server configuration
+// sendDefaultAPI sends through the platform ("default") tenant's own WhatsApp account. That
+// tenant or its config may be missing (a fresh database, or a config of {}); the send is then
+// reported and dropped. It used to dereference the missing config, and the panic in the
+// consumer goroutine took the whole API process down.
 func (c *EventConsumer) sendDefaultAPI(compiledMessage string, phone string) error {
-
-	waConfig := c.DefaultTenantConfig.WhatsAppConfig
-	if waConfig.UnofficialConfig == nil {
-		c.handleCriticalError("default", "OTPEvent", fmt.Errorf("unofficial config selected but credentials missing"))
+	if c.DefaultTenantConfig == nil || c.DefaultTenantConfig.WhatsAppConfig == nil ||
+		c.DefaultTenantConfig.WhatsAppConfig.UnofficialConfig == nil ||
+		c.DefaultTenantConfig.WhatsAppConfig.UnofficialConfig.WhatsappProviderApiEndpoint == nil {
+		c.handleCriticalError("default", "OTPEvent", fmt.Errorf("platform WhatsApp credentials are not configured"))
 		return nil
 	}
-	return c.sendCustomUnofficialAPI(waConfig.UnofficialConfig, compiledMessage, phone)
+	return c.sendCustomUnofficialAPI(c.DefaultTenantConfig.WhatsAppConfig.UnofficialConfig, compiledMessage, phone)
+}
 
+// templateParameters lists the values for a Meta template's positional parameters ({{1}},
+// {{2}}, ...). They follow the order the variables appear in the configured template body,
+// which mirrors the template registered with Meta. (Ranging over the map sent them in random
+// order.) A variable the body names but we don't have is sent empty.
+func templateParameters(body string, vars map[string]string) []map[string]string {
+	parameters := []map[string]string{}
+	for _, match := range templateVariablePattern.FindAllStringSubmatch(body, -1) {
+		parameters = append(parameters, map[string]string{
+			"type": "text",
+			"text": vars[strings.TrimSpace(match[1])],
+		})
+	}
+	return parameters
 }
 
 // sendMetaOfficialAPI maps the variables directly to Meta's strict component structure
-func (c *EventConsumer) sendMetaOfficialAPI(creds *models.WhatsappOfficialTemplateConfig, templateName string, vars map[string]string, phone string) error {
-
-	// Convert our map into Meta's strict positional array parameter format
-	var parameters []map[string]string
-	for _, val := range vars {
-		parameters = append(parameters, map[string]string{
-			"type": "text",
-			"text": val,
-		})
+func (c *EventConsumer) sendMetaOfficialAPI(creds *models.WhatsappOfficialTemplateConfig, template models.WhatsappMessageTemplate, vars map[string]string, phone string) error {
+	if creds.WhatsappProviderApiEndpoint == nil {
+		c.handleCriticalError("", "OTPEvent", fmt.Errorf("official WhatsApp credentials are not configured"))
+		return nil
+	}
+	language := template.Language
+	if language == "" {
+		language = "en"
 	}
 
 	payload := map[string]interface{}{
@@ -133,12 +163,12 @@ func (c *EventConsumer) sendMetaOfficialAPI(creds *models.WhatsappOfficialTempla
 		"to":                phone,
 		"type":              "template",
 		"template": map[string]interface{}{
-			"name":     templateName,
-			"language": map[string]string{"code": "en"}, // Ideally derived from template config
+			"name":     template.Name,
+			"language": map[string]string{"code": language},
 			"components": []map[string]interface{}{
 				{
 					"type":       "body",
-					"parameters": parameters,
+					"parameters": templateParameters(template.Body, vars),
 				},
 			},
 		},
@@ -184,11 +214,12 @@ func (c *EventConsumer) handleCriticalError(tenantID string, eventName string, e
 		fmt.Errorf("tenant %s, event %s: %w", tenantID, eventName, err))
 }
 
+// templateVariablePattern matches {{variable_name}} in a template body.
+var templateVariablePattern = regexp.MustCompile(`\{\{(.*?)\}\}`)
+
 // compileMessageTemplate replaces {{variable_name}} with actual map values
 func compileMessageTemplate(templateBody string, variables map[string]string) string {
-	// Matches anything inside {{ }}
-	re := regexp.MustCompile(`\{\{(.*?)\}\}`)
-	return re.ReplaceAllStringFunc(templateBody, func(match string) string {
+	return templateVariablePattern.ReplaceAllStringFunc(templateBody, func(match string) string {
 		// Strip the {{ and }} and trim spaces
 		key := strings.TrimSpace(match[2 : len(match)-2])
 

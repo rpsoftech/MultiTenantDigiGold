@@ -125,29 +125,40 @@ func parse(tokenStr string, claims jwt.Claims, key []byte, audience string) erro
 // GENERATION METHODS
 // ==========================================
 
-// GenerateTokens generates both Access (15m) and Refresh (7d) tokens for a user
+// GenerateTokens generates both Access (15m) and Refresh (7d) tokens for a user. The refresh
+// token has no server-side record, so POST /auth/refresh rejects it: real sessions are
+// issued through UserSessionService.IssueTokens.
 func (s *JWTService) GenerateTokens(userUUID string, tenantUUID string, phone string) (string, string, error) {
-	accessToken, err := sign(&UserClaims{
+	accessToken, refreshToken, _, err := s.GenerateUserTokenPair(userUUID, tenantUUID, phone)
+	return accessToken, refreshToken, err
+}
+
+// GenerateUserTokenPair generates a customer's Access (15m) and Refresh (7d) tokens, plus the
+// refresh token's unique ID (jti) that UserSessionService records server-side.
+func (s *JWTService) GenerateUserTokenPair(userUUID string, tenantUUID string, phone string) (accessToken, refreshToken, refreshID string, err error) {
+	accessToken, err = sign(&UserClaims{
 		UserUUID:         userUUID,
 		TenantUUID:       tenantUUID,
 		Phone:            phone,
 		RegisteredClaims: newRegisteredClaims(audUserAccess, accessTokenTTL),
 	}, s.accessKey)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	refreshToken, err := sign(&UserClaims{
+	refreshClaims := newRegisteredClaims(audUserRefresh, refreshTokenTTL)
+	refreshClaims.ID = utility_functions.GenerateNewUUID()
+	refreshToken, err = sign(&UserClaims{
 		UserUUID:         userUUID,
 		TenantUUID:       tenantUUID,
 		Phone:            phone,
-		RegisteredClaims: newRegisteredClaims(audUserRefresh, refreshTokenTTL),
+		RegisteredClaims: refreshClaims,
 	}, s.refreshKey)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	return accessToken, refreshToken, nil
+	return accessToken, refreshToken, refreshClaims.ID, nil
 }
 
 // GenerateRegistrationToken generates a short-lived token (10m) for registration after OTP verification

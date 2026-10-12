@@ -145,6 +145,14 @@ type CapturedPayment struct {
 // (quote expired, amount mismatch, store out of credit...), it refunds the
 // payment instead. It returns an error only for failures worth a webhook retry.
 func (s *PaymentGatewayService) ProcessPaymentSuccess(ctx context.Context, p CapturedPayment, tenantConfig *models.PaymentConfigJSON) error {
+	// The ledger is the record of a settled payment. The Redis lock below expires after 24
+	// hours (and is lost if Redis is flushed), and the intent is deleted once settled, so a
+	// late or replayed webhook used to find no intent and refund a payment that had already
+	// bought gold. Checked first, and again by the unique ledger reference index.
+	if settled, err := s.alreadyCredited(ctx, p); err != nil || settled {
+		return err
+	}
+
 	lockKey := fmt.Sprintf("digiGold:lock:payment:%s", p.PaymentID)
 	acquired, err := s.Redis.Client.SetNX(ctx, lockKey, "locked", 24*time.Hour).Result()
 	if err != nil {
@@ -164,6 +172,12 @@ func (s *PaymentGatewayService) ProcessPaymentSuccess(ctx context.Context, p Cap
 			s.Redis.Client.Del(context.Background(), lockKey)
 		}
 	}()
+
+	// Another delivery may have credited the payment between the first check and the lock.
+	if credited, err := s.alreadyCredited(ctx, p); err != nil || credited {
+		settled = credited
+		return err
+	}
 
 	intentKey := fmt.Sprintf("digiGold:trade_intent:%s", p.OrderID)
 	intentStr, err := s.Redis.Client.Get(ctx, intentKey).Result()
@@ -217,6 +231,20 @@ func (s *PaymentGatewayService) ProcessPaymentSuccess(ctx context.Context, p Cap
 	return nil
 }
 
+// alreadyCredited reports whether the payment already bought gold (a ledger entry carries
+// its payment ID as the reference).
+func (s *PaymentGatewayService) alreadyCredited(ctx context.Context, p CapturedPayment) (bool, error) {
+	_, err := s.TradeService.LedgerRepo.GetEntryByReference(ctx, p.TenantID, p.PaymentID)
+	if errors.Is(err, interfaces.ErrLedgerEntryNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check ledger for payment %s: %w", p.PaymentID, err)
+	}
+	log.Printf("[PGService] Payment %s already credited; ignoring the repeated webhook", p.PaymentID)
+	return true, nil
+}
+
 // isPermanentTradeError reports whether a retry of the same trade can never succeed.
 func isPermanentTradeError(err error) bool {
 	return errors.Is(err, interfaces.ErrCreditLimitExceeded) ||
@@ -227,6 +255,17 @@ func isPermanentTradeError(err error) bool {
 // refund returns the full captured amount to the customer and records it in the
 // event log. On success it marks the payment settled and deletes the intent.
 func (s *PaymentGatewayService) refund(ctx context.Context, p CapturedPayment, tenantConfig *models.PaymentConfigJSON, reason refundReason, settled *bool) error {
+	// A webhook repeated after the payment was refunded must not ask Razorpay again.
+	refunded, err := s.TradeService.EventRepo.PaymentRefundRecorded(ctx, fmt.Sprint(p.TenantID), p.PaymentID)
+	if err != nil {
+		return err
+	}
+	if refunded {
+		log.Printf("[PGService] Payment %s was already refunded; ignoring the repeated webhook", p.PaymentID)
+		*settled = true
+		return nil
+	}
+
 	log.Printf("[PGService] Refunding payment %s (order %s): %s", p.PaymentID, p.OrderID, reason)
 
 	client := newRazorpayClient(tenantConfig)

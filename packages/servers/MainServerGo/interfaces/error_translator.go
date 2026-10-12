@@ -47,6 +47,14 @@ func ParseDBError(err error) *RequestError {
 			LogTheDetails: true, // Log this, someone might be trying to bypass isolation
 		}
 
+	case errors.Is(err, ErrTenantInactive):
+		return &RequestError{
+			StatusCode: 403,
+			Code:       ERROR_PERMISSION_NOT_ALLOWED,
+			Message:    "This store is currently unavailable.",
+			Name:       "TENANT_INACTIVE",
+		}
+
 	case errors.Is(err, ErrAdminNotFound):
 		return &RequestError{
 			StatusCode:    401,
@@ -148,6 +156,14 @@ func ParseDBError(err error) *RequestError {
 			Name:       "PICKUP_CODE_LOCKED",
 		}
 
+	case errors.Is(err, ErrTenantKYCDocNotFound):
+		return &RequestError{
+			StatusCode: 404,
+			Code:       ERROR_ENTITY_NOT_FOUND,
+			Message:    "KYC document not found for this tenant.",
+			Name:       "TENANT_KYC_DOC_NOT_FOUND",
+		}
+
 	case errors.Is(err, ErrKYCNotAwaitingReview):
 		return &RequestError{
 			StatusCode: 409,
@@ -194,6 +210,14 @@ func ParseDBError(err error) *RequestError {
 			Code:       ERROR_LEDGER_REVERSAL,
 			Message:    "Redemption is no longer pending.",
 			Name:       "REDEMPTION_NOT_PENDING",
+		}
+
+	case errors.Is(err, ErrRedemptionBelowMinimum):
+		return &RequestError{
+			StatusCode: 400,
+			Code:       ERROR_INVALID_INPUT,
+			Message:    "The minimum redemption is 1 g.",
+			Name:       "REDEMPTION_BELOW_MINIMUM",
 		}
 
 	case errors.Is(err, ErrRedemptionNotFound):

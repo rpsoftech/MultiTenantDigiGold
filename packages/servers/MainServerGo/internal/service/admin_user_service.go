@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
@@ -72,6 +76,9 @@ func (s *AdminUserService) CreateAdmin(ctx context.Context, admin *models.Tenant
 	defer tx.Rollback()
 
 	if err := s.AdminRepo.CreateFullAdminWithTx(ctx, tx, admin); err != nil {
+		if isUniqueViolation(err) {
+			return errAdminAlreadyExists
+		}
 		return err
 	}
 
@@ -89,7 +96,11 @@ func (s *AdminUserService) CreateAdmin(ctx context.Context, admin *models.Tenant
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.EventRepo.PublishAsync(event)
+	return nil
 }
 
 func (s *AdminUserService) UpdateAdmin(ctx context.Context, admin *models.TenantUserLogin, masterAdminUUID string) error {
@@ -100,6 +111,9 @@ func (s *AdminUserService) UpdateAdmin(ctx context.Context, admin *models.Tenant
 	defer tx.Rollback()
 
 	if err := s.AdminRepo.UpdateFullAdminWithTx(ctx, tx, admin); err != nil {
+		if isUniqueViolation(err) {
+			return errAdminAlreadyExists
+		}
 		return err
 	}
 
@@ -117,5 +131,25 @@ func (s *AdminUserService) UpdateAdmin(ctx context.Context, admin *models.Tenant
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.AdminRepo.InvalidateAdminCaches(ctx, admin)
+	s.EventRepo.PublishAsync(event)
+	return nil
+}
+
+// errAdminAlreadyExists: the store already has an admin with this username or phone number
+// (uq_tu_tenant_username, unique_tenant_admin_phone).
+var errAdminAlreadyExists = &interfaces.RequestError{
+	StatusCode: 409,
+	Code:       interfaces.ERROR_DUPLICATE_USER,
+	Name:       "ADMIN_ALREADY_EXISTS",
+	Message:    "This store already has an admin with that username or phone number.",
+}
+
+// isUniqueViolation reports a PostgreSQL unique constraint violation (SQLSTATE 23505).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

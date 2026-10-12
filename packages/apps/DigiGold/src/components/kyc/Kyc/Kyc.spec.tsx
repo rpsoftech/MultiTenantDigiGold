@@ -26,6 +26,7 @@ jest.mock('@/components/common/Toast/Toast', () => ({ useToast: jest.fn() }));
 jest.mock('@/features/kyc/hooks/useKycStatus', () => ({
   useKycStatus: jest.fn(),
   KYC_STATUS_QUERY_KEY: ['user', 'kyc'],
+  useKycStatusQueryKey: () => ['user', 'kyc', 'customer-1', 0],
 }));
 jest.mock('@/features/kyc/kyc.service', () => ({
   kycService: { submitKyc: jest.fn(), getStatus: jest.fn() },

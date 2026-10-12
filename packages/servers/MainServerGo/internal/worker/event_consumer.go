@@ -11,10 +11,13 @@ import (
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/repository"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/service"
 	redis_client "github.com/rpsoftech/DigiGold/MainServerGo/utility/redis"
 )
 
 type EventConsumer struct {
+	// PendingOTPCode reads a live OTP's code (OTPService.PendingOTPCode); OTP events don't carry it.
+	PendingOTPCode      func(ctx context.Context, tenantUUID, phone, reqID string) (string, bool, error)
 	Redis               *redis_client.RedisClientStruct
 	EventRepo           *repository.EventRepository
 	TenantRepo          *repository.TenantRepository
@@ -27,11 +30,12 @@ type EventConsumer struct {
 // StartEventConsumer should be called in a goroutine from your main.go
 func StartEventConsumer(ctx context.Context) {
 	consumer := &EventConsumer{
-		Redis:       redis_client.InitRedisClient(),
-		EventRepo:   repository.GetEventRepository(),
-		TenantRepo:  repository.GetTenantRepository(),
-		ConfigRepo:  repository.GetTenantConfigRepository(),
-		HedgingRepo: repository.InitHedgingRepo(),
+		PendingOTPCode: service.GetOTPService().PendingOTPCode,
+		Redis:          redis_client.InitRedisClient(),
+		EventRepo:      repository.GetEventRepository(),
+		TenantRepo:     repository.GetTenantRepository(),
+		ConfigRepo:     repository.GetTenantConfigRepository(),
+		HedgingRepo:    repository.InitHedgingRepo(),
 	}
 
 	// 1. SAFE BOOTSTRAPPING: Prevent Nil Pointer Dereference
@@ -75,6 +79,13 @@ func StartEventConsumer(ctx context.Context) {
 			go func(payload string) {
 				evtCtx, cancel := context.WithTimeout(context.Background(), eventProcessTimeout)
 				defer cancel()
+				// This goroutine has no Fiber recover above it: a panic in a handler would end
+				// the whole process (the API runs this consumer too). Report it instead.
+				defer func() {
+					if r := recover(); r != nil {
+						monitoring.Critical(evtCtx, monitoring.KindEventConsumer, fmt.Errorf("event handler panicked: %v", r))
+					}
+				}()
 				consumer.routeEvent(evtCtx, payload)
 			}(msg.Payload)
 		}

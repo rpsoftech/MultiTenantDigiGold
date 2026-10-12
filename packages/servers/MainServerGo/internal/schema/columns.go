@@ -36,6 +36,7 @@ const (
 	ColTenantKYCMode          = "tenant_kyc_mode"
 	ColTenantMarkupPercentage = "tenant_markup_percentage"
 	ColTenantUIJSONConfig     = "tenant_ui_json_config"
+	ColTenantIsActive         = "tenant_is_active"
 	ColTenantCreatedAt        = "tenant_created_at"
 	ColTenantModifiedAt       = "tenant_modified_at"
 )

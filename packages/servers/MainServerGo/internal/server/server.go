@@ -3,7 +3,9 @@
 package server
 
 import (
+	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,21 +25,39 @@ import (
 
 // corsAllowOriginsKey lists the frontend origins allowed to call the API, comma-separated
 // (e.g. "https://shop.example.com,https://admin.example.com"). Unset keeps the wildcard,
-// which is only meant for local development: tokens travel in the X-Api-Token header (not
-// cookies), so "*" is not a CSRF hole, but production should still name its own domains.
+// which is only meant for development: tokens travel in the X-Api-Token header (not
+// cookies), so "*" is not a CSRF hole, but production must name its own domains, so
+// PRODUCTION refuses to start without them (CheckCORSConfig).
 const corsAllowOriginsKey = "CORS_ALLOW_ORIGINS"
 
-func corsAllowedOrigins() []string {
+func parseCORSOrigins(value string) []string {
 	var origins []string
-	for _, origin := range strings.Split(os.Getenv(corsAllowOriginsKey), ",") {
+	for _, origin := range strings.Split(value, ",") {
 		if origin = strings.TrimSpace(origin); origin != "" {
 			origins = append(origins, origin)
 		}
 	}
+	return origins
+}
+
+func corsAllowedOrigins() []string {
+	origins := parseCORSOrigins(os.Getenv(corsAllowOriginsKey))
 	if len(origins) == 0 {
 		return []string{"*"}
 	}
 	return origins
+}
+
+// CheckCORSConfig fails in PRODUCTION when CORS_ALLOW_ORIGINS is unset or allows any origin.
+func CheckCORSConfig(appEnv env.AppEnv, value string) error {
+	if appEnv != env.APP_ENV_PRODUCTION {
+		return nil
+	}
+	origins := parseCORSOrigins(value)
+	if len(origins) == 0 || slices.Contains(origins, "*") {
+		return fmt.Errorf("%s must list the storefront and admin origins in PRODUCTION (it is %q)", corsAllowOriginsKey, value)
+	}
+	return nil
 }
 
 func corsMiddleware() fiber.Handler {

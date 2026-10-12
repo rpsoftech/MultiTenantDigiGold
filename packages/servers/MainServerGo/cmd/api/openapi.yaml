@@ -40,9 +40,14 @@ tags:
   - name: Admin Tenants
     description: Tenant onboarding and management. Role `super_admin`.
   - name: Admin Users
-    description: Admin account management. Role `super_admin`.
+    description: >-
+      Admin (staff) account management. `super_admin`: any store. `manager`: their own store
+      only (`tenant_uuid` defaults to it; another store gets `403 TENANT_MISMATCH`), the
+      `manager` role only, and no changes to a `super_admin` (`403 ROLE_NOT_AUTHORIZED`).
+      Deactivating your own account or changing your own role gets `400
+      CANNOT_CHANGE_OWN_ACCOUNT`.
   - name: Admin Events
-    description: Audit event log. Roles `super_admin` or `auditor`.
+    description: Audit event log. Role `super_admin`.
   - name: Webhooks
     description: Inbound payment gateway callbacks.
 
@@ -64,7 +69,9 @@ components:
       name: X-Tenant-ID
       in: header
       required: true
-      description: UUID of the tenant the request acts on.
+      description: >-
+        UUID of the tenant the request acts on. A suspended tenant is refused with `403`
+        `TENANT_INACTIVE` (within 30 seconds of the suspension on every API instance).
       schema:
         type: string
         format: uuid
@@ -171,6 +178,12 @@ components:
         kyc_mode: { type: string, enum: [upfront, just_in_time] }
         markup_percentage: { type: number }
         ui_json_config: {}
+        is_active:
+          {
+            type: boolean,
+            readOnly: true,
+            description: False while the store is suspended. Changed only by the status endpoint.,
+          }
         created_at: { type: string, format: date-time }
         modified_at: { type: string, format: date-time }
 
@@ -318,9 +331,15 @@ components:
             enum: [PAN, GST_CERTIFICATE, BUSINESS_REGISTRATION, DIRECTOR_ID],
           }
         tkd_document_url: { type: string }
-        tkd_status: { type: string }
-        tkd_verified_by: { type: string }
+        tkd_status: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        tkd_verified_by:
+          {
+            type: string,
+            format: uuid,
+            description: UUID of the admin who decided the document.,
+          }
         tkd_created_at: { type: string, format: date-time }
+        tkd_modified_at: { type: string, format: date-time }
 
     Redemption:
       type: object
@@ -344,7 +363,10 @@ components:
             Pickup-code tries left before the request locks (0 = locked; it can only be
             cancelled). On pending requests in the staff and customer listings.
         collected_by:
-          { type: string, description: Staff username who handed it over. Collected listing only. }
+          {
+            type: string,
+            description: Staff username who handed it over. Collected listing only.,
+          }
 
     SystemEvent:
       type: object
@@ -464,6 +486,7 @@ paths:
                 phone:
                   {
                     type: string,
+                    pattern: '^[0-9]{10}$',
                     example: '9876543210',
                     description: 10 digits.,
                   }
@@ -491,7 +514,8 @@ paths:
       description: |
         Registered user: returns `access_token` and `refresh_token`.
         New user: returns `registration_token` for `/auth/register`.
-        Too many wrong guesses invalidate the OTP.
+        An OTP allows five guesses in total; the sixth attempt gets `429`
+        `ERROR_MAX_VERIFY_ATTEMPTS` and the OTP is invalidated.
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
         required: true
@@ -501,8 +525,13 @@ paths:
               type: object
               required: [phone, otp]
               properties:
-                phone: { type: string, example: '9876543210' }
-                otp: { type: string, example: '123456' }
+                phone:
+                  {
+                    type: string,
+                    pattern: '^[0-9]{10}$',
+                    example: '9876543210',
+                  }
+                otp: { type: string, pattern: '^[0-9]{6}$', example: '123456' }
       responses:
         '200':
           description: OTP accepted.
@@ -559,6 +588,75 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /auth/refresh:
+    post:
+      operationId: postAuthRefresh
+      tags: [Customer Auth]
+      security: []
+      summary: Exchange a customer refresh token for new tokens
+      description: >-
+        Refresh tokens are single use: the one sent is consumed and a new pair is returned.
+        The token must belong to the tenant in `X-Tenant-ID`.
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/TokenPair'
+                  - type: object
+                    properties:
+                      success: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: "`REFRESH_TOKEN_INVALID`: expired, already used, revoked, another tenant's, or malformed."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/logout:
+    post:
+      operationId: postAuthLogout
+      tags: [Customer Auth]
+      security: []
+      summary: Revoke a customer refresh token (log out)
+      description: >-
+        Ends the session the refresh token belongs to. An invalid or already revoked token
+        still returns `200`. The current access token stays valid until it expires (15 min).
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Logged out.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
   # ------------------------------------------------------------------ Customer
   /trade/buy/initiate:
     post:
@@ -593,6 +691,12 @@ paths:
                 type: object
                 properties:
                   success: { type: boolean }
+                  key_id:
+                    {
+                      type: string,
+                      example: rzp_live_AbC123,
+                      description: The tenant's public Razorpay key. Open Checkout with it; the order belongs to this account.,
+                    }
                   order_id: { type: string, example: order_Nx1234 }
                   amount:
                     { type: number, description: Amount to charge in INR. }
@@ -619,6 +723,7 @@ paths:
         Debits `weight_grams` from the vault at once (`PHYSICAL_REDEMPTION` ledger
         entry) and returns a 6-digit pickup code. The customer shows the code at the
         counter; staff enter it on `/admin/store/redemptions/collect`. No money moves.
+        The minimum is 1 g (`400 REDEMPTION_BELOW_MINIMUM`).
       security: [{ CustomerToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -629,7 +734,7 @@ paths:
               type: object
               required: [weight_grams]
               properties:
-                weight_grams: { type: number, example: 2 }
+                weight_grams: { type: number, minimum: 1, example: 2 }
       responses:
         '200':
           description: Redemption request created with status PENDING.
@@ -754,11 +859,35 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /user/kyc:
+    get:
+      operationId: getUserKyc
+      tags: [Customer]
+      summary: The customer's KYC status
+      description: The only way the app learns an admin's decision.
+      security: [{ CustomerToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      responses:
+        '200':
+          description: KYC status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  kyc_status:
+                    {
+                      type: string,
+                      enum: [not_started, pending, verified, rejected],
+                    }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       operationId: postUserKyc
       tags: [Customer]
-      summary: Submit KYC documents
-      description: Stores the JSON body as the user's KYC document for admin review.
+      summary: Submit KYC details
+      description: >-
+        Stores only the PAN and the last 4 Aadhaar digits (other fields are dropped) for admin
+        review. Not allowed while a submission is under review or once verified.
       security: [{ CustomerToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -767,13 +896,16 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: true
-              example:
-                {
-                  pan_number: ABCDE1234F,
-                  aadhaar_last4: '1234',
-                  document_url: 'https://...',
-                }
+              required: [pan_number, aadhaar_last4]
+              properties:
+                pan_number:
+                  {
+                    type: string,
+                    pattern: '^[A-Z]{5}[0-9]{4}[A-Z]$',
+                    example: ABCDE1234F,
+                  }
+                aadhaar_last4:
+                  { type: string, pattern: '^[0-9]{4}$', example: '1234' }
       responses:
         '200':
           description: Submitted, pending verification.
@@ -784,7 +916,13 @@ paths:
                 properties:
                   success: { type: boolean }
                   message: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`KYC_NOT_SUBMITTABLE`: already verified or under review.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ------------------------------------------------------------------ Admin auth
   /admin/auth/login:
@@ -1117,7 +1255,11 @@ paths:
               required: [user_uuid]
               properties:
                 user_uuid:
-                  { type: string, format: uuid, description: Customer of this tenant. }
+                  {
+                    type: string,
+                    format: uuid,
+                    description: Customer of this tenant.,
+                  }
                 weight_grams: { type: number }
                 total_amount_inr: { type: number }
                 payment_mode:
@@ -1146,7 +1288,8 @@ paths:
                       mcx_base_rate: { type: number }
                       tenant_margin_applied:
                         { type: number, description: Margin per gram (INR). }
-                      gst_applied: { type: number, description: GST per gram (INR). }
+                      gst_applied:
+                        { type: number, description: GST per gram (INR). }
                       expires_at: { type: integer, description: Unix seconds. }
         '400':
           description: >-
@@ -1489,6 +1632,9 @@ paths:
       operationId: postAdminTenantsStub
       tags: [Admin Tenants]
       summary: 'Onboarding stage 1: create tenant and its first admin'
+      description: >-
+        Creates the store with default config and margins, and its root admin (role `manager`).
+        The admin signs in with the password given and sets up TOTP on first login.
       security: [{ AdminToken: [] }]
       parameters: [{ $ref: '#/components/parameters/TenantId' }]
       requestBody:
@@ -1497,14 +1643,16 @@ paths:
           application/json:
             schema:
               type: object
+              required: [tenant, admin_user]
               properties:
                 tenant: { $ref: '#/components/schemas/Tenant' }
                 admin_user:
-                  allOf:
-                    - $ref: '#/components/schemas/Admin'
-                    - type: object
-                      properties:
-                        password: { type: string, format: password }
+                  type: object
+                  required: [username, phone_number, password]
+                  properties:
+                    username: { type: string }
+                    phone_number: { type: string }
+                    password: { type: string, format: password, minLength: 8 }
       responses:
         '201':
           description: Created.
@@ -1515,6 +1663,13 @@ paths:
                 properties:
                   status: { type: string }
                   tenant_uuid: { type: string, format: uuid }
+                  admin_uuid: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`TENANT_ALREADY_EXISTS` (short name, domain or subdomain taken) or `ADMIN_ALREADY_EXISTS`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/tenants/{uuid}:
     get:
@@ -1541,6 +1696,9 @@ paths:
       operationId: patchAdminTenantsByUuidProfile
       tags: [Admin Tenants]
       summary: 'Stage 2: update profile'
+      description: >-
+        Applies the fields sent on top of the current profile; omitted fields keep their
+        values. `is_active` is ignored here (use the status endpoint).
       security: [{ AdminToken: [] }]
       parameters:
         - $ref: '#/components/parameters/TenantId'
@@ -1666,7 +1824,7 @@ paths:
     patch:
       operationId: patchAdminTenantsByUuidKycVerify
       tags: [Admin Tenants]
-      summary: 'Stage 6: verify KYC document'
+      summary: 'Stage 6: verify or reject a KYC document'
       security: [{ AdminToken: [] }]
       parameters:
         - $ref: '#/components/parameters/TenantId'
@@ -1675,19 +1833,33 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TenantKYCDocument' }
+            schema:
+              type: object
+              required: [tkd_uuid, tkd_status]
+              properties:
+                tkd_uuid: { type: string, format: uuid }
+                tkd_status: { type: string, enum: [VERIFIED, REJECTED] }
       responses:
         '200':
-          description: Verified.
+          description: Decided.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Status' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: '`TENANT_KYC_DOC_NOT_FOUND`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/tenants/{uuid}/status:
     patch:
       operationId: patchAdminTenantsByUuidStatus
       tags: [Admin Tenants]
-      summary: 'Stage 7: launch or change tenant status'
+      summary: 'Stage 7: suspend or reactivate a store'
+      description: >-
+        Changes only the store's active flag. A suspended store's customers and staff are
+        refused (`403 TENANT_INACTIVE`); payments already captured still settle.
       security: [{ AdminToken: [] }]
       parameters:
         - $ref: '#/components/parameters/TenantId'
@@ -1696,13 +1868,23 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/Tenant' }
+            schema:
+              type: object
+              required: [is_active]
+              properties:
+                is_active: { type: boolean }
       responses:
         '200':
           description: Updated.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Status' }
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  is_active: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /admin/tenants/{uuid}/ui-layout:
     patch:
@@ -1867,30 +2049,22 @@ paths:
         - $ref: '#/components/parameters/TenantId'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
-        - {
-            name: tenant_uuid,
-            in: query,
-            description: Events of this tenant, however the tenant was recorded.,
-            schema: { type: string, format: uuid },
-          }
-        - {
-            name: type,
-            in: query,
-            description: Event name filter.,
-            schema: { type: string },
-          }
-        - {
-            name: from,
-            in: query,
-            description: RFC 3339, or a date or date-time without offset read as IST.,
-            schema: { type: string },
-          }
-        - {
-            name: to,
-            in: query,
-            description: Inclusive. RFC 3339, or a date or date-time read as IST.,
-            schema: { type: string },
-          }
+        - name: tenant_uuid
+          in: query
+          description: Events of this tenant, however the tenant was recorded.
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          description: Event name filter.
+          schema: { type: string }
+        - name: from
+          in: query
+          description: RFC 3339, or a date or date-time without offset read as IST.
+          schema: { type: string }
+        - name: to
+          in: query
+          description: Inclusive. RFC 3339, or a date or date-time read as IST.
+          schema: { type: string }
       responses:
         '400':
           description: Unreadable from/to.

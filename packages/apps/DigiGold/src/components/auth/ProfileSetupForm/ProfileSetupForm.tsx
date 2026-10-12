@@ -12,6 +12,9 @@ import { useToast } from '@/components/common/Toast/Toast';
 import { useCompleteProfile } from '@/features/auth/hooks/useCompleteProfile';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { getRegistrationToken, clearRegistrationToken } from '@/lib/auth/tokenStorage';
+import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
+import { sessionCleared } from '@/store/session/session.slice';
+import { useAppDispatch } from '@/store/hooks';
 import { ROUTES } from '@/lib/constants/routes';
 import styles from './ProfileSetupForm.module.scss';
 
@@ -29,6 +32,20 @@ export function ProfileSetupForm() {
   const { showToast } = useToast();
   const completeProfile = useCompleteProfile();
   const { user } = useSession();
+  const dispatch = useAppDispatch();
+
+  // The registration token is gone (sessionStorage cleared) or MainServer rejected it as
+  // expired (it lasts 10 minutes): the number has to be verified again.
+  const restartSignUp = () => {
+    clearRegistrationToken();
+    dispatch(sessionCleared());
+    showToast({
+      variant: 'danger',
+      title: 'Your sign-up session expired',
+      description: 'Verify your mobile number again to continue.',
+    });
+    router.replace(ROUTES.login);
+  };
 
   const {
     register,
@@ -41,16 +58,27 @@ export function ProfileSetupForm() {
   });
 
   const onSubmit = async (values: ProfileSetupFormValues) => {
+    if (!user?.isNewUser) return;
+    const registrationToken = getRegistrationToken();
+    if (!registrationToken) {
+      restartSignUp();
+      return;
+    }
     try {
-      if (!user?.isNewUser) return;
-      const registrationToken = getRegistrationToken();
-      if (!registrationToken) throw new Error('Registration session expired');
       // `location` is the City the customer entered (required by /auth/register).
       await completeProfile.mutateAsync({ ...values, registrationToken });
       clearRegistrationToken();
       router.push(ROUTES.home);
-    } catch {
-      showToast({ variant: 'danger', title: 'Could not create your account' });
+    } catch (error) {
+      if (isNormalizedApiError(error) && error.status === 401) {
+        restartSignUp();
+        return;
+      }
+      showToast({
+        variant: 'danger',
+        title: 'Could not create your account',
+        description: describeApiError(error) ?? 'Please try again in a moment.',
+      });
     }
   };
 

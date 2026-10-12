@@ -20,14 +20,16 @@ func (base *tenantConfigEvent) Add() *tenantConfigEvent {
 // EVENT CONSTRUCTORS
 // ==========================================
 
-// CreateNewTenantConfigUpdated logs when a Retail Admin or Super Admin updates API keys or Webhooks
+// CreateNewTenantConfigUpdated logs when a Retail Admin or Super Admin updates API keys or Webhooks.
+// The stored payload has the gateway and WhatsApp secrets redacted: nothing reads them back
+// from the event log, and system_events must not become a second copy of the credentials.
 func CreateNewTenantConfigUpdated(entity *models.TenantInternalConfig, adminId string, tenantUUID string) *BaseEvent {
 	event := &tenantConfigEvent{
 		BaseEvent: &BaseEvent{
 			KeyId:     entity.UUID, // The UUID of the Config row itself
 			TenantId:  tenantUUID,  // Strict Tenant Isolation mapping
 			AdminId:   adminId,     // The ID of the manager who made the change
-			Payload:   entity,      // The JSONB payload containing the new settings
+			Payload:   RedactedForStorage(entity),
 			EventName: "TenantConfigUpdated",
 		},
 	}
@@ -44,6 +46,21 @@ func CreateNewMarginUpdated(entity *models.MarginConfig, adminId string, tenantU
 			AdminId:   adminId,
 			Payload:   entity,
 			EventName: "MARGIN_UPDATED",
+		},
+	}
+	event.Add()
+	return event.BaseEvent
+}
+
+// CreateNewTenantUILayoutUpdated logs a new storefront layout for the tenant.
+func CreateNewTenantUILayoutUpdated(uiConfig any, adminId string, tenantUUID string) *BaseEvent {
+	event := &tenantConfigEvent{
+		BaseEvent: &BaseEvent{
+			KeyId:     tenantUUID,
+			TenantId:  tenantUUID,
+			AdminId:   adminId,
+			Payload:   map[string]any{"updated_by": adminId, "ui_config": uiConfig},
+			EventName: "TENANT_UI_LAYOUT_UPDATED",
 		},
 	}
 	event.Add()

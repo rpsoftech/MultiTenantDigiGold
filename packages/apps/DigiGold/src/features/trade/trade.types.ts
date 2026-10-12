@@ -9,6 +9,8 @@ export type InitiateBuyPayload = {
 
 export type InitiateBuyResult = {
   success: boolean;
+  // The store's public Razorpay key: Checkout must use the account the order belongs to.
+  key_id: string;
   order_id: string;
   amount: number;
   weight_grams: number;

@@ -62,7 +62,11 @@ export function BuyGold() {
   const queryClient = useQueryClient();
 
   const [mode, setMode] = useState<BuyMode>('grams');
+  // Each mode keeps what the customer typed. The rupee amount used to be stored as grams
+  // (rounded to 4 decimals) and shown back, so typing "1" became "0.73" and +₹1,000 sent
+  // ₹999.69.
   const [gramsInput, setGramsInput] = useState('1');
+  const [inrInput, setInrInput] = useState('');
   const [quote, setQuote] = useState<InitiateBuyResult | null>(null);
   // Captured once when the quote arrives — CountdownTimer restarts whenever `seconds`
   // changes, so this must not be recomputed on every render.
@@ -86,12 +90,14 @@ export function BuyGold() {
   // without a backend change.
   const pricePerGram = rate?.pricePerGramInr ?? 0;
   const hasRate = Number.isFinite(pricePerGram) && pricePerGram > 0;
-  const grams = Number(gramsInput) || 0;
-  const totalInr = grams * pricePerGram;
+  // The typed value is the source of truth in each mode; the other is derived from it.
+  const totalInr =
+    mode === 'inr' ? Number(inrInput) || 0 : (Number(gramsInput) || 0) * pricePerGram;
+  const grams =
+    mode === 'inr' ? (hasRate ? totalInr / pricePerGram : 0) : Number(gramsInput) || 0;
   const baseAmountInr = grams * (rate?.mcxBaseRateInr ?? 0);
   const marginAmountInr = grams * (rate?.marginAppliedInr ?? 0);
   const gstAmountInr = grams * (rate?.gstAppliedInr ?? 0);
-  const inrInputValue = totalInr ? totalInr.toFixed(2) : '';
 
   // Mirrors MainServer's InitiateBuy check: 'upfront' tenants need verified KYC for any
   // purchase, every tenant needs it above the threshold. Only applied once the real status
@@ -107,6 +113,7 @@ export function BuyGold() {
 
   const resetForm = () => {
     setGramsInput('1');
+    setInrInput('');
     setQuote(null);
     setPaymentId(null);
     setStage('idle');
@@ -134,9 +141,15 @@ export function BuyGold() {
   };
 
   const handleInrChange = (value: string) => {
-    if (!NUMERIC_INPUT_PATTERN.test(value)) return;
-    const inrValue = Number(value) || 0;
-    setGramsInput(pricePerGram ? (inrValue / pricePerGram).toFixed(4) : '0');
+    if (NUMERIC_INPUT_PATTERN.test(value)) setInrInput(value);
+  };
+
+  // Switching carries the current amount over, expressed in the other unit.
+  const switchMode = (next: BuyMode) => {
+    if (next === mode) return;
+    if (next === 'inr') setInrInput(totalInr ? totalInr.toFixed(2) : '');
+    else setGramsInput(grams ? grams.toFixed(4) : '');
+    setMode(next);
   };
 
   const handleQuickAddGrams = (increment: number) => {
@@ -144,8 +157,7 @@ export function BuyGold() {
   };
 
   const handleQuickAddInr = (increment: number) => {
-    const nextInr = totalInr + increment;
-    setGramsInput(pricePerGram ? (nextInr / pricePerGram).toFixed(4) : '0');
+    setInrInput(String(Math.round((totalInr + increment) * 100) / 100));
   };
 
   const handleProceed = async () => {
@@ -155,18 +167,6 @@ export function BuyGold() {
     }
     if (kycBlocked || !hasRate || grams <= 0) return;
 
-    // Checked before initiating so a misconfigured deployment doesn't create a backend
-    // order (and Razorpay order) on every click that can never be paid.
-    const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-    if (!razorpayKeyId) {
-      showToast({
-        variant: 'danger',
-        title: 'Payment unavailable',
-        description: 'Checkout is not configured for this deployment.',
-      });
-      return;
-    }
-
     try {
       // Backend prices buys by amount only — the grams shown here are a display estimate
       // until the quote comes back.
@@ -174,13 +174,23 @@ export function BuyGold() {
         total_amount_inr: Math.round(totalInr * 100) / 100,
         requested_rate_per_gram: pricePerGram,
       });
+      // Checkout must open with the store's own Razorpay account, the one the order was
+      // created on; MainServer returns its public key with the order.
+      if (!result.key_id) {
+        showToast({
+          variant: 'danger',
+          title: 'Payment unavailable',
+          description: 'Online payment is not set up for this store yet.',
+        });
+        return;
+      }
       setQuote(result);
       setQuoteLockSeconds(secondsUntil(result.quote_expires_at));
       setStage('awaiting-payment');
 
       const Razorpay = await loadRazorpayScript();
       checkoutRef.current = openRazorpayCheckout(Razorpay, {
-        key: razorpayKeyId,
+        key: result.key_id,
         amount: Math.round(result.amount * 100),
         currency: 'INR',
         order_id: result.order_id,
@@ -309,7 +319,7 @@ export function BuyGold() {
               styles.toggleButton,
               mode === 'inr' && styles.toggleButtonActive,
             )}
-            onClick={() => setMode('inr')}
+            onClick={() => switchMode('inr')}
             disabled={!hasRate}
           >
             Buy in Rupees (₹)
@@ -320,7 +330,7 @@ export function BuyGold() {
               styles.toggleButton,
               mode === 'grams' && styles.toggleButtonActive,
             )}
-            onClick={() => setMode('grams')}
+            onClick={() => switchMode('grams')}
           >
             Buy in Grams (g)
           </button>
@@ -361,7 +371,7 @@ export function BuyGold() {
                 id="buy-sell-inr"
                 className={styles.input}
                 inputMode="decimal"
-                value={inrInputValue}
+                value={inrInput}
                 disabled={!hasRate}
                 onChange={(event) => handleInrChange(event.target.value)}
               />
@@ -369,7 +379,7 @@ export function BuyGold() {
                 type="button"
                 className={styles.clearButton}
                 aria-label="Clear amount"
-                onClick={() => setGramsInput('')}
+                onClick={() => setInrInput('')}
               >
                 <CloseIcon width={14} height={14} />
               </button>

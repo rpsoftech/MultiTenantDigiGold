@@ -9,8 +9,9 @@ import type { SessionUser } from '@/store/session/session.types';
 import { ProfileSetupForm } from './ProfileSetupForm';
 
 const push = jest.fn();
+const replace = jest.fn();
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push, replace: jest.fn() }),
+  useRouter: () => ({ push, replace }),
 }));
 jest.mock('@/features/auth/auth.service', () => ({
   authService: {
@@ -127,6 +128,7 @@ describe('ProfileSetupForm', () => {
   it('reports a failure and keeps the registration token for a retry', async () => {
     mockedAuth.completeProfile.mockRejectedValue({
       status: 500,
+      code: 'ERR_BAD_RESPONSE',
       message: 'down',
     });
     renderWithProviders(<ProfileSetupForm />, { user: newUser });
@@ -138,12 +140,40 @@ describe('ProfileSetupForm', () => {
     expect(
       await screen.findByText('Could not create your account'),
     ).toBeTruthy();
+    // The reason is shown, in words a customer can act on.
+    expect(
+      screen.getByText(
+        'The server is having trouble right now. Please try again shortly.',
+      ),
+    ).toBeTruthy();
     expect(push).not.toHaveBeenCalled();
     expect(getRegistrationToken()).toBe('reg-token');
   });
 
-  it('refuses to submit when the registration session has expired', async () => {
+  it('sends the customer back to verify their number when the registration session is gone', async () => {
     window.sessionStorage.clear();
+    const { store } = renderWithProviders(<ProfileSetupForm />, {
+      user: newUser,
+    });
+    fillRequired();
+    await waitFor(() => expect(submit().disabled).toBe(false));
+
+    fireEvent.click(submit());
+
+    expect(
+      await screen.findByText('Your sign-up session expired'),
+    ).toBeTruthy();
+    expect(mockedAuth.completeProfile).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith('/login');
+    expect(store.getState().session.user).toBeNull();
+  });
+
+  it('sends the customer back to verify their number when MainServer rejects the registration token', async () => {
+    mockedAuth.completeProfile.mockRejectedValue({
+      status: 401,
+      code: 'ERR_BAD_REQUEST',
+      message: 'Registration token has expired',
+    });
     renderWithProviders(<ProfileSetupForm />, { user: newUser });
     fillRequired();
     await waitFor(() => expect(submit().disabled).toBe(false));
@@ -151,9 +181,10 @@ describe('ProfileSetupForm', () => {
     fireEvent.click(submit());
 
     expect(
-      await screen.findByText('Could not create your account'),
+      await screen.findByText('Your sign-up session expired'),
     ).toBeTruthy();
-    expect(mockedAuth.completeProfile).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith('/login');
+    expect(getRegistrationToken()).toBeNull();
   });
 
   it('does nothing for a customer who is already registered', async () => {

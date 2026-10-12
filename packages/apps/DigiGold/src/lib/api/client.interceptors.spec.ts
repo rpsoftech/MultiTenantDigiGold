@@ -4,7 +4,11 @@ import {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { makeJwt } from '@/test-utils/renderWithProviders';
-import { getAccessToken, setTokens } from '@/lib/auth/tokenStorage';
+import {
+  getAccessToken,
+  getRefreshToken,
+  setTokens,
+} from '@/lib/auth/tokenStorage';
 import { onSessionExpired } from '@/lib/auth/sessionEvents';
 import { apiClient } from './client';
 
@@ -202,6 +206,186 @@ describe('apiClient interceptors', () => {
       const response = await apiClient.get('/x');
 
       expect(response.data).toEqual({ ok: true });
+    });
+  });
+
+  // Customer access tokens last 15 minutes; the single-use refresh token renews them.
+  describe('customer session refresh', () => {
+    // Each call returns a different (but valid) token.
+    let issued = 0;
+    const fresh = () => makeJwt({ user_uuid: 'u-1', exp: FUTURE, n: ++issued });
+    let calls: { url?: string; token?: unknown; body?: unknown }[];
+
+    // MainServer stand-in: /auth/refresh answers with `refreshReply`; any other request is
+    // accepted only with an access token in `valid`.
+    function server(
+      refreshReply: { status: number; data?: unknown },
+      valid: Set<string>,
+    ) {
+      apiClient.defaults.adapter = async (config) => {
+        calls.push({
+          url: config.url,
+          token: config.headers.get('X-Api-Token'),
+          body: config.data,
+        });
+        const reply =
+          config.url === '/auth/refresh'
+            ? refreshReply
+            : valid.has(String(config.headers.get('X-Api-Token')))
+              ? { status: 200, data: { ok: true } }
+              : { status: 401, data: { name: 'ERROR_INVALID_TOKEN' } };
+        const response = {
+          status: reply.status,
+          data: reply.data,
+          statusText: '',
+          headers: {},
+          config,
+        } as AxiosResponse;
+        if (reply.status >= 400) {
+          throw new AxiosError(
+            'Request failed',
+            'ERR_BAD_REQUEST',
+            config,
+            null,
+            response,
+          );
+        }
+        return response;
+      };
+    }
+
+    beforeEach(() => {
+      calls = [];
+    });
+
+    it('renews an expired access token before sending the request', async () => {
+      const renewed = fresh();
+      setTokens({
+        accessToken: makeJwt({ exp: PAST }),
+        refreshToken: 'refresh-1',
+      });
+      server(
+        {
+          status: 200,
+          data: { access_token: renewed, refresh_token: 'refresh-2' },
+        },
+        new Set([renewed]),
+      );
+
+      await apiClient.get('/user/portfolio');
+
+      expect(calls.map((call) => call.url)).toEqual([
+        '/auth/refresh',
+        '/user/portfolio',
+      ]);
+      expect(JSON.parse(String(calls[0].body))).toEqual({
+        refresh_token: 'refresh-1',
+      });
+      expect(calls[1].token).toBe(renewed);
+      expect(getAccessToken()).toBe(renewed);
+      expect(getRefreshToken()).toBe('refresh-2');
+      expect(expired).not.toHaveBeenCalled();
+    });
+
+    it('renews the session and retries once when the server rejects the token', async () => {
+      const renewed = fresh();
+      setTokens({ accessToken: fresh(), refreshToken: 'refresh-1' });
+      server(
+        {
+          status: 200,
+          data: { access_token: renewed, refresh_token: 'refresh-2' },
+        },
+        new Set([renewed]),
+      );
+
+      const response = await apiClient.get('/user/portfolio');
+
+      expect(response.data).toEqual({ ok: true });
+      expect(calls.map((call) => call.url)).toEqual([
+        '/user/portfolio',
+        '/auth/refresh',
+        '/user/portfolio',
+      ]);
+      expect(calls[2].token).toBe(renewed);
+      expect(expired).not.toHaveBeenCalled();
+    });
+
+    it('shares one refresh between requests rejected at the same time', async () => {
+      const renewed = fresh();
+      setTokens({ accessToken: fresh(), refreshToken: 'refresh-1' });
+      server(
+        {
+          status: 200,
+          data: { access_token: renewed, refresh_token: 'refresh-2' },
+        },
+        new Set([renewed]),
+      );
+
+      await Promise.all([
+        apiClient.get('/user/portfolio'),
+        apiClient.get('/trade/history'),
+        apiClient.get('/user/kyc'),
+      ]);
+
+      // A second exchange would send a token the first one already used up.
+      expect(calls.filter((call) => call.url === '/auth/refresh')).toHaveLength(
+        1,
+      );
+    });
+
+    it('ends the session when the refresh token is rejected', async () => {
+      setTokens({ accessToken: fresh(), refreshToken: 'refresh-1' });
+      server(
+        { status: 401, data: { name: 'REFRESH_TOKEN_INVALID' } },
+        new Set(),
+      );
+
+      await expect(apiClient.get('/user/portfolio')).rejects.toMatchObject({
+        status: 401,
+      });
+
+      expect(getAccessToken()).toBeNull();
+      expect(getRefreshToken()).toBeNull();
+      expect(expired).toHaveBeenCalledTimes(1);
+      expect(
+        calls.filter((call) => call.url === '/user/portfolio'),
+      ).toHaveLength(1);
+    });
+
+    it('signs out after one retry if the renewed token is also rejected', async () => {
+      setTokens({ accessToken: fresh(), refreshToken: 'refresh-1' });
+      server(
+        {
+          status: 200,
+          data: { access_token: fresh(), refresh_token: 'refresh-2' },
+        },
+        new Set(),
+      );
+
+      await expect(apiClient.get('/user/portfolio')).rejects.toMatchObject({
+        status: 401,
+      });
+
+      expect(calls.map((call) => call.url)).toEqual([
+        '/user/portfolio',
+        '/auth/refresh',
+        '/user/portfolio',
+      ]);
+      expect(expired).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the session when the refresh fails for a transient reason', async () => {
+      const access = fresh();
+      setTokens({ accessToken: access, refreshToken: 'refresh-1' });
+      server({ status: 503, data: { message: 'down' } }, new Set());
+
+      await expect(apiClient.get('/user/portfolio')).rejects.toMatchObject({
+        status: 401,
+      });
+
+      expect(getAccessToken()).toBe(access);
+      expect(getRefreshToken()).toBe('refresh-1');
+      expect(expired).not.toHaveBeenCalled();
     });
   });
 });

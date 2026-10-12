@@ -190,6 +190,9 @@ func (r *GoldLedgerRepository) GetTransactionHistory(ctx context.Context, tenant
 		entry.MetadataJSON = metaJSON
 		history = append(history, &entry)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read transaction history: %w", err)
+	}
 
 	return history, nil
 }

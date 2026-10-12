@@ -72,8 +72,8 @@ func TestTenantIsolation(t *testing.T) {
 		expectStatus(t, r, http.StatusForbidden)
 	})
 	t.Run("store manager cannot collect another store's redemption", func(t *testing.T) {
-		counterBuy(t, database.SeedVerifiedCustomerUUID, 0.5)
-		rr := requestRedemption(t, verifiedCustomer(t), 0.1)
+		counterBuy(t, database.SeedVerifiedCustomerUUID, 1)
+		rr := requestRedemption(t, verifiedCustomer(t), 1)
 		r := call(t, "POST", "/admin/store/redemptions/collect", otherManager, database.SeedOtherTenantUUID,
 			map[string]string{"redemption_uuid": str(rr["redemption_uuid"]), "pickup_code": str(rr["pickup_code"])})
 		expectError(t, r, http.StatusNotFound, "REDEMPTION_NOT_FOUND")
