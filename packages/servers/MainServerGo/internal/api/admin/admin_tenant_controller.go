@@ -222,7 +222,7 @@ func (c *AdminTenantController) UpdateStatus(ctx fiber.Ctx) error {
 	}
 
 	adminUUID := middleware.GetAdminUUID(ctx)
-	tenant, err := c.tenantConfigService.UpdateTenantStatus(ctx.Context(), ctx.Params("uuid"), *req.IsActive, adminUUID)
+	tenant, err := c.tenantConfigService.UpdateTenantStatus(ctx.Context(), ctx.Params("uuid"), *req.IsActive, adminUUID, middleware.GetTenantUUID(ctx))
 	if err != nil {
 		return err
 	}

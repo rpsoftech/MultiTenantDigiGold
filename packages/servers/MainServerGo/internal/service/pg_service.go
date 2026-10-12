@@ -8,10 +8,12 @@ import (
 	"log"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/razorpay/razorpay-go"
+	rzperrors "github.com/razorpay/razorpay-go/errors"
 	"github.com/razorpay/razorpay-go/utils"
 	"github.com/redis/go-redis/v9"
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
@@ -252,6 +254,13 @@ func isPermanentTradeError(err error) bool {
 		errors.Is(err, interfaces.ErrInvalidTradePayload)
 }
 
+// isAlreadyRefundedError reports Razorpay refusing a refund because the payment has been
+// fully refunded already.
+func isAlreadyRefundedError(err error) bool {
+	var badRequest *rzperrors.BadRequestError
+	return errors.As(err, &badRequest) && strings.Contains(strings.ToLower(badRequest.Message), "fully refunded")
+}
+
 // refund returns the full captured amount to the customer and records it in the
 // event log. On success it marks the payment settled and deletes the intent.
 func (s *PaymentGatewayService) refund(ctx context.Context, p CapturedPayment, tenantConfig *models.PaymentConfigJSON, reason refundReason, settled *bool) error {
@@ -272,14 +281,22 @@ func (s *PaymentGatewayService) refund(ctx context.Context, p CapturedPayment, t
 	body, err := client.Payment.Refund(p.PaymentID, int(p.PaidPaise), map[string]interface{}{
 		"notes": map[string]interface{}{"reason": string(reason)},
 	}, nil)
-	if err != nil {
+	alreadyRefunded := err != nil && isAlreadyRefundedError(err)
+	if err != nil && !alreadyRefunded {
 		// The customer has paid and holds no gold until a retry succeeds.
 		err = fmt.Errorf("failed to refund payment %s (%s): %w", p.PaymentID, reason, err)
 		monitoring.Critical(ctx, monitoring.KindRefundFailed, err)
 		return err
 	}
 	*settled = true
-	monitoring.PaymentRefunded(ctx, string(reason))
+	if alreadyRefunded {
+		// An earlier attempt refunded it but its TRADE_PAYMENT_REFUNDED event wasn't saved.
+		// The money is back with the customer: record the refund now, so later repeats stop
+		// at PaymentRefundRecorded instead of failing (and alerting) until Razorpay gives up.
+		log.Printf("[PGService] Payment %s was already refunded at Razorpay; recording it", p.PaymentID)
+	} else {
+		monitoring.PaymentRefunded(ctx, string(reason))
+	}
 	s.Redis.Client.Del(ctx, fmt.Sprintf("digiGold:trade_intent:%s", p.OrderID))
 
 	refundID, _ := body["id"].(string)

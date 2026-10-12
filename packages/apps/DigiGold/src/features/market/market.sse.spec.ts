@@ -25,9 +25,13 @@ const originalMockFlag = process.env.NEXT_PUBLIC_USE_MOCK_MARKET;
 const originalEventSource = globalThis.EventSource;
 let unsubscribe: (() => void) | undefined;
 const close = jest.fn();
-const createEventSource = jest.fn(() => ({
+type FakeEventSource = {
+  close: typeof close;
+  onmessage: ((event: MessageEvent<string>) => void) | null;
+};
+const createEventSource = jest.fn<(url: string) => FakeEventSource>(() => ({
   close,
-  onmessage: null as ((event: MessageEvent<string>) => void) | null,
+  onmessage: null,
 }));
 
 beforeEach(() => {
@@ -161,9 +165,8 @@ describe('live quote stream', () => {
         });
       });
 
-      createEventSource.mock.results[0].value.onmessage?.(
-        new MessageEvent('message', { data: frame }),
-      );
+      const source = createEventSource.mock.results[0].value as FakeEventSource;
+      source.onmessage?.(new MessageEvent('message', { data: frame }));
 
       if (expectedPrice === null) {
         expect(onTick).not.toHaveBeenCalled();

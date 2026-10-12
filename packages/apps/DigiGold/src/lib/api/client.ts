@@ -97,6 +97,17 @@ function isPublicAuthEndpoint(url: string | undefined): boolean {
   );
 }
 
+// Public reads that need no session: the store's info and the live rate. They never carry
+// the customer's token, so an expired one isn't renewed first (making the page wait on
+// /auth/refresh) and can't end the customer session from an admin page.
+function isPublicReadEndpoint(url: string | undefined): boolean {
+  return (
+    url === '/tenant/info' ||
+    url?.startsWith('/tenant/info?') === true ||
+    url?.startsWith('/rates/') === true
+  );
+}
+
 export const apiClient = axios.create({
   baseURL: normalizeApiBaseURL(process.env.NEXT_PUBLIC_API_BASE_URL),
   timeout: 15000,
@@ -108,7 +119,9 @@ apiClient.interceptors.request.use(async (config) => {
   // Never forward a token the caller (or a retried config) carried in; set it fresh below.
   config.headers.delete('X-Api-Token');
 
-  if (isPublicAuthEndpoint(config.url)) return config;
+  if (isPublicAuthEndpoint(config.url) || isPublicReadEndpoint(config.url)) {
+    return config;
+  }
 
   if (isProtectedAdminEndpoint(config.url)) {
     const adminConfig = config as AdminRetryConfig;
@@ -130,8 +143,16 @@ apiClient.interceptors.request.use(async (config) => {
     // Renew it first (the access token lasts 15 minutes). If the session can't be renewed,
     // clear it without redirecting: this request may be a public one, and if it isn't, the
     // server's 401 below triggers the redirect.
+    const expiredAccess = accessToken;
+    const refreshToken = getRefreshToken();
     accessToken = await refreshCustomerTokens();
-    if (!accessToken) {
+    // Only end the session that couldn't be renewed: a sign-out, or a new sign-in, while
+    // the refresh was in flight replaced it, and the new session must stay.
+    if (
+      !accessToken &&
+      getAccessToken() === expiredAccess &&
+      getRefreshToken() === refreshToken
+    ) {
       clearTokens();
       emitSessionExpired('expired');
     }
@@ -180,8 +201,9 @@ export function refreshCustomerTokens(): Promise<string | null> {
       access_token?: unknown;
       refresh_token?: unknown;
     }>('/auth/refresh', { refresh_token: refreshToken });
-    // Signed out (or another customer signed in) while the exchange was in flight.
-    if (getRefreshToken() !== refreshToken) return null;
+    // Signed out (null) or signed in again (the new session's token) while the exchange was
+    // in flight. The pair just received belongs to the replaced session and is dropped.
+    if (getRefreshToken() !== refreshToken) return adoptRotated();
     if (
       typeof data?.access_token !== 'string' ||
       !data.access_token ||
@@ -390,7 +412,12 @@ apiClient.interceptors.response.use(
     // Customer routes: renew the session and retry once; a second 401, or a session that
     // can't be renewed, ends it.
     if (!isProtectedAdminEndpoint(config.url)) {
-      if (isPublicAuthEndpoint(config.url)) throw normalizedError;
+      if (
+        isPublicAuthEndpoint(config.url) ||
+        isPublicReadEndpoint(config.url)
+      ) {
+        throw normalizedError;
+      }
 
       const sentToken = config.headers.get('X-Api-Token');
       if (!config.customerAuthRetried && getRefreshToken()) {

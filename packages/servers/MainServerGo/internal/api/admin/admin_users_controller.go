@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -224,8 +225,11 @@ func (c *AdminUserController) UpdateAdmin(ctx fiber.Ctx) error {
 	}
 
 	admin, err := c.adminUserService.GetAdminByUUID(ctx.Context(), tenantUUID, adminUUID)
-	if err != nil {
+	if errors.Is(err, interfaces.ErrUserNotFound) || errors.Is(err, interfaces.ErrTenantNotFound) {
 		return ctx.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "admin not found"})
+	}
+	if err != nil {
+		return err // a database failure is a 500, not a missing admin
 	}
 	if admin.Role == middleware.RoleSuperAdmin && !isSuperAdmin(ctx) {
 		return errSuperAdminOnly

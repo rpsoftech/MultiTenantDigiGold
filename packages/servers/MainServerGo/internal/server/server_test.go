@@ -95,3 +95,38 @@ func TestCheckCORSConfigRequiresOriginsInProduction(t *testing.T) {
 		}
 	}
 }
+
+// A value read from a request and kept after the handler returns (as PublishAsync and the
+// tenant caches do) must not change when later requests reuse the request buffer.
+func TestRequestValuesSurviveTheRequest(t *testing.T) {
+	if !appConfig().Immutable {
+		t.Fatal("appConfig must set Immutable: request values are used after the handler returns")
+	}
+
+	app := fiber.New(appConfig())
+	var kept []string
+	app.Get("/", func(c fiber.Ctx) error {
+		kept = append(kept, c.Get("X-Tenant-ID"))
+		return c.SendStatus(http.StatusOK)
+	})
+
+	want := []string{
+		"01900000-0000-7000-8000-000000000001",
+		"01900000-0000-7000-8000-000000000002",
+		"01900000-0000-7000-8000-000000000003",
+	}
+	for _, tenant := range want {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-Tenant-ID", tenant)
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		res.Body.Close()
+	}
+	for i, got := range kept {
+		if got != want[i] {
+			t.Fatalf("value kept from request %d = %q, want %q", i+1, got, want[i])
+		}
+	}
+}

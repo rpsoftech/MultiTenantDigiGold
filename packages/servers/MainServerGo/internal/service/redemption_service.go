@@ -71,7 +71,7 @@ func (s *TradeService) RequestRedemption(ctx context.Context, tenantID, userID i
 		FinalRatePerGram: refRate,
 	}
 	// RecordTransactionWithTX locks the user row and rejects an overdraw.
-	ledger, event, err := s.recordLedgerMovementWithTX(ctx, tx, entry, ipAddress, "CUSTOMER")
+	ledger, event, owner, err := s.recordLedgerMovementWithTX(ctx, tx, entry, ipAddress, "CUSTOMER")
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +91,7 @@ func (s *TradeService) RequestRedemption(ctx context.Context, tenantID, userID i
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit redemption: %w", err)
 	}
+	s.UserRepo.InvalidateUserCaches(ctx, owner)
 	s.EventRepo.PublishAsync(event)
 
 	log.Printf("[TradeService] Redemption requested: tenantID=%d, userID=%d, weight=%f, redemption=%s",

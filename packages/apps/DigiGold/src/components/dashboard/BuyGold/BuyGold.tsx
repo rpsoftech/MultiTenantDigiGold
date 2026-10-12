@@ -20,7 +20,10 @@ import { useLiveRate } from '@/features/market/hooks/useLiveRate';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useInitiateBuy } from '@/features/trade/hooks/useInitiateBuy';
 import { useBuySettlement } from '@/features/trade/hooks/useBuySettlement';
-import { KYC_STATUS_QUERY_KEY, useKycStatus } from '@/features/kyc/hooks/useKycStatus';
+import {
+  KYC_STATUS_QUERY_KEY,
+  useKycStatus,
+} from '@/features/kyc/hooks/useKycStatus';
 import { PORTFOLIO_QUERY_KEY } from '@/features/portfolio/hooks/usePortfolio';
 import { KYC_REQUIRED_ABOVE_INR } from '@/features/kyc/kyc.constants';
 import {
@@ -40,14 +43,20 @@ const QUICK_ADD_INR = [1000, 5000, 10000, 25000];
 const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
 
 type BuyMode = 'grams' | 'inr';
-type PaymentStage = 'idle' | 'awaiting-payment' | 'polling' | 'cancelled' | 'timeout';
+type PaymentStage =
+  | 'idle'
+  | 'awaiting-payment'
+  | 'polling'
+  | 'cancelled'
+  | 'timeout';
 
 function secondsUntil(unixSeconds: number): number {
   return Math.max(0, Math.round(unixSeconds - Date.now() / 1000));
 }
 
 function startPaymentErrorTitle(error: Partial<NormalizedApiError>): string {
-  if (error.status === 403) return 'KYC verification required';
+  // By name, not status: a suspended store (403 TENANT_INACTIVE) is not a KYC problem.
+  if (error.code === 'KYC_REQUIRED') return 'KYC verification required';
   // Live rate moved more than the server's slippage tolerance from the rate shown here.
   if (error.code === 'SLIPPAGE_EXCEEDED') return 'Price changed';
   return 'Could not start payment';
@@ -92,9 +101,15 @@ export function BuyGold() {
   const hasRate = Number.isFinite(pricePerGram) && pricePerGram > 0;
   // The typed value is the source of truth in each mode; the other is derived from it.
   const totalInr =
-    mode === 'inr' ? Number(inrInput) || 0 : (Number(gramsInput) || 0) * pricePerGram;
+    mode === 'inr'
+      ? Number(inrInput) || 0
+      : (Number(gramsInput) || 0) * pricePerGram;
   const grams =
-    mode === 'inr' ? (hasRate ? totalInr / pricePerGram : 0) : Number(gramsInput) || 0;
+    mode === 'inr'
+      ? hasRate
+        ? totalInr / pricePerGram
+        : 0
+      : Number(gramsInput) || 0;
   const baseAmountInr = grams * (rate?.mcxBaseRateInr ?? 0);
   const marginAmountInr = grams * (rate?.marginAppliedInr ?? 0);
   const gstAmountInr = grams * (rate?.gstAppliedInr ?? 0);
@@ -112,6 +127,7 @@ export function BuyGold() {
   const settlementStatus = stage === 'polling' ? settlement.status : null;
 
   const resetForm = () => {
+    setMode('grams');
     setGramsInput('1');
     setInrInput('');
     setQuote(null);
@@ -189,38 +205,46 @@ export function BuyGold() {
       setStage('awaiting-payment');
 
       const Razorpay = await loadRazorpayScript();
-      checkoutRef.current = openRazorpayCheckout(Razorpay, {
-        key: result.key_id,
-        amount: Math.round(result.amount * 100),
-        currency: 'INR',
-        order_id: result.order_id,
-        name: tenantConfig?.displayName,
-        description: `${result.weight_grams.toFixed(4)}g gold purchase`,
-        prefill: { contact: user?.mobileNumber ?? undefined },
-        theme: { color: tenantConfig?.theme.colors.primary },
-        handler: (response) => {
-          checkoutRef.current = null;
-          setPaymentId(response.razorpay_payment_id);
-          setStage('polling');
-        },
-        modal: {
-          ondismiss: () => {
+      checkoutRef.current = openRazorpayCheckout(
+        Razorpay,
+        {
+          key: result.key_id,
+          amount: Math.round(result.amount * 100),
+          currency: 'INR',
+          order_id: result.order_id,
+          name: tenantConfig?.displayName,
+          description: `${result.weight_grams.toFixed(4)}g gold purchase`,
+          prefill: { contact: user?.mobileNumber ?? undefined },
+          theme: { color: tenantConfig?.theme.colors.primary },
+          handler: (response) => {
             checkoutRef.current = null;
-            setStage((current) => (current === 'awaiting-payment' ? 'cancelled' : current));
+            setPaymentId(response.razorpay_payment_id);
+            setStage('polling');
+          },
+          modal: {
+            ondismiss: () => {
+              checkoutRef.current = null;
+              setStage((current) =>
+                current === 'awaiting-payment' ? 'cancelled' : current,
+              );
+            },
           },
         },
-      }, (failure) => {
-        showToast({
-          variant: 'danger',
-          title: 'Payment failed',
-          description: failure.error.description,
-        });
-      });
+        (failure) => {
+          showToast({
+            variant: 'danger',
+            title: 'Payment failed',
+            description: failure.error.description,
+          });
+        },
+      );
     } catch (error) {
       setStage('idle');
       const normalized = error as Partial<NormalizedApiError>;
       if (normalized.code === 'SLIPPAGE_EXCEEDED') {
-        void queryClient.invalidateQueries({ queryKey: ['market', 'last-rate'] });
+        void queryClient.invalidateQueries({
+          queryKey: ['market', 'last-rate'],
+        });
       }
       // The server's KYC view disagreed with ours (e.g. status changed elsewhere) — resync.
       if (normalized.code === 'KYC_REQUIRED') {
@@ -253,7 +277,12 @@ export function BuyGold() {
   }, [settlementStatus]);
 
   const proceedDisabled =
-    grams <= 0 || isLoading || !hasRate || initiateBuy.isPending || stage === 'awaiting-payment' || stage === 'polling';
+    grams <= 0 ||
+    isLoading ||
+    !hasRate ||
+    initiateBuy.isPending ||
+    stage === 'awaiting-payment' ||
+    stage === 'polling';
 
   const proceedLabel = useMemo(() => {
     if (!isAuthenticated) return 'Login to Proceed';
@@ -419,22 +448,30 @@ export function BuyGold() {
               <>
                 <div className={styles.summaryRow}>
                   <span>Total Investment Amount (est.):</span>
-                  <span className={styles.summaryValueBrand}>{formatCurrency(totalInr, 'INR')}</span>
+                  <span className={styles.summaryValueBrand}>
+                    {formatCurrency(totalInr, 'INR')}
+                  </span>
                 </div>
                 <div className={styles.summaryRow}>
                   <span>Gold Weight to be Added (est.):</span>
-                  <span className={styles.summaryValueSuccess}>{grams.toFixed(4)} g</span>
+                  <span className={styles.summaryValueSuccess}>
+                    {grams.toFixed(4)} g
+                  </span>
                 </div>
               </>
             ) : (
               <>
                 <div className={styles.summaryRow}>
                   <span>Gold Weight to be Added:</span>
-                  <span className={styles.summaryValueBrand}>{grams.toFixed(4)} g</span>
+                  <span className={styles.summaryValueBrand}>
+                    {grams.toFixed(4)} g
+                  </span>
                 </div>
                 <div className={styles.summaryRow}>
                   <span>Total Investment Amount (est.):</span>
-                  <span className={styles.summaryValueSuccess}>{formatCurrency(totalInr, 'INR')}</span>
+                  <span className={styles.summaryValueSuccess}>
+                    {formatCurrency(totalInr, 'INR')}
+                  </span>
                 </div>
               </>
             )}
@@ -451,8 +488,9 @@ export function BuyGold() {
               <span>{formatCurrency(gstAmountInr, 'INR')}</span>
             </div>
             <p className={styles.summaryDisclaimer}>
-              Margin and GST are estimated on the client using the platform default — the
-              server applies your tenant&apos;s actual pricing and may differ slightly.
+              Margin and GST are estimated on the client using the platform
+              default — the server applies your tenant&apos;s actual pricing and
+              may differ slightly.
             </p>
           </div>
         )}
@@ -478,7 +516,8 @@ export function BuyGold() {
         )}
         {stage === 'timeout' && (
           <p className={styles.statusMessage} data-variant="warning">
-            Still processing your payment. This can take a few minutes — check your history shortly.
+            Still processing your payment. This can take a few minutes — check
+            your history shortly.
           </p>
         )}
         {stage === 'cancelled' && (

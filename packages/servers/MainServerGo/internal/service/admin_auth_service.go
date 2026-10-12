@@ -92,6 +92,11 @@ func adminTempTokenKey(tempToken string) string {
 	return "auth:temp_token:" + tempToken
 }
 
+// adminTOTPAttemptsKey counts the TOTP codes tried with one temp token.
+func adminTOTPAttemptsKey(tempToken string) string {
+	return "auth:temp_token_attempts:" + tempToken
+}
+
 // adminTOTPUsedKey marks a TOTP code as spent for one admin. A code validates for its whole
 // 30 s step plus one step of clock skew either side, so the mark outlives that window.
 func adminTOTPUsedKey(adminUUID, code string) string {
@@ -261,16 +266,26 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 		return "", "", errAdminTOTPNotSetUp
 	}
 
+	// Cap guesses per temp token; after maxTOTPAttempts the password step must be repeated.
+	// Every attempt is counted before its code is checked: counting only failures let a
+	// burst of parallel requests all be checked before any of them was counted. The counter
+	// is never deleted, only left to expire with the temp token: deleting it would restart
+	// the count for requests already past verifyTempToken.
+	attemptsKey := adminTOTPAttemptsKey(tempToken)
+	attempts, err := s.Redis.Client.Incr(ctx, s.Redis.GetRedisKey(attemptsKey)).Result()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to count TOTP attempts: %w", err)
+	}
+	s.Redis.Client.Expire(ctx, s.Redis.GetRedisKey(attemptsKey), 5*time.Minute)
+	if attempts > maxTOTPAttempts {
+		_ = s.Redis.RemoveKey(ctx, adminTempTokenKey(tempToken))
+		return "", "", errAdminTempTokenInvalid
+	}
+
 	// Validate TOTP Code
-	valid := totp.Validate(code, admin.TOTPSecret)
-	if !valid {
-		// Cap guesses per temp token; after maxTOTPAttempts the password step must be repeated.
-		attemptsKey := fmt.Sprintf("auth:temp_token_attempts:%s", tempToken)
-		attempts, _ := s.Redis.Client.Incr(ctx, attemptsKey).Result()
-		s.Redis.Client.Expire(ctx, attemptsKey, 5*time.Minute)
-		if attempts >= maxTOTPAttempts {
+	if !totp.Validate(code, admin.TOTPSecret) {
+		if attempts == maxTOTPAttempts {
 			_ = s.Redis.RemoveKey(ctx, adminTempTokenKey(tempToken))
-			s.Redis.Client.Del(ctx, attemptsKey)
 		}
 		return "", "", errAdminTOTPCodeInvalid
 	}
@@ -350,7 +365,6 @@ func (s *AdminAuthService) VerifyTOTP(ctx context.Context, tempToken, code, ip s
 	s.AdminRepo.InvalidateAdminCaches(ctx, admin)
 	s.EventRepo.PublishAsync(&loginEvent.BaseEvent)
 
-	s.Redis.Client.Del(ctx, fmt.Sprintf("auth:temp_token_attempts:%s", tempToken))
 	return accessToken, refreshToken, nil
 }
 
@@ -407,6 +421,11 @@ func (s *AdminAuthService) RefreshAdminTokens(ctx context.Context, refreshToken 
 	}
 	if !admin.IsActive {
 		return "", "", errAdminDeactivated
+	}
+	// A TOTP reset (lost or compromised device) must end the admin's sessions: they sign in
+	// again with their password and enrol a new authenticator.
+	if !admin.IsTOTPEnabled || admin.TOTPSecret == "" {
+		return "", "", errAdminRefreshTokenInvalid
 	}
 
 	return s.issueAdminTokens(ctx, admin)

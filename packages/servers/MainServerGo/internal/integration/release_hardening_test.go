@@ -114,14 +114,33 @@ func TestOnlineBuy_RefundIsNotRepeated(t *testing.T) {
 	if _, ok := razorpay.refundFor(paymentID); !ok {
 		t.Fatal("the mismatched payment was not refunded")
 	}
-	refundsBefore := razorpay.refundCount(paymentID)
+	requestsBefore := razorpay.refundRequestCount(paymentID)
 
 	if err := rdb.Del(context.Background(), "digiGold:lock:payment:"+paymentID).Err(); err != nil {
 		t.Fatal(err)
 	}
 	expectStatus(t, webhook(t, orderID, paymentID, 100, webhookSecret), http.StatusOK)
-	if got := razorpay.refundCount(paymentID); got != refundsBefore {
-		t.Fatalf("refunds for the payment = %d, want %d (no second refund)", got, refundsBefore)
+	// The recorded refund stops the repeat before Razorpay is asked again (Razorpay would
+	// refuse a second refund anyway, so counting issued refunds would not show it).
+	if got := razorpay.refundRequestCount(paymentID); got != requestsBefore {
+		t.Fatalf("refund requests for the payment = %d, want %d (Razorpay not asked again)", got, requestsBefore)
+	}
+}
+
+// A payment refunded at Razorpay without a TRADE_PAYMENT_REFUNDED event (the event save
+// failed after the refund) is settled when its webhook comes again: Razorpay refuses the
+// second refund, and the server records the refund instead of failing on every retry.
+func TestOnlineBuy_RefundAlreadyMadeAtRazorpayIsSettled(t *testing.T) {
+	orderID, _ := initiateBuy(t, 400)
+	paymentID := razorpay.newPaymentID()
+	razorpay.refundOutsideTheServer(paymentID, 100)
+
+	expectStatus(t, webhook(t, orderID, paymentID, 100, webhookSecret), http.StatusOK) // amount mismatch: refund
+	if got := razorpay.refundCount(paymentID); got != 1 {
+		t.Fatalf("refunds for the payment = %d, want 1", got)
+	}
+	if !eventExists(t, events.TradeEventPaymentRefunded, "payment_id", paymentID) {
+		t.Fatal("the refund was not recorded")
 	}
 }
 

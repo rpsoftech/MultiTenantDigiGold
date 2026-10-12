@@ -5,7 +5,7 @@ import {
   registrationStarted,
   sessionEstablished,
 } from '@/store/session/session.slice';
-import { setRegistrationToken } from '@/lib/auth/tokenStorage';
+import { clearTokens, setRegistrationToken } from '@/lib/auth/tokenStorage';
 import { decodeJwtPayload } from '@/lib/utils/jwt';
 
 type UserAccessTokenClaims = { user_uuid: string };
@@ -17,7 +17,9 @@ export function useVerifyOtp() {
     mutationFn: authService.verifyOtp,
     onSuccess: (result, variables) => {
       if (result.is_registered && result.access_token) {
-        const claims = decodeJwtPayload<UserAccessTokenClaims>(result.access_token);
+        const claims = decodeJwtPayload<UserAccessTokenClaims>(
+          result.access_token,
+        );
         dispatch(
           sessionEstablished({
             userId: claims?.user_uuid ?? '',
@@ -28,6 +30,10 @@ export function useVerifyOtp() {
           }),
         );
       } else if (result.registration_token) {
+        // A new number has no session yet. Drop any earlier customer's tokens: verifyOtp
+        // stores only the tokens it gets (none here), and on reload a leftover session would
+        // be restored instead of this registration.
+        clearTokens();
         setRegistrationToken(result.registration_token);
         dispatch(
           registrationStarted({

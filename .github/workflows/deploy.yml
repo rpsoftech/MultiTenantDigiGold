@@ -17,6 +17,7 @@ on:
       - '!packages/servers/MainServerGo/project.json'
       - '!packages/servers/MainServerGo/*.postman_collection.json'
       - '!packages/servers/MainServerGo/api_collection.json'
+      - '!packages/servers/MainServerGo/cmd/dbtool/**' # not deployed (deploy.go builds api and worker)
       - 'go.work'
       - 'go.work.sum'
       - '.github/workflows/deploy.yml'
@@ -43,6 +44,12 @@ jobs:
           go-version: '1.26'
           cache-dependency-path: packages/servers/MainServerGo/go.sum
 
+      # Deploy starts on the push, without waiting for the Backend Tests workflow, so a
+      # build that fails vet or the unit tests must stop here, before anything is published.
+      - name: Vet and unit tests
+        working-directory: packages/servers/MainServerGo
+        run: go vet ./... && go test -count=1 ./...
+
       - name: Deploy Staging
         env:
           FILE_SERVER_TOKEN: ${{ secrets.FILE_SERVER_TOKEN }}
@@ -66,6 +73,12 @@ jobs:
         with:
           go-version: '1.26'
           cache-dependency-path: packages/servers/MainServerGo/go.sum
+
+      # Deploy starts on the push, without waiting for the Backend Tests workflow, so a
+      # build that fails vet or the unit tests must stop here, before anything is published.
+      - name: Vet and unit tests
+        working-directory: packages/servers/MainServerGo
+        run: go vet ./... && go test -count=1 ./...
 
       - name: Deploy Production
         env:

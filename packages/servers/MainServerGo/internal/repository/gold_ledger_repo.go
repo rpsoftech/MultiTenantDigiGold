@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
@@ -88,7 +87,12 @@ func InitGoldLedgerRepo() *GoldLedgerRepository {
 }
 
 // Write Operations (Event sourcing delegated to Service Layer)
-func (r *GoldLedgerRepository) RecordTransactionWithTX(ctx context.Context, tx *sql.Tx, entry *models.GoldTransactionLedger) (*models.GoldTransactionLedger, error) {
+
+// RecordTransactionWithTX writes entry and moves the user's vault balance in tx. It returns
+// the user's cache identity (tenant, UUID, phone): the caller drops the user's cached row
+// after the commit (UserRepository.InvalidateUserCaches). Dropping it here, before the
+// commit, let a concurrent read cache the old balance again for userCacheTTL.
+func (r *GoldLedgerRepository) RecordTransactionWithTX(ctx context.Context, tx *sql.Tx, entry *models.GoldTransactionLedger) (*models.GoldTransactionLedger, *models.User, error) {
 	var userUUID, userPhone string
 	var tenantID int64
 	var currentBalance float64
@@ -96,23 +100,23 @@ func (r *GoldLedgerRepository) RecordTransactionWithTX(ctx context.Context, tx *
 	// 1. Lock User Row
 	err := tx.StmtContext(ctx, r.stmtLockUser).QueryRowContext(ctx, entry.UserID, entry.TenantID).Scan(&userUUID, &userPhone, &tenantID, &currentBalance)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, interfaces.ErrUserNotFound
+		return nil, nil, interfaces.ErrUserNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to lock user vault balance: %w", err)
+		return nil, nil, fmt.Errorf("failed to lock user vault balance: %w", err)
 	}
 
 	// 2. Math Calculation (checked under the row lock, so concurrent debits cannot overdraw)
 	newBalance := math.Round((currentBalance+entry.WeightGrams)*10000) / 10000
 	if newBalance < 0 {
-		return nil, interfaces.ErrInsufficientBalance
+		return nil, nil, interfaces.ErrInsufficientBalance
 	}
 	entry.RunningGoldBalanceGrams = newBalance
 
 	// 3. Update User Balance
 	_, err = tx.StmtContext(ctx, r.stmtUpdateUserBalance).ExecContext(ctx, newBalance, entry.UserID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update user vault balance: %w", err)
+		return nil, nil, fmt.Errorf("failed to update user vault balance: %w", err)
 	}
 
 	// 4. Generate UUID
@@ -135,18 +139,10 @@ func (r *GoldLedgerRepository) RecordTransactionWithTX(ctx context.Context, tx *
 	).Scan(&entry.ID, &entry.CreatedAt)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert gold transaction ledger: %w", err)
+		return nil, nil, fmt.Errorf("failed to insert gold transaction ledger: %w", err)
 	}
 
-	// 6. Asynchronous Redis Cache Invalidation
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		prefix := fmt.Sprintf("tenant/%d/user/full/", tenantID)
-		_ = r.Redis.RemoveKey(bgCtx, prefix+"uuid/"+userUUID, prefix+"phone/"+userPhone)
-	}()
-
-	return entry, nil
+	return entry, &models.User{TenantID: tenantID, UUID: userUUID, PhoneNumber: userPhone}, nil
 }
 
 func (r *GoldLedgerRepository) GetTransactionHistory(ctx context.Context, tenantID int64, userID int64, limit int, offset int) ([]*models.GoldTransactionLedger, error) {

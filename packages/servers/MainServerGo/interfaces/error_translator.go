@@ -3,6 +3,8 @@ package interfaces
 import (
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ParseDBError translates your clean domain errors into your strict JSON format
@@ -246,7 +248,31 @@ func ParseDBError(err error) *RequestError {
 		}
 	}
 
-	// 2. Fallback for actual database crashes (Connection dropped, syntax error, etc.)
+	// 2. PostgreSQL rejected the request's data. These are the client's mistakes (a value
+	// that already exists, a malformed UUID in the path, a value too long or not allowed), not
+	// server failures, so they must not answer 500 or alert. The details name tables and
+	// constraints, so they are not sent.
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505": // unique_violation
+			return &RequestError{
+				StatusCode: 409,
+				Code:       ERROR_DUPLICATE_USER,
+				Message:    "That record already exists.",
+				Name:       "ALREADY_EXISTS",
+			}
+		case "22P02", "22001", "23514": // invalid_text_representation, string_data_right_truncation, check_violation
+			return &RequestError{
+				StatusCode: 400,
+				Code:       ERROR_INVALID_INPUT,
+				Message:    "One of the values sent is not valid.",
+				Name:       "INVALID_INPUT",
+			}
+		}
+	}
+
+	// 3. Fallback for actual database crashes (Connection dropped, syntax error, etc.)
 	return &RequestError{
 		StatusCode:    500,
 		Code:          ERROR_INTERNAL_SERVER,

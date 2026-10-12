@@ -105,6 +105,32 @@ describe('apiClient interceptors', () => {
       },
     );
 
+    it.each(['/tenant/info', '/rates/last-rate'])(
+      'sends no customer token to the public read %s and never renews one for it',
+      async (url) => {
+        setTokens({
+          accessToken: makeJwt({ exp: PAST }),
+          refreshToken: 'refresh-1',
+        });
+        const urls: (string | undefined)[] = [];
+        respondWith(200);
+        const respond = apiClient.defaults.adapter as (
+          config: InternalAxiosRequestConfig,
+        ) => Promise<AxiosResponse>;
+        apiClient.defaults.adapter = (config) => {
+          urls.push(config.url);
+          return respond(config);
+        };
+
+        await apiClient.get(url);
+
+        expect(urls).toEqual([url]);
+        expect(sentHeader('X-Api-Token')).toBeUndefined();
+        expect(getRefreshToken()).toBe('refresh-1');
+        expect(expired).not.toHaveBeenCalled();
+      },
+    );
+
     it('sends no token when logged out', async () => {
       respondWith(200);
 
@@ -372,6 +398,64 @@ describe('apiClient interceptors', () => {
         '/user/portfolio',
       ]);
       expect(expired).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses a session started while an expired one was being renewed', async () => {
+      const newSession = fresh();
+      setTokens({
+        accessToken: makeJwt({ exp: PAST }),
+        refreshToken: 'refresh-1',
+      });
+      server(
+        {
+          status: 200,
+          data: { access_token: fresh(), refresh_token: 'refresh-2' },
+        },
+        new Set([newSession]),
+      );
+      const reply = apiClient.defaults.adapter as (
+        config: InternalAxiosRequestConfig,
+      ) => Promise<AxiosResponse>;
+      apiClient.defaults.adapter = async (config) => {
+        // Another customer signs in while the old session's refresh is in flight.
+        if (config.url === '/auth/refresh') {
+          setTokens({ accessToken: newSession, refreshToken: 'refresh-new' });
+        }
+        return reply(config);
+      };
+
+      const result = await apiClient.get('/user/portfolio');
+
+      // The new session is kept and the request goes out with it at once: no request
+      // without a token, and no 401 round trip.
+      expect(result.data).toEqual({ ok: true });
+      expect(calls.map((call) => [call.url, call.token])).toEqual([
+        ['/auth/refresh', undefined],
+        ['/user/portfolio', newSession],
+      ]);
+      expect(getAccessToken()).toBe(newSession);
+      expect(getRefreshToken()).toBe('refresh-new');
+      expect(expired).not.toHaveBeenCalled();
+    });
+
+    it('does not report an expired session after signing out during its refresh', async () => {
+      setTokens({
+        accessToken: makeJwt({ exp: PAST }),
+        refreshToken: 'refresh-1',
+      });
+      server({ status: 401, data: {} }, new Set());
+      const reply = apiClient.defaults.adapter as (
+        config: InternalAxiosRequestConfig,
+      ) => Promise<AxiosResponse>;
+      apiClient.defaults.adapter = async (config) => {
+        if (config.url === '/auth/refresh') window.localStorage.clear(); // signed out
+        return reply(config);
+      };
+
+      await apiClient.get('/user/portfolio').catch(() => undefined);
+
+      expect(getAccessToken()).toBeNull();
+      expect(expired).not.toHaveBeenCalledWith('expired');
     });
 
     it('keeps the session when the refresh fails for a transient reason', async () => {

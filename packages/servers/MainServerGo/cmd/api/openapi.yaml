@@ -264,8 +264,14 @@ components:
       type: object
       properties:
         uuid: { type: string }
-        commodity_type: { type: string, example: GOLD }
-        sell_margin_type: { type: string, enum: [PERCENTAGE, FIXED_INR, FLAT] }
+        commodity_type:
+          type: string
+          example: GOLD
+          description: Defaults to GOLD.
+        sell_margin_type:
+          type: string
+          enum: [PERCENTAGE, FIXED_INR]
+          description: '`FLAT` is accepted on update as another name for `FIXED_INR`.'
         sell_margin_value: { type: number }
         is_gst_enabled: { type: boolean }
         gst_percentage: { type: number }
@@ -587,6 +593,13 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: >-
+            `ALREADY_EXISTS`: this phone number already has an account in the store (e.g. the
+            form was submitted twice).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /auth/refresh:
     post:
@@ -1775,6 +1788,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Status' }
+        '400':
+          description: >-
+            `INVALID_INPUT`: an unknown `sell_margin_type`, a negative value, `gst_percentage`
+            outside 0-100, or a commodity the store has no margin for.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /admin/tenants/{uuid}/kyc:
     get:
@@ -1859,7 +1879,9 @@ paths:
       summary: 'Stage 7: suspend or reactivate a store'
       description: >-
         Changes only the store's active flag. A suspended store's customers and staff are
-        refused (`403 TENANT_INACTIVE`); payments already captured still settle.
+        refused (`403 TENANT_INACTIVE`); payments already captured still settle. The platform
+        tenant, and the tenant named in your own `X-Tenant-ID`, can't be suspended
+        (`400 CANNOT_SUSPEND_PLATFORM_TENANT`).
       security: [{ AdminToken: [] }]
       parameters:
         - $ref: '#/components/parameters/TenantId'

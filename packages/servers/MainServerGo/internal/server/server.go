@@ -67,10 +67,15 @@ func corsMiddleware() fiber.Handler {
 	})
 }
 
-// NewApp returns the Fiber app with all middleware and routes registered.
-// PostgreSQL, Redis and the env must already be initialised.
-func NewApp(rateHub *rates_api.RateHub) *fiber.App {
-	app := fiber.New(fiber.Config{
+// appConfig is the Fiber configuration of the API.
+func appConfig() fiber.Config {
+	return fiber.Config{
+		// Values read from a request (headers such as X-Tenant-ID, params, the client IP) are
+		// used after the handler returns: PublishAsync marshals events in a goroutine, spans
+		// are exported later, and repositories keep UUIDs in in-memory maps. By default Fiber
+		// returns strings backed by the request buffer, which the next request overwrites, so
+		// those values must be copies.
+		Immutable:   true,
 		ReadTimeout: 5 * time.Second,
 		// WriteTimeout: 10 * time.Second,
 		WriteTimeout: 0, // Set to 0 for persistent SSE streaming connections!
@@ -81,7 +86,13 @@ func NewApp(rateHub *rates_api.RateHub) *fiber.App {
 		TrustProxyConfig: fiber.TrustProxyConfig{
 			Loopback: true, // True if Nginx is on 127.0.0.1
 		},
-	})
+	}
+}
+
+// NewApp returns the Fiber app with all middleware and routes registered.
+// PostgreSQL, Redis and the env must already be initialised.
+func NewApp(rateHub *rates_api.RateHub) *fiber.App {
+	app := fiber.New(appConfig())
 
 	// Add OpenTelemetry Tracing Middleware
 	app.Use(recover.New(recover.Config{

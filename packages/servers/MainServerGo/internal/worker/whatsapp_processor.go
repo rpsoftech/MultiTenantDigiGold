@@ -12,6 +12,7 @@ import (
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/events"
 	"github.com/rpsoftech/DigiGold/MainServerGo/interfaces"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/database"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/monitoring"
 )
@@ -89,7 +90,7 @@ func (c *EventConsumer) processWhatsAppOTP(ctx context.Context, baseEvent events
 		}
 		apiErr = c.sendCustomUnofficialAPI(waConfig.UnofficialConfig, finalMessageBody, otpReq.Phone)
 	case models.DEFAULTWhatsappConfigProvider:
-		apiErr = c.sendDefaultAPI(finalMessageBody, otpReq.Phone)
+		apiErr = c.sendDefaultAPI(ctx, finalMessageBody, otpReq.Phone)
 	default:
 		c.handleCriticalError(otpReq.TenantId, baseEvent.EventName, fmt.Errorf("unknown provider type: %s", waConfig.ProviderType))
 		return nil
@@ -122,14 +123,39 @@ func (c *EventConsumer) sendCustomUnofficialAPI(creds *models.WhatsappUnofficial
 // tenant or its config may be missing (a fresh database, or a config of {}); the send is then
 // reported and dropped. It used to dereference the missing config, and the panic in the
 // consumer goroutine took the whole API process down.
-func (c *EventConsumer) sendDefaultAPI(compiledMessage string, phone string) error {
-	if c.DefaultTenantConfig == nil || c.DefaultTenantConfig.WhatsAppConfig == nil ||
-		c.DefaultTenantConfig.WhatsAppConfig.UnofficialConfig == nil ||
-		c.DefaultTenantConfig.WhatsAppConfig.UnofficialConfig.WhatsappProviderApiEndpoint == nil {
+func (c *EventConsumer) sendDefaultAPI(ctx context.Context, compiledMessage string, phone string) error {
+	config := c.platformConfig(ctx)
+	if config == nil || config.WhatsAppConfig == nil ||
+		config.WhatsAppConfig.UnofficialConfig == nil ||
+		config.WhatsAppConfig.UnofficialConfig.WhatsappProviderApiEndpoint == nil {
 		c.handleCriticalError("default", "OTPEvent", fmt.Errorf("platform WhatsApp credentials are not configured"))
 		return nil
 	}
-	return c.sendCustomUnofficialAPI(c.DefaultTenantConfig.WhatsAppConfig.UnofficialConfig, compiledMessage, phone)
+	return c.sendCustomUnofficialAPI(config.WhatsAppConfig.UnofficialConfig, compiledMessage, phone)
+}
+
+// platformConfig returns the platform tenant's current config. It is read on every send
+// (from the Redis cache, which a config PATCH drops), not only at startup: on a new database
+// the platform tenant is created by dbtool bootstrap with an empty config and configured
+// afterwards, which used to need a restart of every API and worker process. The config
+// loaded at startup (DefaultTenantConfig) is the fallback when the read fails.
+func (c *EventConsumer) platformConfig(ctx context.Context) *models.TenantInternalConfig {
+	if c.TenantRepo == nil || c.ConfigRepo == nil {
+		return c.DefaultTenantConfig
+	}
+	tenant := c.DefaultTenant
+	if tenant == nil { // the platform tenant didn't exist yet when this process started
+		t, err := c.TenantRepo.GetFullTenantByShortName(ctx, database.PlatformTenantShortName)
+		if err != nil {
+			return c.DefaultTenantConfig
+		}
+		tenant = t
+	}
+	config, err := c.ConfigRepo.GetConfigByTenantUUID(ctx, tenant.UUID)
+	if err != nil || config == nil {
+		return c.DefaultTenantConfig
+	}
+	return config
 }
 
 // templateParameters lists the values for a Meta template's positional parameters ({{1}},

@@ -13,6 +13,8 @@ const rate = (price: number): MarketRate => ({
   mcxBaseRateInr: price - 313,
   marginAppliedInr: 100,
   gstAppliedInr: 213,
+  bidPerGramInr: price - 363,
+  askPerGramInr: price - 313,
   purityLabel: '24K',
   updatedAt: '2026-10-01T10:00:00Z',
 });
