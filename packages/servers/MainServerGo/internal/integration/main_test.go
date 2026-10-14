@@ -90,7 +90,7 @@ func TestMain(m *testing.M) {
 	rdb = redis_client.InitRedisClient().Client
 	ctx := context.Background()
 
-	if err := resetDatabase(ctx); err != nil {
+	if err := database.ResetSchema(ctx, db, os.Getenv("PG_SCHEMA")); err != nil {
 		log.Fatalf("reset database: %v", err)
 	}
 	if err := database.MigrateUp(db); err != nil {
@@ -138,12 +138,5 @@ func createTestDatabase() error {
 		return nil
 	}
 	_, err = admin.Exec(fmt.Sprintf(`CREATE DATABASE %q`, name))
-	return err
-}
-
-// resetDatabase drops every object so each run starts from migration 1.
-func resetDatabase(ctx context.Context) error {
-	schema := os.Getenv("PG_SCHEMA")
-	_, err := db.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %q CASCADE; CREATE SCHEMA %q;`, schema, schema))
 	return err
 }

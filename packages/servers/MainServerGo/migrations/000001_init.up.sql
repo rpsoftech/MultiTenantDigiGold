@@ -1,5 +1,10 @@
--- 000001_init: baseline DigiGold schema (PostgreSQL 18+, needs uuidv7()).
--- Never edit a migration that has run anywhere. Add a new numbered file instead.
+-- 000001_init: the whole DigiGold schema (PostgreSQL 18+, needs uuidv7()).
+--
+-- There is no production data yet, so the schema is kept in this one file instead of a
+-- chain of migrations. To change it, edit this file and reset each database
+-- (`go run ./cmd/dbtool reset`, which drops everything and runs this file again). Once a
+-- database holds data that must be kept, change the schema with numbered migrations
+-- (000002_...) instead of editing this file.
 
 CREATE TABLE tenants (
     -- The internal ID for fast SQL JOINs
@@ -26,7 +31,10 @@ CREATE TABLE tenants (
     
     -- Timestamps
     tenant_created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    tenant_modified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    tenant_modified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    -- FALSE while the store is suspended: its customers and staff are refused.
+    tenant_is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE tenant_user_logins (
@@ -59,7 +67,9 @@ CREATE TABLE tenant_user_logins (
     tu_modified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
     -- Constraint: A phone number can only exist once PER retail shop owner (tenant)
-    CONSTRAINT unique_tenant_admin_phone UNIQUE (tu_tenant_id, tu_phone_number)
+    CONSTRAINT unique_tenant_admin_phone UNIQUE (tu_tenant_id, tu_phone_number),
+    -- Admin login looks staff up by username within a store, so it is unique there too.
+    CONSTRAINT uq_tu_tenant_username UNIQUE (tu_tenant_id, tu_username)
 );
 
 CREATE INDEX IF NOT EXISTS idx_tu_login_lookup ON tenant_user_logins(tu_tenant_id, tu_phone_number, tu_is_active);
@@ -80,7 +90,8 @@ CREATE TABLE users (
     
     -- KYC & Compliance 
     user_kyc_status VARCHAR(20) CHECK (user_kyc_status IN ('pending', 'verified', 'rejected')) DEFAULT 'pending',
-    user_status_approved_by BIGINT REFERENCES tenant_user_logins(tu_id) ON DELETE CASCADE,
+    -- The admin who approved or rejected the KYC. Deleting that admin keeps the customer.
+    user_status_approved_by BIGINT REFERENCES tenant_user_logins(tu_id) ON DELETE SET NULL,
     user_document_json JSONB DEFAULT '{}'::jsonb,
     
     -- Future-Proofing (E-Commerce/Offline Integration)
@@ -92,11 +103,23 @@ CREATE TABLE users (
     -- Timestamps
     user_created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     user_modified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    -- City entered at registration (/auth/register `location`).
+    user_city VARCHAR(100),
+
+    -- When the customer last submitted KYC details (the review queue is ordered by it;
+    -- user_modified_at moves with every trade), and when an admin decided on them.
+    user_kyc_submitted_at TIMESTAMP WITH TIME ZONE,
+    user_kyc_decided_at TIMESTAMP WITH TIME ZONE,
     
     -- Constraints to ensure data integrity per retail shop
     CONSTRAINT unique_tenant_user_phone UNIQUE (user_tenant_id, user_phone_number),
     CONSTRAINT unique_tenant_user_erp UNIQUE (user_tenant_id, user_erp_unique_id)
 );
+
+-- The KYC review queue: a tenant's pending submissions, oldest first.
+CREATE INDEX idx_users_kyc_review_queue ON users(user_tenant_id, user_kyc_submitted_at)
+    WHERE user_kyc_status = 'pending';
 
 -- Create the Master Table (Partitioned by Date)
 CREATE TABLE system_events (
@@ -184,7 +207,11 @@ CREATE TABLE tenant_kyc_documents (
     tkd_document_number VARCHAR(100),
     tkd_verified_by BIGINT,
     tkd_verified_at TIMESTAMPTZ,
-    tkd_created_at TIMESTAMPTZ DEFAULT NOW()
+    tkd_created_at TIMESTAMPTZ DEFAULT NOW(),
+    tkd_uuid UUID NOT NULL UNIQUE DEFAULT uuidv7(),
+    tkd_status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (tkd_status IN ('PENDING', 'VERIFIED', 'REJECTED')),
+    tkd_modified_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 3. Dynamic Margin & Tax Configurations
@@ -255,6 +282,14 @@ CREATE TABLE gold_transaction_ledger (
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_tenant_date ON gold_transaction_ledger(gl_tenant_id, gl_created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ledger_user_passbook ON gold_transaction_ledger(gl_user_id, gl_created_at DESC);
+-- Reversals point at the entry they reverse through gl_reference_id ('REVERSAL_<gl_uuid>');
+-- the store ledger and analytics look that reference up for every entry.
+CREATE INDEX IF NOT EXISTS idx_ledger_tenant_reference ON gold_transaction_ledger(gl_tenant_id, gl_reference_id);
+-- A payment, counter quote or reversal is recorded in the ledger only once, so a replayed
+-- Razorpay webhook can't credit (or refund) a payment twice. Physical redemptions carry an
+-- empty reference and are left out.
+CREATE UNIQUE INDEX uq_gl_tenant_reference ON gold_transaction_ledger (gl_tenant_id, gl_reference_id)
+    WHERE gl_reference_id IS NOT NULL AND gl_reference_id <> '';
 
 -- 1. Singleton State Table: Tracks the live accumulated unhedged exposure
 CREATE TABLE master_hedging_state (
@@ -314,8 +349,15 @@ CREATE TABLE redemption_requests (
     rr_cancelled_at TIMESTAMPTZ,
 
     rr_created_at TIMESTAMPTZ DEFAULT NOW(),
-    rr_modified_at TIMESTAMPTZ DEFAULT NOW()
+    rr_modified_at TIMESTAMPTZ DEFAULT NOW(),
+
+    -- Wrong pickup codes entered at the counter. After 5 the request is locked and can only
+    -- be cancelled, so a 6-digit code can't be found by trying them all.
+    rr_failed_code_attempts INT NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_rr_tenant_status ON redemption_requests(rr_tenant_id, rr_status, rr_created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_rr_user ON redemption_requests(rr_user_id, rr_created_at DESC);
+-- The counter's "collected today" list.
+CREATE INDEX idx_rr_tenant_collected ON redemption_requests(rr_tenant_id, rr_collected_at DESC)
+    WHERE rr_status = 'COLLECTED';

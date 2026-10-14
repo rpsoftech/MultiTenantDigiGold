@@ -52,8 +52,10 @@ type SeedOptions struct {
 	RazorpayWebhookSecret string
 }
 
-// Seed inserts local development and test data. It is idempotent: rows that
-// already exist (matched by their fixed UUIDs) are left unchanged.
+// Seed inserts the minimal data the integration tests run against (secrets from opts). It
+// is idempotent: rows that already exist (matched by their fixed UUIDs) are left unchanged.
+// Local development and staging load the fuller mock_data.sql instead (LoadMockData), which
+// uses the same IDs for these rows.
 func Seed(ctx context.Context, db *sql.DB, rdb *redis.Client, opts SeedOptions) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(opts.AdminPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -155,19 +157,27 @@ func Seed(ctx context.Context, db *sql.DB, rdb *redis.Client, opts SeedOptions) 
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-
-	// A starting rate, so buys work before the live feed runs. Never overwrites a live rate.
-	if rdb != nil {
-		rate, _ := json.Marshal(map[string]float64{
-			"ask": SeedGoldAsk, "bid": SeedGoldBid, "last-high": SeedGoldAsk, "last-low": SeedGoldBid,
-		})
-		if err := rdb.HSetNX(ctx, constants.RedisKeyLatestRawRate, "GOLD", string(rate)).Err(); err != nil {
-			return fmt.Errorf("failed to seed live rate: %w", err)
-		}
+	if err := SeedLiveRate(ctx, rdb); err != nil {
+		return err
 	}
 
 	log.Printf("✅ Seeded tenants (platform=%s, demo=%s, other=%s), 3 admins and 2 customers",
 		SeedPlatformTenantUUID, SeedDemoTenantUUID, SeedOtherTenantUUID)
+	return nil
+}
+
+// SeedLiveRate writes a starting GOLD rate to Redis, so buys work before the live feed runs.
+// It never overwrites a rate the feed has written. A nil client does nothing.
+func SeedLiveRate(ctx context.Context, rdb *redis.Client) error {
+	if rdb == nil {
+		return nil
+	}
+	rate, _ := json.Marshal(map[string]float64{
+		"ask": SeedGoldAsk, "bid": SeedGoldBid, "last-high": SeedGoldAsk, "last-low": SeedGoldBid,
+	})
+	if err := rdb.HSetNX(ctx, constants.RedisKeyLatestRawRate, "GOLD", string(rate)).Err(); err != nil {
+		return fmt.Errorf("failed to seed live rate: %w", err)
+	}
 	return nil
 }
 

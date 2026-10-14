@@ -73,7 +73,7 @@ go test -tags=integration -count=1 ./internal/integration/...   # needs: docker 
 ```
 
 Integration tests wipe `digigold_test` / Redis DB 15 and run in CI (`backend-tests.yml`).
-Recent integration tests and migrations 000004/000005 have **only run in CI**, not locally.
+Integration tests have also been run locally against Postgres 18 + Redis 7 containers.
 
 Good practice used here: after adding a test, temporarily break the code it protects and
 confirm the test fails (a "mutation check"), then restore.
@@ -121,10 +121,12 @@ errors in `interfaces/sentinel_errors.go` mapped in `interfaces/error_translator
 (typed errors such as `PickupCodeMismatchError` are handled with `errors.As`); controllers
 return errors to `GlobalErrorHandler` and never send `err.Error()` to clients.
 
-- Migrations: `migrations/NNNNNN_name.{up,down}.sql`, embedded; never edit one that has run.
-  Current: 000001 init, 000002 user city, 000003 ledger reference index, 000004 KYC review,
-  000005 pickup code attempts, 000006 release hardening (unique ledger reference, tenant
-  active flag, tenant KYC columns, unique admin username per store).
+- Schema: one file, `migrations/000001_init.up.sql` (no production data yet). Change it by
+  editing that file and running `dbtool reset` then `dbtool seed` on each database; once real
+  data exists, add numbered migrations (`000002_...`) instead.
+- Mock data: `internal/database/mock_data.sql`, loaded by `dbtool seed` (admins: password
+  `DigiGold@123`, TOTP secret `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`). Integration tests seed from
+  `database.Seed` instead; `TestMockDataIsConsistent` checks the file's balances.
 - Caches are invalidated after the transaction commits (`InvalidateTenantCaches`,
   `InvalidateConfigCache`, `InvalidateMarginCache`), never inside it.
 - Payments: a captured-payment webhook first checks the ledger for the payment ID (settled ⇒
@@ -184,7 +186,8 @@ gated by `StoreAccessGate` / `AuditAccessGate`; MainServer enforces roles on eve
 
 ## Open items before release to main
 
-- Run the integration tests and migrations 000004–000006 locally or confirm CI is green.
+- Reset the staging database (`dbtool reset`, then `dbtool seed`): it is recorded at migration
+  version 6, which no longer exists, so the servers won't start on it until it is reset.
 - `OTPReqEvent` rows written before the release-hardening change still hold OTP codes (masked
   when read); new events and `TenantConfigUpdated` payloads no longer store secrets.
 - GitHub Production environment and secrets; set `CORS_ALLOW_ORIGINS`; run `dbtool

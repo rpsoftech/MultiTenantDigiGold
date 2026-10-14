@@ -87,7 +87,7 @@ interfaces/       Request DTOs, RequestError, error codes, sentinel errors, erro
 internal/
   api/            Fiber controllers, one package per area (auth, trade, rates, admin, tenant)
   constants/      Redis keys and channels for the rate feed
-  database/       Migration runner (golang-migrate), event partition upkeep, seed data
+  database/       Migration runner, schema reset, event partitions, mock data (mock_data.sql), test seed
   integration/    Integration tests (build tag `integration`)
   middleware/     Tenant resolution, customer/admin JWT, roles, rate limit, error handler, tracing
   monitoring/     Critical-error and refund reporting to OpenTelemetry
@@ -100,8 +100,8 @@ internal/
 pkg/              Payment and WhatsApp provider clients
 utility/          Postgres/Redis clients, OTA updater, OpenTelemetry, helpers
 scripts/deploy.go Build and publish binaries for the OTA updater
-migrations/       Versioned SQL migrations (source of truth for the schema), embedded in the binaries
-cmd/dbtool/       CLI: migrate up/down/version/force, seed, bootstrap
+migrations/       The SQL schema (one file while there is no production data), embedded in the binaries
+cmd/dbtool/       CLI: migrate up/down/version/force, reset, seed, bootstrap
 ```
 
 ---
@@ -120,7 +120,7 @@ cd packages/servers/MainServerGo
 docker compose up -d db redis
 ```
 
-The API creates the schema itself: it runs all pending migrations on startup. If you have an old
+The API creates the schema itself: it runs the migrations on startup. If you have an old
 `pgdata` volume from PostgreSQL 15, remove it first (`docker compose down -v`); the
 data format is not compatible.
 
@@ -152,27 +152,37 @@ cd cmd/worker && go run .     # optional; the API already runs the consumer
 With `APP_ENV=LOCAL` or `DEVELOP` the API prints all routes on boot.
 With `LOCAL`, `DEVELOP` or `STAGING` it serves Swagger UI at `/docs`.
 
-### 4. Seed data
+### 4. Mock data
 
 ```sh
 cd cmd/api && go run ../dbtool seed
 ```
 
-The seed is idempotent and refuses to run when `APP_ENV=PRODUCTION`. It creates:
+`seed` loads [`internal/database/mock_data.sql`](internal/database/mock_data.sql) and a
+starting gold rate. Loading it twice changes nothing, and it refuses to run when
+`APP_ENV=PRODUCTION`. Dates are relative to now, so "today" lists always have rows.
 
-| What                    | Value                                                                         |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| Platform tenant         | `01900000-0000-7000-8000-000000000001` (`default`, fallback WhatsApp config)  |
-| Demo store              | `01900000-0000-7000-8000-000000000002` (₹100/g margin, 3% GST, 1000 g credit) |
-| Second store            | `01900000-0000-7000-8000-000000000003` (for tenant-isolation checks)          |
-| Admins                  | `platform-admin` (super_admin), `demo-manager`, `other-manager` (manager)     |
-| Customers of demo store | `9999900001` (KYC verified), `9999900002` (KYC pending)                       |
-| Live rate (Redis)       | ask 7000 / bid 6950, only if no rate exists yet                               |
+| What                    | Value                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------- |
+| Platform tenant         | `01900000-0000-7000-8000-000000000001` (`default`, fallback WhatsApp config)                    |
+| Demo store              | `01900000-0000-7000-8000-000000000002` (₹100/g margin, 3% GST, 1000 g credit)                   |
+| Second store            | `01900000-0000-7000-8000-000000000003` (for tenant-isolation checks)                            |
+| Suspended store         | `01900000-0000-7000-8000-000000000004` (`closed`: its customers and staff get `403`)            |
+| Admins                  | `platform-admin` (super_admin), `demo-manager`, `other-manager`, `closed-manager` (manager)     |
+| More demo store staff   | `demo-new-staff` (no TOTP yet: first sign-in enrols it), `demo-former-staff` (deactivated)      |
+| Customers of demo store | `9999900001` KYC verified, `9999900002` KYC in review, `9999900003` none, `9999900004` rejected |
+| Trades                  | Online and counter buys, a reversed buy, collected pickups (one today), a cancelled pickup      |
+| Pickups at the counter  | Code `482913` (customer `9999900002`); one more locked after 5 wrong codes                      |
+| Live rate (Redis)       | ask 7000 / bid 6950, only if no rate exists yet                                                 |
 
-Admin password and TOTP secret come from `SEED_ADMIN_PASSWORD` (default `DigiGold@123`) and
-`SEED_ADMIN_TOTP_SECRET` (default `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`; add it to any
-authenticator app). Store Razorpay keys come from `SEED_RAZORPAY_KEY_ID`,
-`SEED_RAZORPAY_KEY_SECRET` and `SEED_RAZORPAY_WEBHOOK_SECRET`.
+Every admin signs in with password `DigiGold@123` and TOTP secret
+`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` (add it to any authenticator app). The stores' Razorpay keys
+are placeholders; for checkout, set real test keys with `SEED_RAZORPAY_KEY_ID`,
+`SEED_RAZORPAY_KEY_SECRET` and `SEED_RAZORPAY_WEBHOOK_SECRET` when running `seed`.
+
+The integration tests don't use this file: they seed a smaller set of the same IDs from
+`database.Seed`, with test-only secrets. `TestMockDataIsConsistent` loads the file into a
+schema of its own and checks that its balances add up.
 
 ### Production bootstrap
 
@@ -194,15 +204,29 @@ sets up TOTP. Stores are then created with `POST /admin/tenants/stub`, which als
 the store's root admin (a `manager`) with the password given. Unset
 `BOOTSTRAP_ADMIN_PASSWORD` afterwards; it is stored only as a bcrypt hash.
 
-### Schema migrations
+### Schema
 
-Files live in `migrations/` as `NNNNNN_name.up.sql` / `.down.sql`. The API and the worker
-apply pending migrations on startup (golang-migrate holds a PostgreSQL advisory lock, so
-both can start together). To change the schema, add the next numbered pair; never edit a
-migration that has already run anywhere.
+No database holds data that must be kept yet, so the whole schema is one file:
+[`migrations/000001_init.up.sql`](migrations/000001_init.up.sql). The API and the worker apply
+it on startup (golang-migrate holds a PostgreSQL advisory lock, so both can start together).
+
+To change the schema, edit that file and reset each database:
 
 ```sh
 cd cmd/api
+go run ../dbtool reset    # drop everything, create the schema, clear the app's Redis keys
+go run ../dbtool seed     # load the mock data again
+```
+
+Restart the API and worker after a reset: they keep tenant IDs in memory. `reset` refuses
+`PRODUCTION`. A database created before the schema became one file is recorded at version 6,
+which no longer exists, so the servers stop with `no migration found for version 6` until it is
+reset.
+
+Once a database holds data that must be kept, stop editing `000001_init` and add numbered
+migrations (`000002_name.up.sql` / `.down.sql`) instead:
+
+```sh
 go run ../dbtool migrate up          # apply pending
 go run ../dbtool migrate version     # show version
 go run ../dbtool migrate down 1      # revert the last one
