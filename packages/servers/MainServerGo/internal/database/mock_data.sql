@@ -10,6 +10,10 @@
 -- JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP (add it to any authenticator app). The stores' Razorpay
 -- keys are placeholders: set real test keys with the SEED_RAZORPAY_* variables (see dbtool).
 --
+-- Every store has the DigiGold default UI config and its outbound webhook off. OTPs go
+-- through the platform's WhatsApp config, whose endpoint is a placeholder, so no message is
+-- sent: read the code from Redis (<REDIS_DEFAULT_KEY>tenant:<tenant uuid>:otp_session:<phone>).
+--
 -- Balances follow the ledger: each customer's vault balance is the sum of their ledger
 -- entries, and each store's unlifted grams the sum of its customers' entries. Keep it so
 -- when you edit this file (the integration test TestMockDataIsConsistent checks it).
@@ -19,18 +23,39 @@
 
 -- Stores. "default" is the platform tenant: platform admins sign in through it, and its
 -- config is the fallback (e.g. WhatsApp) for every store. "closed" is suspended.
-INSERT INTO tenants (tenant_uuid, tenant_full_name, tenant_short_name, tenant_subdomain, tenant_is_active) VALUES
-    ('01900000-0000-7000-8000-000000000001', 'DigiGold Platform', 'default', 'platform', TRUE),
-    ('01900000-0000-7000-8000-000000000002', 'Demo Jewellers', 'demo', 'demo', TRUE),
-    ('01900000-0000-7000-8000-000000000003', 'Other Jewellers', 'other', 'other', TRUE),
-    ('01900000-0000-7000-8000-000000000004', 'Closed Jewellers', 'closed', 'closed', FALSE)
+-- ui_json_config is what the frontend themes the store with (brand logo, colors, fonts,
+-- modules shown); every store has the DigiGold defaults.
+INSERT INTO tenants (tenant_uuid, tenant_full_name, tenant_short_name, tenant_subdomain, tenant_is_active, tenant_ui_json_config) VALUES
+    ('01900000-0000-7000-8000-000000000001', 'DigiGold Platform', 'default', 'platform', TRUE,
+     '{"brandLogo": {"url": "/brand/logo.svg", "alt": "DigiGold"}, "theme": {"colors": {"primary": "#D4AF37", "secondary": "#1A1A1A", "tertiary": "#C5A028", "neutral": "#F8F9FA"}, "fontFamily": {"headline": "Hanken Grotesk", "body": "Hanken Grotesk", "label": "Hanken Grotesk"}}, "activeModules": {"home": true, "trading": true, "vault": true, "ecommerce": true}}'),
+    ('01900000-0000-7000-8000-000000000002', 'Demo Jewellers', 'demo', 'demo', TRUE,
+     '{"brandLogo": {"url": "/brand/logo.svg", "alt": "DigiGold"}, "theme": {"colors": {"primary": "#D4AF37", "secondary": "#1A1A1A", "tertiary": "#C5A028", "neutral": "#F8F9FA"}, "fontFamily": {"headline": "Hanken Grotesk", "body": "Hanken Grotesk", "label": "Hanken Grotesk"}}, "activeModules": {"home": true, "trading": true, "vault": true, "ecommerce": true}}'),
+    ('01900000-0000-7000-8000-000000000003', 'Other Jewellers', 'other', 'other', TRUE,
+     '{"brandLogo": {"url": "/brand/logo.svg", "alt": "DigiGold"}, "theme": {"colors": {"primary": "#D4AF37", "secondary": "#1A1A1A", "tertiary": "#C5A028", "neutral": "#F8F9FA"}, "fontFamily": {"headline": "Hanken Grotesk", "body": "Hanken Grotesk", "label": "Hanken Grotesk"}}, "activeModules": {"home": true, "trading": true, "vault": true, "ecommerce": true}}'),
+    ('01900000-0000-7000-8000-000000000004', 'Closed Jewellers', 'closed', 'closed', FALSE,
+     '{"brandLogo": {"url": "/brand/logo.svg", "alt": "DigiGold"}, "theme": {"colors": {"primary": "#D4AF37", "secondary": "#1A1A1A", "tertiary": "#C5A028", "neutral": "#F8F9FA"}, "fontFamily": {"headline": "Hanken Grotesk", "body": "Hanken Grotesk", "label": "Hanken Grotesk"}}, "activeModules": {"home": true, "trading": true, "vault": true, "ecommerce": true}}')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO tenant_internal_configs (tic_uuid, tic_tenant_id, tic_payment_gateway_json) VALUES
-    ('01900000-0000-7000-8000-000000000301', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000001'), '{}'),
-    ('01900000-0000-7000-8000-000000000302', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000002'), '{"provider_type": "CUSTOM", "key_id": "rzp_test_placeholder", "key_secret": "placeholder_key_secret", "webhook_secret": "placeholder_webhook_secret"}'),
-    ('01900000-0000-7000-8000-000000000303', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000003'), '{"provider_type": "CUSTOM", "key_id": "rzp_test_placeholder", "key_secret": "placeholder_key_secret", "webhook_secret": "placeholder_webhook_secret"}'),
-    ('01900000-0000-7000-8000-000000000304', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000004'), '{"provider_type": "CUSTOM", "key_id": "rzp_test_placeholder", "key_secret": "placeholder_key_secret", "webhook_secret": "placeholder_webhook_secret"}')
+-- Internal configs. WhatsApp: the stores send OTPs through the platform (DEFAULT), whose
+-- endpoint is a placeholder that never resolves, so in development the OTP is read from
+-- Redis. Payment: placeholder Razorpay keys (SEED_RAZORPAY_* sets real test keys).
+-- Other: the outbound webhook is off.
+INSERT INTO tenant_internal_configs (tic_uuid, tic_tenant_id, tic_whatsapp_json, tic_payment_gateway_json, tic_other_json) VALUES
+    ('01900000-0000-7000-8000-000000000301', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000001'),
+     '{"provider_type": "UNOFFICIAL", "unofficial_config": {"api_endpoint": "https://whatsapp.invalid/send", "auth_token": "placeholder_whatsapp_token"}, "template_mappings": {"OTP_REQUEST": {"name": "otp_request", "body": "Hello {{name}}, your {{tenant_name}} code is {{otp_code}}. It expires in 10 minutes.", "language": "en"}}}',
+     '{}', '{"webhooks": {"is_enabled": false}}'),
+    ('01900000-0000-7000-8000-000000000302', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000002'),
+     '{"provider_type": "DEFAULT", "template_mappings": {"OTP_REQUEST": {"name": "otp_request", "body": "Hello {{name}}, your {{tenant_name}} code is {{otp_code}}. It expires in 10 minutes.", "language": "en"}}}',
+     '{"provider_type": "CUSTOM", "key_id": "rzp_test_placeholder", "key_secret": "placeholder_key_secret", "webhook_secret": "placeholder_webhook_secret"}',
+     '{"webhooks": {"is_enabled": false}}'),
+    ('01900000-0000-7000-8000-000000000303', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000003'),
+     '{"provider_type": "DEFAULT", "template_mappings": {"OTP_REQUEST": {"name": "otp_request", "body": "Hello {{name}}, your {{tenant_name}} code is {{otp_code}}. It expires in 10 minutes.", "language": "en"}}}',
+     '{"provider_type": "CUSTOM", "key_id": "rzp_test_placeholder", "key_secret": "placeholder_key_secret", "webhook_secret": "placeholder_webhook_secret"}',
+     '{"webhooks": {"is_enabled": false}}'),
+    ('01900000-0000-7000-8000-000000000304', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000004'),
+     '{"provider_type": "DEFAULT", "template_mappings": {"OTP_REQUEST": {"name": "otp_request", "body": "Hello {{name}}, your {{tenant_name}} code is {{otp_code}}. It expires in 10 minutes.", "language": "en"}}}',
+     '{"provider_type": "CUSTOM", "key_id": "rzp_test_placeholder", "key_secret": "placeholder_key_secret", "webhook_secret": "placeholder_webhook_secret"}',
+     '{"webhooks": {"is_enabled": false}}')
 ON CONFLICT DO NOTHING;
 
 -- Selling price = (MCX ask + ₹100/g margin) + 3% GST; 1000 g store credit limit.
@@ -66,6 +91,21 @@ INSERT INTO tenant_user_logins (
     -- manager of the suspended store
     ('01900000-0000-7000-8000-000000000106', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000004'), 'closed-manager', '9000000006', '$2a$10$HOV6jyksmip4c4K7yrhAYe2Alqtl6yd7uPdu1emp2A5Iaig1NGRpC',
      'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', TRUE, 'manager', TRUE)
+ON CONFLICT DO NOTHING;
+
+-- Store KYC documents, decided by the platform admin: verified, waiting for review, rejected.
+INSERT INTO tenant_kyc_documents (
+    tkd_uuid, tkd_tenant_id, tkd_document_type, tkd_document_url, tkd_document_number,
+    tkd_status, tkd_verified_by, tkd_verified_at, tkd_created_at, tkd_modified_at
+) VALUES
+    ('01900000-0000-7000-8000-000000000801', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000002'), 'PAN', 'https://files.example.com/kyc/demo/pan.pdf', 'AAACD1234E',
+     'VERIFIED', (SELECT tu_id FROM tenant_user_logins WHERE tu_uuid = '01900000-0000-7000-8000-000000000101'), NOW() - INTERVAL '39 days', NOW() - INTERVAL '40 days', NOW() - INTERVAL '39 days'),
+    ('01900000-0000-7000-8000-000000000802', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000002'), 'GST_CERTIFICATE', 'https://files.example.com/kyc/demo/gst.pdf', '24AAACD1234E1Z5',
+     'VERIFIED', (SELECT tu_id FROM tenant_user_logins WHERE tu_uuid = '01900000-0000-7000-8000-000000000101'), NOW() - INTERVAL '38 days', NOW() - INTERVAL '40 days', NOW() - INTERVAL '38 days'),
+    ('01900000-0000-7000-8000-000000000803', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000003'), 'BUSINESS_REGISTRATION', 'https://files.example.com/kyc/other/registration.pdf', 'U36911GJ2020PTC000001',
+     'PENDING', NULL, NULL, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'),
+    ('01900000-0000-7000-8000-000000000804', (SELECT tenant_id FROM tenants WHERE tenant_uuid = '01900000-0000-7000-8000-000000000004'), 'DIRECTOR_ID', 'https://files.example.com/kyc/closed/director-id.pdf', '01234567',
+     'REJECTED', (SELECT tu_id FROM tenant_user_logins WHERE tu_uuid = '01900000-0000-7000-8000-000000000101'), NOW() - INTERVAL '10 days', NOW() - INTERVAL '12 days', NOW() - INTERVAL '10 days')
 ON CONFLICT DO NOTHING;
 
 -- Customers. KYC: verified, pending review (in the queue), not started, rejected.

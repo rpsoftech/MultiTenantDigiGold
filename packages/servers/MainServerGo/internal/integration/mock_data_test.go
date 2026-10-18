@@ -5,14 +5,17 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/rpsoftech/DigiGold/MainServerGo/internal/database"
+	"github.com/rpsoftech/DigiGold/MainServerGo/internal/models"
 )
 
 // The mock data (internal/database/mock_data.sql) must load on the current schema, twice
@@ -47,6 +50,7 @@ func TestMockDataIsConsistent(t *testing.T) {
 	counts := map[string]int{
 		"tenants": 4, "tenant_internal_configs": 4, "margin_configurations": 3,
 		"tenant_user_logins": 6, "users": 5, "gold_transaction_ledger": 13, "redemption_requests": 5,
+		"tenant_kyc_documents": 4,
 	}
 	for table, want := range counts {
 		var got int
@@ -93,6 +97,9 @@ func TestMockDataIsConsistent(t *testing.T) {
 		"platform exposure is the net of every trade": `
 			SELECT COUNT(*) FROM master_hedging_state WHERE mhs_unhedged_grams <>
 				(SELECT COALESCE(SUM(gl_weight_grams), 0) FROM gold_transaction_ledger)`,
+		"a decided store KYC document has a reviewer and date; a pending one has neither": `
+			SELECT COUNT(*) FROM tenant_kyc_documents WHERE
+				(tkd_status = 'PENDING') <> (tkd_verified_by IS NULL AND tkd_verified_at IS NULL)`,
 		"decided KYC has a reviewer and date; submitted KYC has a date": `
 			SELECT COUNT(*) FROM users WHERE
 				(user_kyc_status IN ('verified', 'rejected') AND (user_kyc_decided_at IS NULL OR user_status_approved_by IS NULL))
@@ -107,6 +114,8 @@ func TestMockDataIsConsistent(t *testing.T) {
 			t.Errorf("%s: %d rows break it", rule, broken)
 		}
 	}
+
+	checkMockConfigs(t, mock)
 
 	// The documented sign-in works for every admin.
 	rows, err := mock.Query(`SELECT tu_username, tu_password_hash, COALESCE(tu_totp_secret, ''), tu_is_totp_enabled FROM tenant_user_logins`)
@@ -129,6 +138,98 @@ func TestMockDataIsConsistent(t *testing.T) {
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// checkMockConfigs reads every store's configs the way the app does (into its models) and
+// checks what the frontend and the OTP sender need from them.
+func checkMockConfigs(t *testing.T, mock *sql.DB) {
+	t.Helper()
+	hex := regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	rows, err := mock.Query(`
+		SELECT t.tenant_short_name, t.tenant_ui_json_config, c.tic_whatsapp_json, c.tic_payment_gateway_json, c.tic_other_json
+		FROM tenants t JOIN tenant_internal_configs c ON c.tic_tenant_id = t.tenant_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	seen := 0
+	for rows.Next() {
+		var short string
+		var uiJSON, whatsappJSON, paymentJSON, otherJSON []byte
+		if err := rows.Scan(&short, &uiJSON, &whatsappJSON, &paymentJSON, &otherJSON); err != nil {
+			t.Fatal(err)
+		}
+		seen++
+
+		// The frontend themes the store from ui_json_config (tenant.mapper.ts).
+		var ui struct {
+			BrandLogo struct{ URL, Alt string } `json:"brandLogo"`
+			Theme     struct {
+				Colors     map[string]string `json:"colors"`
+				FontFamily map[string]string `json:"fontFamily"`
+			} `json:"theme"`
+			ActiveModules map[string]bool `json:"activeModules"`
+		}
+		if err := json.Unmarshal(uiJSON, &ui); err != nil {
+			t.Errorf("%s: ui config: %v", short, err)
+		}
+		for _, role := range []string{"primary", "secondary", "tertiary", "neutral"} {
+			if !hex.MatchString(ui.Theme.Colors[role]) {
+				t.Errorf("%s: theme color %s = %q, want a #rrggbb color", short, role, ui.Theme.Colors[role])
+			}
+		}
+		for _, key := range []string{"headline", "body", "label"} {
+			if ui.Theme.FontFamily[key] == "" {
+				t.Errorf("%s: no %s font", short, key)
+			}
+		}
+		for _, module := range []string{"home", "trading", "vault", "ecommerce"} {
+			if _, ok := ui.ActiveModules[module]; !ok {
+				t.Errorf("%s: module %s missing from activeModules", short, module)
+			}
+		}
+		if ui.BrandLogo.URL == "" {
+			t.Errorf("%s: no brand logo", short)
+		}
+
+		var whatsapp models.WhatsAppConfigJSON
+		var payment models.PaymentConfigJSON
+		var other models.OthersConfigJSON
+		for name, target := range map[string]struct {
+			raw []byte
+			v   any
+		}{"whatsapp": {whatsappJSON, &whatsapp}, "payment": {paymentJSON, &payment}, "other": {otherJSON, &other}} {
+			if err := json.Unmarshal(target.raw, target.v); err != nil {
+				t.Errorf("%s: %s config: %v", short, name, err)
+			}
+		}
+		if other.Webhooks.IsEnabled {
+			t.Errorf("%s: outbound webhook is on", short)
+		}
+		if _, ok := whatsapp.TemplateMappings[models.OTPRequest]; !ok {
+			t.Errorf("%s: no OTP_REQUEST WhatsApp template", short)
+		}
+		if short == database.PlatformTenantShortName {
+			// DEFAULT stores send through the platform's unofficial endpoint (sendDefaultAPI).
+			if whatsapp.ProviderType != models.UNOFFICIAL || whatsapp.UnofficialConfig == nil ||
+				whatsapp.UnofficialConfig.WhatsappProviderApiEndpoint == nil {
+				t.Errorf("platform WhatsApp config = %+v, want UNOFFICIAL with an endpoint", whatsapp)
+			}
+		} else {
+			if whatsapp.ProviderType != models.DEFAULTWhatsappConfigProvider {
+				t.Errorf("%s: WhatsApp provider = %s, want DEFAULT", short, whatsapp.ProviderType)
+			}
+			if payment.KeyID == "" || payment.WebhookSecret == "" {
+				t.Errorf("%s: payment config %+v has no key or webhook secret", short, payment)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if seen != 4 {
+		t.Errorf("configs joined to %d stores, want 4", seen)
 	}
 }
 

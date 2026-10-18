@@ -162,18 +162,20 @@ cd cmd/api && go run ../dbtool seed
 starting gold rate. Loading it twice changes nothing, and it refuses to run when
 `APP_ENV=PRODUCTION`. Dates are relative to now, so "today" lists always have rows.
 
-| What                    | Value                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------- |
-| Platform tenant         | `01900000-0000-7000-8000-000000000001` (`default`, fallback WhatsApp config)                    |
-| Demo store              | `01900000-0000-7000-8000-000000000002` (₹100/g margin, 3% GST, 1000 g credit)                   |
-| Second store            | `01900000-0000-7000-8000-000000000003` (for tenant-isolation checks)                            |
-| Suspended store         | `01900000-0000-7000-8000-000000000004` (`closed`: its customers and staff get `403`)            |
-| Admins                  | `platform-admin` (super_admin), `demo-manager`, `other-manager`, `closed-manager` (manager)     |
-| More demo store staff   | `demo-new-staff` (no TOTP yet: first sign-in enrols it), `demo-former-staff` (deactivated)      |
-| Customers of demo store | `9999900001` KYC verified, `9999900002` KYC in review, `9999900003` none, `9999900004` rejected |
-| Trades                  | Online and counter buys, a reversed buy, collected pickups (one today), a cancelled pickup      |
-| Pickups at the counter  | Code `482913` (customer `9999900002`); one more locked after 5 wrong codes                      |
-| Live rate (Redis)       | ask 7000 / bid 6950, only if no rate exists yet                                                 |
+| What                    | Value                                                                                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform tenant         | `01900000-0000-7000-8000-000000000001` (`default`, fallback WhatsApp config)                                                                         |
+| Demo store              | `01900000-0000-7000-8000-000000000002` (₹100/g margin, 3% GST, 1000 g credit)                                                                        |
+| Second store            | `01900000-0000-7000-8000-000000000003` (for tenant-isolation checks)                                                                                 |
+| Suspended store         | `01900000-0000-7000-8000-000000000004` (`closed`: its customers and staff get `403`)                                                                 |
+| Admins                  | `platform-admin` (super_admin), `demo-manager`, `other-manager`, `closed-manager` (manager)                                                          |
+| More demo store staff   | `demo-new-staff` (no TOTP yet: first sign-in enrols it), `demo-former-staff` (deactivated)                                                           |
+| Customers of demo store | `9999900001` KYC verified, `9999900002` KYC in review, `9999900003` none, `9999900004` rejected                                                      |
+| Trades                  | Online and counter buys, a reversed buy, collected pickups (one today), a cancelled pickup                                                           |
+| Pickups at the counter  | Code `482913` (customer `9999900002`); one more locked after 5 wrong codes                                                                           |
+| Store configs           | DigiGold default UI config (logo, theme, all modules); WhatsApp OTPs via the platform's placeholder endpoint (read the OTP from Redis); webhooks off |
+| Store KYC documents     | Demo: PAN and GST verified; other store: business registration pending; closed store: director ID rejected                                           |
+| Live rate (Redis)       | ask 7000 / bid 6950, only if no rate exists yet                                                                                                      |
 
 Every admin signs in with password `DigiGold@123` and TOTP secret
 `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` (add it to any authenticator app). The stores' Razorpay keys
