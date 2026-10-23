@@ -62,8 +62,9 @@ function TenantConfigSync({ store }: { store: AppStore }) {
     queryFn: resolveTenantConfig,
     refetchInterval: TENANT_CONFIG_REFETCH_MS,
     refetchOnWindowFocus: true,
-    retry: 1,
-    retryDelay: 2_000,
+    // The tenant call already has its own short timeout; retrying on top would hold the home
+    // page on its loading state well past it. The next poll or tab focus tries again.
+    retry: false,
   });
 
   useEffect(() => {

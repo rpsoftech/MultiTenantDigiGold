@@ -109,10 +109,11 @@ describe('Providers', () => {
     mockedResolve.mockRejectedValue(new Error('offline'));
     renderProviders();
 
-    await waitFor(
-      () => expect(screen.getByTestId('layout-status').textContent).toBe('unavailable'),
-      { timeout: 6000 },
+    await waitFor(() =>
+      expect(screen.getByTestId('layout-status').textContent).toBe('unavailable'),
     );
+    // One attempt: no retry holds the home page on its loading state.
+    expect(mockedResolve).toHaveBeenCalledTimes(1);
   });
 
   it('picks up a republished layout when the tab regains focus', async () => {

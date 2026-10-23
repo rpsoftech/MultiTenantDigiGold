@@ -52,7 +52,10 @@ describe('PromoCarousel with published slides', () => {
   });
 
   it('keeps the built-in slides when none are published', () => {
-    renderWithProviders(<PromoCarousel />);
+    // The built-in slide belongs to the jewellery module, so the tenant must be known.
+    renderWithProviders(<PromoCarousel />, {
+      preloaded: { tenant: { config: DEFAULT_TENANT_CONFIG } },
+    });
 
     expect(screen.getByAltText('Festive gold savings offer')).toBeTruthy();
   });
@@ -142,8 +145,10 @@ describe('TrendingJewelry with published products', () => {
   });
 
   it('keeps the built-in copy for fields the tenant did not publish', () => {
-    renderWithProviders(<TrendingJewelry products={products} />);
+    renderWithProviders(<TrendingJewelry products={products} />, {
+      preloaded: { tenant: { config: DEFAULT_TENANT_CONFIG } },
+    });
 
-    expect(screen.getByRole('heading', { name: 'Trending Jewelry' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Trending Jewellery' })).toBeTruthy();
   });
 });
