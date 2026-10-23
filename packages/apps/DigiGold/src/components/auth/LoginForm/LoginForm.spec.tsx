@@ -123,10 +123,46 @@ describe('LoginForm', () => {
     fireEvent.click(getOtpButton());
 
     expect(await screen.findByText('Could not send OTP')).toBeTruthy();
+    // Once in the toast and once inline, where the on-screen keyboard cannot cover it.
     expect(
-      screen.getByText('Please wait 30 seconds before requesting a new OTP.'),
-    ).toBeTruthy();
+      screen.getAllByText('Please wait 30 seconds before requesting a new OTP.'),
+    ).toHaveLength(2);
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Please wait 30 seconds before requesting a new OTP.',
+    );
     expect(screen.getByRole('heading', { name: 'Welcome' })).toBeTruthy();
+  });
+
+  it('explains a dropped connection in plain words', async () => {
+    mockedAuth.requestOtp.mockRejectedValue({
+      status: null,
+      code: 'ERR_NETWORK',
+      message: 'Network Error',
+    });
+    renderWithProviders(<LoginForm />, { user: null });
+    typeNumber('9876543210');
+    await waitFor(() => expect(getOtpButton().disabled).toBe(false));
+
+    fireEvent.click(getOtpButton());
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe(
+      "Can't reach the server. Check your connection and try again.",
+    );
+    expect(screen.queryByText('Network Error')).toBeNull();
+  });
+
+  it('clears the inline error when the number is edited', async () => {
+    mockedAuth.requestOtp.mockRejectedValue({ status: 500, message: 'boom' });
+    renderWithProviders(<LoginForm />, { user: null });
+    typeNumber('9876543210');
+    await waitFor(() => expect(getOtpButton().disabled).toBe(false));
+    fireEvent.click(getOtpButton());
+    await screen.findByRole('alert');
+
+    typeNumber('987654321');
+
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
   it('falls back to a generic message for an error without one', async () => {
@@ -137,9 +173,10 @@ describe('LoginForm', () => {
 
     fireEvent.click(getOtpButton());
 
+    // Toast and inline message.
     expect(
-      await screen.findByText('Please check the number and try again.'),
-    ).toBeTruthy();
+      await screen.findAllByText('Please check the number and try again.'),
+    ).toHaveLength(2);
   });
 
   it('lets the visitor go back from verification to change the number', async () => {

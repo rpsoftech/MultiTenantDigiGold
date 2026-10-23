@@ -34,6 +34,8 @@ export function Passbook() {
     entries,
     isLoading,
     isError,
+    isFetching,
+    refetch,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
@@ -103,10 +105,21 @@ export function Passbook() {
         <div className={styles.stateRow}>
           <Loader label="Loading passbook" />
         </div>
-      ) : isError ? (
-        <p className={styles.emptyState}>
-          Couldn&apos;t load your passbook. Please try again.
-        </p>
+      ) : isError && entries.length === 0 ? (
+        <div className={styles.stateRow}>
+          <p className={styles.emptyState} role="alert">
+            Couldn&apos;t load your passbook. Check your connection and try
+            again.
+          </p>
+          <Button
+            variant="secondary"
+            className={styles.loadMoreButton}
+            isLoading={isFetching}
+            onClick={() => void refetch()}
+          >
+            Try again
+          </Button>
+        </div>
       ) : (
         <>
           {filteredEntries.length === 0 ? (
@@ -120,6 +133,13 @@ export function Passbook() {
           )}
 
           <div ref={sentinelRef} />
+
+          {/* An older page failed to load: keep what is already on screen and offer a retry. */}
+          {isError && (
+            <p className={styles.emptyState} role="alert">
+              Couldn&apos;t load older transactions.
+            </p>
+          )}
 
           {hasNextPage && (
             <Button

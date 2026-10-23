@@ -22,9 +22,12 @@
   flex-direction: column;
   width: min(100vw, 520px);
   padding: var(--space-6);
+  padding-bottom: calc(var(--space-6) + var(--safe-bottom));
+  padding-right: max(var(--space-6), var(--safe-right));
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
   overflow-y: auto;
+  overscroll-behavior: contain;
   animation: slideIn 0.2s ease;
 
   &:focus-visible {
@@ -37,7 +40,7 @@
 }
 
 .title {
-  margin: 0 var(--space-6) var(--space-2) 0;
+  margin: 0 var(--space-8) var(--space-2) 0;
   font-family: var(--font-headline);
   font-size: 1.125rem;
   font-weight: 700;
@@ -64,9 +67,13 @@
 
 .close {
   position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  font-size: 1.25rem;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  @include tap-target;
+  font-size: 1.5rem;
   line-height: 1;
   color: var(--color-text-muted);
 

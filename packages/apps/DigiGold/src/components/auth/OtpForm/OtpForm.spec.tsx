@@ -174,9 +174,75 @@ describe('OtpForm', () => {
       fireEvent.click(verifyButton());
 
       expect(await screen.findByText('Too many attempts')).toBeTruthy();
+      // Once in the toast and once inline, above the on-screen keyboard.
       expect(
-        screen.getByText('Too many attempts. Try again in 10 minutes.'),
-      ).toBeTruthy();
+        screen.getAllByText('Too many attempts. Try again in 10 minutes.'),
+      ).toHaveLength(2);
+    });
+
+    it('shows the wrong-code message inline as well as in the toast', async () => {
+      mockedAuth.verifyOtp.mockRejectedValue({
+        status: 401,
+        code: 'ERROR_OTP_INVALID',
+        message: 'Invalid OTP',
+      });
+      renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
+      enterOtp('000000');
+
+      fireEvent.click(verifyButton());
+
+      expect((await screen.findByRole('alert')).textContent).toBe(
+        'Please check the code and try again.',
+      );
+    });
+
+    it('does not call a dropped connection an incorrect code', async () => {
+      mockedAuth.verifyOtp.mockRejectedValue({
+        status: null,
+        code: 'ERR_NETWORK',
+        message: 'Network Error',
+      });
+      renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
+      enterOtp('123456');
+
+      fireEvent.click(verifyButton());
+
+      expect(await screen.findByText('Could not verify the code')).toBeTruthy();
+      expect(screen.queryByText('Incorrect OTP')).toBeNull();
+      expect(screen.getByRole('alert').textContent).toBe(
+        "Can't reach the server. Check your connection and try again.",
+      );
+    });
+
+    it('does not call a server fault an incorrect code', async () => {
+      mockedAuth.verifyOtp.mockRejectedValue({
+        status: 503,
+        code: 'UNAVAILABLE',
+        message: 'upstream',
+      });
+      renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
+      enterOtp('123456');
+
+      fireEvent.click(verifyButton());
+
+      expect(await screen.findByText('Could not verify the code')).toBeTruthy();
+      expect(screen.getByRole('alert').textContent).toBe(
+        'The server is having trouble right now. Please try again shortly.',
+      );
+    });
+
+    it('clears the inline error once the code is edited', async () => {
+      mockedAuth.verifyOtp.mockRejectedValue({ status: 401, message: 'no' });
+      renderWithProviders(<OtpForm mobileNumber={MOBILE} />, { user: null });
+      enterOtp('000000');
+      fireEvent.click(verifyButton());
+      await screen.findByRole('alert');
+
+      fireEvent.change(screen.getByLabelText('Digit 6'), {
+        target: { value: '' },
+      });
+
+      expect(screen.queryByRole('alert')).toBeNull();
     });
   });
 

@@ -10,7 +10,13 @@
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 0.9375rem;
-  white-space: nowrap;
+  min-height: 2.75rem;
+  // Labels can be long ("Proceed to Pay ₹12,34,567.00"): wrap and centre them on a narrow
+  // phone instead of overflowing the button or the card.
+  white-space: normal;
+  text-align: center;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   transition:

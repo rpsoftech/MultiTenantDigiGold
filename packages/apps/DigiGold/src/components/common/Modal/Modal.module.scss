@@ -18,6 +18,7 @@
   background: var(--color-surface);
   padding: var(--space-6);
   box-shadow: var(--shadow-card);
+  overscroll-behavior: contain;
 
   &:focus-visible {
     @include focus-ring;
@@ -30,6 +31,7 @@
   transform: translate(-50%, -50%);
   width: min(90vw, 420px);
   max-height: 85vh;
+  max-height: 85dvh;
   overflow-y: auto;
   border-radius: var(--radius-lg);
   animation: scaleIn 0.15s ease;
@@ -50,7 +52,12 @@
   bottom: 0;
   width: 100%;
   max-height: 85vh;
+  max-height: 85dvh;
   overflow-y: auto;
+  // Keeps the last button clear of the home indicator and landscape notches.
+  padding-bottom: calc(var(--space-6) + var(--safe-bottom));
+  padding-left: max(var(--space-6), var(--safe-left));
+  padding-right: max(var(--space-6), var(--safe-right));
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   animation: slideUp 0.2s ease;
 
@@ -64,6 +71,8 @@
   font-size: 1.125rem;
   font-weight: 700;
   margin-bottom: var(--space-2);
+  padding-right: var(--space-8);
+  overflow-wrap: anywhere;
 }
 
 .description {
@@ -74,9 +83,13 @@
 
 .close {
   position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  font-size: 1.25rem;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  @include tap-target;
+  font-size: 1.5rem;
   line-height: 1;
   color: var(--color-text-muted);
 

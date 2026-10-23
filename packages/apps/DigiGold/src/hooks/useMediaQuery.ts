@@ -6,6 +6,8 @@ export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false);
 
   useEffect(() => {
+    // Very old browsers and jsdom have no matchMedia: stay on the mobile-first default.
+    if (typeof window.matchMedia !== 'function') return;
     const mediaQueryList = window.matchMedia(query);
     setMatches(mediaQueryList.matches);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -12,6 +12,7 @@ import { Logo } from '@/components/common/Logo/Logo';
 import { ProfileMenu } from '@/components/common/ProfileMenu/ProfileMenu';
 import { ArrowLeftIcon, MenuIcon } from '@/components/common/icons/Icons';
 import { ROUTES } from '@/lib/constants/routes';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/utils/cn';
 import { useHeaderConfig } from './useHeaderConfig';
 import { NavMenu } from './NavMenu';
@@ -31,6 +32,14 @@ export function Header() {
   const { isAuthenticated } = useSession();
   const pathname = usePathname();
   const router = useRouter();
+  const isDesktopNav = useMediaQuery('(min-width: 768px)');
+
+  // Turning a phone to landscape (or resizing a window) past the md breakpoint swaps the
+  // drawer for the inline nav. Close it then, or its overlay and scroll lock would stay on
+  // with no panel to dismiss them.
+  useEffect(() => {
+    if (isDesktopNav) setMobileNavOpen(false);
+  }, [isDesktopNav]);
 
   const showBackButton = BACK_NAVIGABLE_ROUTES.includes(pathname);
   const brandName = tenantConfig?.displayName ?? 'DigiGold';

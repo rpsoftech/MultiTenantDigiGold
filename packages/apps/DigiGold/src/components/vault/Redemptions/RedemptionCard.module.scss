@@ -8,6 +8,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
+  min-width: 0;
 }
 
 .header {
@@ -79,6 +80,7 @@
   align-items: center;
   justify-content: center;
   align-self: flex-start;
+  min-height: 2.5rem;
   padding: var(--space-2) var(--space-4);
   border: 0;
   border-radius: var(--radius-md);

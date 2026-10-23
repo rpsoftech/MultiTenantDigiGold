@@ -25,7 +25,24 @@ export function OtpInputCells({ length = 6, value, onChange, error, onSubmit }: 
     onChange(next.join(''));
   };
 
+  // Fills from `index` onwards. Used for SMS autofill (iOS and Android drop the whole code
+  // into the focused cell) and for pasted text, so the code is never cut to one digit.
+  const fillFrom = (index: number, code: string) => {
+    const next = index === 0 || code.length >= length
+      ? code.slice(0, length)
+      : (digits.slice(0, index).join('') + code).slice(0, length);
+    onChange(next);
+    inputRefs.current[Math.min(next.length, length - 1)]?.focus();
+  };
+
   const handleChange = (index: number, rawInput: string) => {
+    const typed = rawInput.replace(/\D/g, '');
+    if (typed.length > 2 || (typed.length === 2 && !digits[index])) {
+      setIsAllSelected(false);
+      fillFrom(index, typed);
+      return;
+    }
+
     const digit = rawInput.slice(-1);
     if (digit && !DIGIT_PATTERN.test(digit)) return;
 
@@ -76,6 +93,8 @@ export function OtpInputCells({ length = 6, value, onChange, error, onSubmit }: 
     const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, length);
     if (!pasted) return;
     event.preventDefault();
+    setIsAllSelected(false);
+    // A paste always replaces the whole code, wherever the cursor was.
     onChange(pasted);
     inputRefs.current[Math.min(pasted.length, length - 1)]?.focus();
   };
@@ -91,7 +110,10 @@ export function OtpInputCells({ length = 6, value, onChange, error, onSubmit }: 
           type="text"
           inputMode="numeric"
           autoComplete="one-time-code"
-          maxLength={1}
+          // No maxLength: it would cut an autofilled code to its first digit. handleChange
+          // keeps one digit per cell.
+          pattern="[0-9]*"
+          enterKeyHint={index === length - 1 ? 'done' : 'next'}
           value={digit}
           onChange={(event) => handleChange(index, event.target.value)}
           onKeyDown={(event) => handleKeyDown(index, event)}

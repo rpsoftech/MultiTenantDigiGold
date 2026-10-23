@@ -12,20 +12,23 @@ type PickupCodeCardProps = {
 const COPIED_RESET_MS = 2000;
 
 export function PickupCodeCard({ code, compact }: PickupCodeCardProps) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copied = copyState === 'copied';
 
   useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
+    if (copyState === 'idle') return;
+    const timer = window.setTimeout(() => setCopyState('idle'), COPIED_RESET_MS);
     return () => window.clearTimeout(timer);
-  }, [copied]);
+  }, [copyState]);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(code);
-      setCopied(true);
+      setCopyState('copied');
     } catch {
-      // Clipboard unavailable (insecure context or denied): the code is still on screen.
+      // Clipboard unavailable (insecure context, or denied on a phone): the code is still on
+      // screen and selects in one tap, so say that instead of failing silently.
+      setCopyState('failed');
     }
   };
 
@@ -50,8 +53,13 @@ export function PickupCodeCard({ code, compact }: PickupCodeCardProps) {
         onClick={() => void handleCopy()}
         aria-live="polite"
       >
-        {copied ? 'Copied' : 'Copy code'}
+        {copied ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy code'}
       </button>
+      {copyState === 'failed' && (
+        <span className={styles.copyHint} role="status">
+          Tap the code to select it, then copy.
+        </span>
+      )}
     </div>
   );
 }

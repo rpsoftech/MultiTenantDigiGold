@@ -13,7 +13,7 @@ import { useRequestOtp } from '@/features/auth/hooks/useRequestOtp';
 import { OTP_PATTERN } from '@/lib/constants/regex';
 import { ROUTES } from '@/lib/constants/routes';
 import { formatMobileNumber } from '@/lib/utils/formatMobileNumber';
-import { isNormalizedApiError } from '@/lib/api/client';
+import { describeApiError, isNormalizedApiError } from '@/lib/api/client';
 import styles from './OtpForm.module.scss';
 
 // Every OTP rate-limit case (30s resend cooldown, max resend attempts, max verify
@@ -23,6 +23,23 @@ import styles from './OtpForm.module.scss';
 function rateLimitMessage(error: unknown): string | undefined {
   if (!isNormalizedApiError(error) || error.status !== 429) return undefined;
   return error.message;
+}
+
+// Why a verify attempt failed. A wrong code (401) is the only case the customer fixes by
+// retyping; a dropped connection or a server fault needs different advice, and a lockout is
+// a wait, not a typo.
+function verifyFailure(error: unknown): { title: string; description: string } {
+  const cooldownMessage = rateLimitMessage(error);
+  if (cooldownMessage) {
+    return { title: 'Too many attempts', description: cooldownMessage };
+  }
+  if (isNormalizedApiError(error) && (error.status === null || error.status >= 500)) {
+    return {
+      title: 'Could not verify the code',
+      description: describeApiError(error) ?? 'Please try again in a moment.',
+    };
+  }
+  return { title: 'Incorrect OTP', description: 'Please check the code and try again.' };
 }
 
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -48,29 +65,30 @@ export function OtpForm({
   const [otp, setOtp] = useState('');
   const [canResend, setCanResend] = useState(false);
   const [cooldownKey, setCooldownKey] = useState(0);
+  // Also shown inline: on a phone the on-screen keyboard covers the toast at the bottom.
+  const [failure, setFailure] = useState<string | null>(null);
 
   const isComplete = OTP_PATTERN.test(otp);
 
   const handleVerify = async () => {
     if (!isComplete || verifyOtp.isPending) return;
+    setFailure(null);
     try {
       const result = await verifyOtp.mutateAsync({ mobileNumber, otp });
       router.push(
         successRoute ?? (result.is_registered ? ROUTES.home : ROUTES.profileSetup)
       );
     } catch (error) {
-      const cooldownMessage = rateLimitMessage(error);
-      showToast({
-        variant: 'danger',
-        title: cooldownMessage ? 'Too many attempts' : 'Incorrect OTP',
-        description: cooldownMessage ?? 'Please check the code and try again.',
-      });
+      const { title, description } = verifyFailure(error);
+      setFailure(description);
+      showToast({ variant: 'danger', title, description });
     }
   };
 
   const handleResend = async () => {
     if (!canResend) return;
     setOtp('');
+    setFailure(null);
     setCanResend(false);
     setCooldownKey((key) => key + 1);
     try {
@@ -85,7 +103,7 @@ export function OtpForm({
       showToast({
         variant: 'danger',
         title: cooldownMessage ? 'Please wait' : 'Could not resend OTP',
-        description: cooldownMessage,
+        description: cooldownMessage ?? describeApiError(error) ?? undefined,
       });
     }
   };
@@ -111,7 +129,21 @@ export function OtpForm({
         </button>
       </span>
 
-      <OtpInputCells value={otp} onChange={setOtp} error={verifyOtp.isError} onSubmit={handleVerify} />
+      <OtpInputCells
+        value={otp}
+        onChange={(next) => {
+          setFailure(null);
+          setOtp(next);
+        }}
+        error={verifyOtp.isError}
+        onSubmit={handleVerify}
+      />
+
+      {failure && (
+        <p className={styles.failure} role="alert">
+          {failure}
+        </p>
+      )}
 
       <div className={styles.resendRow}>
         {canResend ? (

@@ -8,6 +8,7 @@
   align-items: center;
   text-align: center;
   gap: var(--space-4);
+  min-width: 0;
 
   @include md {
     max-width: 440px;
@@ -55,6 +56,12 @@
 
 .editButton {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  // The pencil is 14px; the tap area is not.
+  @include tap-target;
+  margin-block: calc(var(--space-2) * -1);
+  margin-right: calc(var(--space-2) * -1);
   color: var(--color-text-muted);
 
   &:hover {
@@ -64,6 +71,14 @@
   &:focus-visible {
     @include focus-ring;
   }
+}
+
+.failure {
+  margin: calc(var(--space-2) * -1) 0 0;
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
 }
 
 .resendRow {
@@ -77,6 +92,8 @@
 .resendLink {
   color: var(--brand-primary);
   font-weight: 600;
+  min-height: 2.5rem;
+  padding-inline: var(--space-3);
 
   &:focus-visible {
     @include focus-ring;

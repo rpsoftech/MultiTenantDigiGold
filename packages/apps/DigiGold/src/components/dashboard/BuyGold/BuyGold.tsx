@@ -32,7 +32,7 @@ import {
   type RazorpayInstance,
 } from '@/lib/payments/razorpay';
 import type { InitiateBuyResult } from '@/features/trade/trade.types';
-import type { NormalizedApiError } from '@/lib/api/client';
+import { describeApiError, type NormalizedApiError } from '@/lib/api/client';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
 import { cn } from '@/lib/utils/cn';
 import { ROUTES } from '@/lib/constants/routes';
@@ -44,6 +44,15 @@ export const BUY_GOLD_SECTION_ID = 'buy-gold';
 const QUICK_ADD_GRAMS = [0.5, 1, 5, 10];
 const QUICK_ADD_INR = [1000, 5000, 10000, 25000];
 const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
+// MainServer prices a buy by rupee amount (paise) and credits grams to 4 places. Typing more
+// precision than that is dropped as it is typed instead of failing at checkout.
+const MAX_GRAMS_DECIMALS = 4;
+const MAX_INR_DECIMALS = 2;
+
+function hasAtMostDecimals(value: string, maxDecimals: number): boolean {
+  const fraction = value.split('.')[1];
+  return fraction === undefined || fraction.length <= maxDecimals;
+}
 
 type BuyMode = 'grams' | 'inr';
 type PaymentStage =
@@ -158,11 +167,15 @@ export function BuyGold({ embedded = false }: { embedded?: boolean }) {
   };
 
   const handleGramsChange = (value: string) => {
-    if (NUMERIC_INPUT_PATTERN.test(value)) setGramsInput(value);
+    if (NUMERIC_INPUT_PATTERN.test(value) && hasAtMostDecimals(value, MAX_GRAMS_DECIMALS)) {
+      setGramsInput(value);
+    }
   };
 
   const handleInrChange = (value: string) => {
-    if (NUMERIC_INPUT_PATTERN.test(value)) setInrInput(value);
+    if (NUMERIC_INPUT_PATTERN.test(value) && hasAtMostDecimals(value, MAX_INR_DECIMALS)) {
+      setInrInput(value);
+    }
   };
 
   // Switching carries the current amount over, expressed in the other unit.
@@ -258,7 +271,11 @@ export function BuyGold({ embedded = false }: { embedded?: boolean }) {
       showToast({
         variant: 'danger',
         title: startPaymentErrorTitle(normalized),
-        description: normalized.message ?? 'Please try again in a moment.',
+        // Plain wording for a dropped connection or a timeout; the server's own text otherwise.
+        description:
+          describeApiError(error) ??
+          normalized.message ??
+          'Please try again in a moment.',
       });
     }
   };
@@ -280,6 +297,16 @@ export function BuyGold({ embedded = false }: { embedded?: boolean }) {
       setStage('timeout');
     }
   }, [settlementStatus]);
+
+  // A field the customer has touched but that adds up to nothing. The button is disabled
+  // either way; this says why, which matters most on a phone where the keyboard hides it.
+  const typedValue = mode === 'grams' ? gramsInput : inrInput;
+  const amountError =
+    typedValue !== '' && (Number(typedValue) || 0) <= 0
+      ? mode === 'grams'
+        ? 'Enter a weight greater than 0 g.'
+        : 'Enter an amount greater than ₹0.'
+      : null;
 
   const proceedDisabled =
     grams <= 0 ||
@@ -385,6 +412,10 @@ export function BuyGold({ embedded = false }: { embedded?: boolean }) {
                 id="buy-sell-grams"
                 className={styles.input}
                 inputMode="decimal"
+                autoComplete="off"
+                enterKeyHint="done"
+                aria-invalid={amountError ? true : undefined}
+                aria-describedby={amountError ? 'buy-amount-error' : undefined}
                 value={gramsInput}
                 onChange={(event) => handleGramsChange(event.target.value)}
               />
@@ -409,6 +440,10 @@ export function BuyGold({ embedded = false }: { embedded?: boolean }) {
                 id="buy-sell-inr"
                 className={styles.input}
                 inputMode="decimal"
+                autoComplete="off"
+                enterKeyHint="done"
+                aria-invalid={amountError ? true : undefined}
+                aria-describedby={amountError ? 'buy-amount-error' : undefined}
                 value={inrInput}
                 disabled={!hasRate}
                 onChange={(event) => handleInrChange(event.target.value)}
@@ -423,6 +458,12 @@ export function BuyGold({ embedded = false }: { embedded?: boolean }) {
               </button>
             </div>
           </div>
+        )}
+
+        {amountError && (
+          <p id="buy-amount-error" className={styles.fieldError} role="alert">
+            {amountError}
+          </p>
         )}
 
         <div className={styles.quickAddRow}>
@@ -537,6 +578,7 @@ export function BuyGold({ embedded = false }: { embedded?: boolean }) {
 
         <Button
           fullWidth
+          className={styles.proceedButton}
           disabled={proceedDisabled || (isAuthenticated && kycBlocked)}
           onClick={handleProceed}
         >

@@ -32,6 +32,7 @@
   background: transparent;
   padding-inline: 0;
   padding-block: var(--space-2);
+  min-height: 2.75rem;
 
   &:has(.input:focus-visible) {
     border-color: var(--brand-primary);
@@ -43,6 +44,7 @@
     background: var(--color-surface);
     padding-inline: var(--space-3);
     padding-block: 0;
+    min-height: 0;
 
     &:has(.input:focus-visible) {
       @include focus-ring;
@@ -86,6 +88,11 @@
   font-family: var(--font-body);
   font-size: 0.9375rem;
   color: var(--color-text-primary);
+
+  // iOS Safari zooms the page when a field under 16px gains focus, and never zooms back.
+  @include touch {
+    font-size: 1rem;
+  }
 
   @include md {
     padding-block: var(--space-3);

@@ -18,6 +18,7 @@ import {
   LockFilledIcon,
 } from '@/components/common/icons/Icons';
 import { useToast } from '@/components/common/Toast/Toast';
+import { describeApiError } from '@/lib/api/client';
 import { useRequestOtp } from '@/features/auth/hooks/useRequestOtp';
 import { MOBILE_NUMBER_PATTERN } from '@/lib/constants/regex';
 import { OtpForm } from '@/components/auth/OtpForm/OtpForm';
@@ -36,6 +37,9 @@ export type LoginFormProps = {
 };
 
 function getErrorMessage(error: unknown, fallback: string): string {
+  // Plain wording for a dropped connection or a timeout; the server's own text otherwise.
+  const described = describeApiError(error);
+  if (described) return described;
   if (
     typeof error === 'object' &&
     error !== null &&
@@ -44,7 +48,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
   ) {
     return error.message;
   }
-
   return fallback;
 }
 
@@ -52,6 +55,8 @@ export function LoginForm({ successRoute }: LoginFormProps) {
   const { showToast } = useToast();
   const requestOtp = useRequestOtp();
   const [otpMobileNumber, setOtpMobileNumber] = useState<string | null>(null);
+  // Also shown inline: on a phone the on-screen keyboard covers the toast at the bottom.
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   const {
     register,
@@ -64,6 +69,7 @@ export function LoginForm({ successRoute }: LoginFormProps) {
   });
 
   const onSubmit = async ({ mobileNumber }: LoginFormValues) => {
+    setRequestError(null);
     try {
       const result = await requestOtp.mutateAsync({ mobileNumber });
       if (result.dev_otp) {
@@ -75,10 +81,12 @@ export function LoginForm({ successRoute }: LoginFormProps) {
       }
       setOtpMobileNumber(mobileNumber);
     } catch (error) {
+      const description = getErrorMessage(error, 'Please check the number and try again.');
+      setRequestError(description);
       showToast({
         variant: 'danger',
         title: 'Could not send OTP',
-        description: getErrorMessage(error, 'Please check the number and try again.'),
+        description,
       });
     }
   };
@@ -123,12 +131,21 @@ export function LoginForm({ successRoute }: LoginFormProps) {
           inputMode="numeric"
           maxLength={10}
           error={errors.mobileNumber?.message}
+          autoComplete="tel-national"
+          enterKeyHint="go"
           onChange={(event) => {
+            setRequestError(null);
             event.target.value = event.target.value.replace(/\D/g, '').slice(0, 10);
             onMobileNumberChange(event);
           }}
           {...mobileNumberField}
         />
+
+        {requestError && (
+          <p className={styles.requestError} role="alert">
+            {requestError}
+          </p>
+        )}
 
         <Button
           type="submit"

@@ -174,6 +174,66 @@ describe('BuyGold', () => {
       expect(gramsInput().value).toBe('2.5');
     });
 
+    it('stops a weight at four decimal places', () => {
+      renderWithProviders(<BuyGold />);
+
+      fireEvent.change(gramsInput(), { target: { value: '1.2345' } });
+      expect(gramsInput().value).toBe('1.2345');
+
+      fireEvent.change(gramsInput(), { target: { value: '1.23456' } });
+      expect(gramsInput().value).toBe('1.2345');
+    });
+
+    it('stops a rupee amount at two decimal places', () => {
+      renderWithProviders(<BuyGold />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
+
+      fireEvent.change(inrInput(), { target: { value: '1500.50' } });
+      expect(inrInput().value).toBe('1500.50');
+
+      fireEvent.change(inrInput(), { target: { value: '1500.505' } });
+      expect(inrInput().value).toBe('1500.50');
+    });
+
+    it('says why the button is disabled when the weight adds up to nothing', () => {
+      renderWithProviders(<BuyGold />);
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      fireEvent.change(gramsInput(), { target: { value: '0' } });
+
+      expect(screen.getByRole('alert').textContent).toBe(
+        'Enter a weight greater than 0 g.',
+      );
+      expect(gramsInput().getAttribute('aria-invalid')).toBe('true');
+      expect(proceed().disabled).toBe(true);
+    });
+
+    it('stays quiet while the field is empty or valid', () => {
+      renderWithProviders(<BuyGold />);
+
+      fireEvent.change(gramsInput(), { target: { value: '' } });
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      fireEvent.change(gramsInput(), { target: { value: '2' } });
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(gramsInput().getAttribute('aria-invalid')).toBeNull();
+    });
+
+    it('asks for a rupee amount above zero in rupee mode', () => {
+      renderWithProviders(<BuyGold />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Buy in Rupees (₹)' }),
+      );
+
+      fireEvent.change(inrInput(), { target: { value: '0' } });
+
+      expect(screen.getByRole('alert').textContent).toBe(
+        'Enter an amount greater than ₹0.',
+      );
+    });
+
     it('clears the weight', () => {
       renderWithProviders(<BuyGold />);
 
@@ -534,6 +594,26 @@ describe('BuyGold', () => {
 
       expect(await screen.findByText('Could not start payment')).toBeTruthy();
       expect(screen.getByText('Live rate moved.')).toBeTruthy();
+      expect(proceed().disabled).toBe(false);
+    });
+
+    it('explains a dropped connection instead of showing a transport error', async () => {
+      mockedTrade.initiateBuy.mockRejectedValue({
+        status: null,
+        code: 'ERR_NETWORK',
+        message: 'Network Error',
+      });
+      renderWithProviders(<BuyGold />, { user: customerUser });
+
+      fireEvent.click(proceed());
+
+      expect(await screen.findByText('Could not start payment')).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Can't reach the server. Check your connection and try again.",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText('Network Error')).toBeNull();
       expect(proceed().disabled).toBe(false);
     });
 

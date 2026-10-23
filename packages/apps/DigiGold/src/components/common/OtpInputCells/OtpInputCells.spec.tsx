@@ -52,6 +52,41 @@ describe('OtpInputCells', () => {
     expect(document.activeElement).toBe(cell(2));
   });
 
+  it('takes a whole code that SMS autofill drops into one cell', () => {
+    render(<Harness />);
+
+    fireEvent.change(cell(1), { target: { value: '482913' } });
+
+    expect(value()).toBe('482913');
+    expect(document.activeElement).toBe(cell(6));
+  });
+
+  it('drops anything after the last cell from an autofilled code', () => {
+    render(<Harness />);
+
+    fireEvent.change(cell(1), { target: { value: '12345678' } });
+
+    expect(value()).toBe('123456');
+  });
+
+  it('keeps the digits before the cell when a longer value lands in a later one', () => {
+    render(<Harness />);
+    fireEvent.change(cell(1), { target: { value: '1' } });
+    fireEvent.change(cell(2), { target: { value: '2' } });
+
+    fireEvent.change(cell(3), { target: { value: '345' } });
+
+    expect(value()).toBe('12345');
+  });
+
+  it('does not cap the cell at one character, so autofill is not truncated', () => {
+    render(<Harness />);
+
+    expect(cell(1).maxLength).toBe(-1);
+    expect(cell(1).getAttribute('autocomplete')).toBe('one-time-code');
+    expect(cell(1).getAttribute('inputmode')).toBe('numeric');
+  });
+
   it('ignores anything that is not a digit', () => {
     render(<Harness />);
 

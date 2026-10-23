@@ -7,6 +7,7 @@
   align-items: center;
   justify-content: center;
   min-height: 75vh;
+  min-height: 75dvh;
   padding: var(--space-6) var(--space-4);
 }
 
@@ -285,6 +286,10 @@
 }
 
 .linkButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
   font-family: var(--font-label);
   font-size: 0.875rem;
   font-weight: 600;

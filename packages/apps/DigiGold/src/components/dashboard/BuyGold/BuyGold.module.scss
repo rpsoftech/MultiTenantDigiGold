@@ -120,6 +120,11 @@
 
 .toggleButton {
   flex: 1;
+  min-width: 0;
+  // Two labels share one row: let a long one wrap instead of pushing the row wider than the
+  // card on a 360px phone.
+  min-height: 2.5rem;
+  line-height: 1.25;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
@@ -158,11 +163,23 @@
   gap: var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  min-height: 3rem;
 
   &:focus-within {
     border-color: var(--brand-primary);
   }
+
+  &:has(.input[aria-invalid='true']) {
+    border-color: var(--color-danger);
+  }
+}
+
+.fieldError {
+  margin: calc(var(--space-2) * -1) 0 0;
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  color: var(--color-danger);
 }
 
 .inputAddon {
@@ -185,7 +202,15 @@
 
 .clearButton {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  @include tap-target;
   color: var(--color-text-muted);
+
+  &:focus-visible {
+    @include focus-ring;
+  }
 }
 
 .quickAddRow {
@@ -202,6 +227,11 @@
 }
 
 .quickAddChip {
+  // 40px on touch screens (finger), a compact chip with a mouse.
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -209,6 +239,11 @@
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-primary);
+
+  @include touch {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
 
   &:hover {
     border-color: var(--brand-primary);
@@ -227,8 +262,21 @@
 
 .summaryRow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
+  gap: var(--space-3);
+
+  // Labels wrap on a narrow phone; the figure beside them stays on one line.
+  > span:first-child {
+    min-width: 0;
+  }
+
+  > span:last-child {
+    flex-shrink: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
   font-family: var(--font-body);
   font-size: 0.875rem;
   color: var(--color-text-primary);
@@ -258,6 +306,11 @@
   margin: 0;
   padding-top: var(--space-2);
   border-top: 1px solid var(--color-border);
+}
+
+.proceedButton {
+  // Disabled-state copy such as "Waiting for live rate" and the amount label are long.
+  padding-inline: var(--space-4);
 }
 
 .statusMessage {

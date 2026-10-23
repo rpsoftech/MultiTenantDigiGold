@@ -47,7 +47,8 @@ describe('PickupCodeCard', () => {
     jest.useRealTimers();
   });
 
-  it('keeps the label unchanged when the clipboard is unavailable', async () => {
+  it('says so, and points at the code, when the clipboard is unavailable', async () => {
+    jest.useFakeTimers();
     mockClipboard(jest.fn().mockRejectedValue(new Error('denied')));
     render(<PickupCodeCard code="123456" />);
 
@@ -55,6 +56,18 @@ describe('PickupCodeCard', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
     });
 
+    expect(screen.getByRole('button', { name: 'Copy failed' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe(
+      'Tap the code to select it, then copy.',
+    );
+    // The code itself is still on screen to read out or copy by hand.
+    expect(screen.getByText('123456')).toBeTruthy();
+
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+    jest.useRealTimers();
   });
 });

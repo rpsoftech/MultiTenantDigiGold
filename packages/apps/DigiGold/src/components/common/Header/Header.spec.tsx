@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import {
   customerUser,
   renderWithProviders,
@@ -109,6 +109,40 @@ describe('Header', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Close menu' }));
 
       expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('closes when the screen grows past the mobile breakpoint', () => {
+      // A phone turned to landscape: the drawer is replaced by the inline nav, so its
+      // overlay and scroll lock must not outlive it.
+      let notify: (event: { matches: boolean }) => void = () => undefined;
+      const original = window.matchMedia;
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: (query: string) => ({
+          matches: false,
+          media: query,
+          addEventListener: (_: string, listener: typeof notify) => {
+            notify = listener;
+          },
+          removeEventListener: () => undefined,
+        }),
+      });
+      try {
+        renderWithProviders(<Header />, { user: null, ...tenant });
+        fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+        expect(screen.getByRole('dialog')).toBeTruthy();
+
+        act(() => notify({ matches: true }));
+
+        expect(screen.queryByRole('dialog')).toBeNull();
+      } finally {
+        Object.defineProperty(window, 'matchMedia', {
+          writable: true,
+          configurable: true,
+          value: original,
+        });
+      }
     });
 
     it('includes the account menu for a signed in customer', () => {

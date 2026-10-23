@@ -104,6 +104,38 @@ describe('Passbook', () => {
     ).toBeTruthy();
   });
 
+  it('retries from the error state', async () => {
+    mockedTrade.getHistory
+      .mockRejectedValueOnce({ status: null, message: 'Network Error' })
+      .mockResolvedValue(page([]));
+    renderWithProviders(<Passbook />);
+    await screen.findByText(/couldn.t load your passbook/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(
+      await screen.findByText('No transactions recorded yet.'),
+    ).toBeTruthy();
+    expect(mockedTrade.getHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the loaded entries when an older page fails', async () => {
+    mockedTrade.getHistory
+      .mockResolvedValueOnce(
+        page(Array.from({ length: 20 }, (_, index) => makeEntry(index + 1))),
+      )
+      .mockRejectedValue({ status: null, message: 'Network Error' });
+    renderWithProviders(<Passbook />);
+    await screen.findAllByText('Gold Purchase');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(
+      await screen.findByText(/couldn.t load older transactions/i),
+    ).toBeTruthy();
+    expect(screen.getAllByText('Gold Purchase')).toHaveLength(20);
+  });
+
   it('lists every transaction', async () => {
     mockedTrade.getHistory.mockResolvedValue(
       page([
