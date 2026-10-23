@@ -86,4 +86,18 @@ describe('AdminShell', () => {
       expect(screen.getByRole('link', { name: 'Store ledger' })).toBeTruthy();
     });
   });
+
+  it('scrolls the current page link into view in the sideways nav', () => {
+    const scrollIntoView = jest.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderWithProviders(
+      <AdminShell>
+        <p>panel</p>
+      </AdminShell>,
+    );
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'center',
+    });
+  });
 });

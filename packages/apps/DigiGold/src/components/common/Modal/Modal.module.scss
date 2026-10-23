@@ -52,7 +52,7 @@
   bottom: 0;
   width: 100%;
   max-height: 85vh;
-  max-height: 85dvh;
+  max-height: min(85dvh, var(--modal-visible-height, 100dvh));
   overflow-y: auto;
   // Keeps the last button clear of the home indicator and landscape notches.
   padding-bottom: calc(var(--space-6) + var(--safe-bottom));

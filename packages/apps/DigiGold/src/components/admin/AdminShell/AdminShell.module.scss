@@ -121,6 +121,13 @@
   max-width: 1600px;
   overflow-x: auto;
   padding: var(--space-1);
+  scroll-padding-inline: var(--space-4);
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .navLink {
@@ -148,7 +155,8 @@
   @include below-md {
     flex: 1;
     gap: var(--space-1);
-    padding: var(--space-3) var(--space-2);
+    min-height: 2.5rem;
+    padding: var(--space-3) var(--space-3);
     font-size: 0.75rem;
     white-space: nowrap;
   }

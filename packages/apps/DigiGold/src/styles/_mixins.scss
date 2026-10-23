@@ -140,3 +140,24 @@
     }
   }
 }
+
+// Keeps a dialog's confirm/cancel row pinned to the bottom of the scrolling sheet, so it stays
+// reachable when a long body or the on-screen keyboard leaves little room. Include it on the
+// element that wraps the buttons; the Modal content is the scroll container.
+@mixin sticky-actions {
+  position: sticky;
+  bottom: calc(-1 * var(--space-6));
+  z-index: 1;
+  margin-inline: calc(-1 * var(--space-1));
+  padding: var(--space-3) var(--space-1) var(--space-1);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--color-surface) var(--space-3)
+  );
+
+  @include below-md {
+    bottom: calc(-1 * (var(--space-6) + var(--safe-bottom)));
+    padding-bottom: calc(var(--space-1) + var(--safe-bottom));
+  }
+}

@@ -1,8 +1,9 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useVisualViewportHeight } from '@/hooks/useVisualViewportHeight';
 import styles from './Modal.module.scss';
 import { cn } from '@/lib/utils/cn';
 
@@ -27,12 +28,19 @@ export function Modal({
   children,
 }: ModalProps) {
   const isDesktop = useMediaQuery('(min-width: 768px)');
+  // Only the bottom sheet sits against the keyboard, so only it tracks the visible height.
+  const visibleHeight = useVisualViewportHeight(open && !isDesktop);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className={styles.overlay} />
         <Dialog.Content
+          style={
+            visibleHeight
+              ? ({ '--modal-visible-height': `${visibleHeight}px` } as CSSProperties)
+              : undefined
+          }
           className={cn(
             styles.content,
             isDesktop ? styles.centered : styles.bottomSheet,

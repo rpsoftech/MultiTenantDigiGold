@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
@@ -50,6 +50,17 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const navItems = NAV_ITEMS.filter(
     (item) => !item.superAdminOnly || isSuperAdmin,
   );
+  const navRef = useRef<HTMLElement | null>(null);
+
+  // On a narrow screen the seven links scroll sideways; keep the current page's link in view.
+  useEffect(() => {
+    const active = navRef.current?.querySelector<HTMLElement>(
+      '[aria-current="page"]',
+    );
+    if (typeof active?.scrollIntoView === 'function') {
+      active.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+  }, [pathname]);
 
   return (
     <div className={styles.shell}>
@@ -72,7 +83,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <AdminProfileMenu />
           </div>
         </div>
-        <nav className={styles.navigation} aria-label="Store administration">
+        <nav
+          ref={navRef}
+          className={styles.navigation}
+          aria-label="Store administration"
+        >
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
