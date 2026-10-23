@@ -201,7 +201,11 @@ describe('LoginForm', () => {
   it('links to the terms and privacy policy', () => {
     renderWithProviders(<LoginForm />, { user: null });
 
-    expect(screen.getByRole('link', { name: 'Terms of Service' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'Terms of Service' }).getAttribute('href'),
+    ).toBe('/terms-of-service');
+    expect(
+      screen.getByRole('link', { name: 'Privacy Policy' }).getAttribute('href'),
+    ).toBe('/privacy-policy');
   });
 });

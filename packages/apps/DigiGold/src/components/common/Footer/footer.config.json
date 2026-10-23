@@ -16,8 +16,8 @@
       "enabled": true,
       "order": 2,
       "links": [
-        { "id": "privacy-policy", "label": "Privacy Policy", "url": "/privacy-policy", "enabled": false, "order": 1 },
-        { "id": "terms-of-service", "label": "Terms of Service", "url": "/terms-of-service", "enabled": false, "order": 2 }
+        { "id": "privacy-policy", "label": "Privacy Policy", "url": "/privacy-policy", "enabled": true, "order": 1 },
+        { "id": "terms-of-service", "label": "Terms of Service", "url": "/terms-of-service", "enabled": true, "order": 2 }
       ]
     },
     {

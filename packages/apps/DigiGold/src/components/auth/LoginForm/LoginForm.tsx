@@ -21,6 +21,7 @@ import { useToast } from '@/components/common/Toast/Toast';
 import { describeApiError } from '@/lib/api/client';
 import { useRequestOtp } from '@/features/auth/hooks/useRequestOtp';
 import { MOBILE_NUMBER_PATTERN } from '@/lib/constants/regex';
+import { ROUTES } from '@/lib/constants/routes';
 import { OtpForm } from '@/components/auth/OtpForm/OtpForm';
 import styles from './LoginForm.module.scss';
 
@@ -159,11 +160,11 @@ export function LoginForm({ successRoute }: LoginFormProps) {
 
       <p className={styles.termsNotice}>
         By continuing, you agree to our{' '}
-        <Link href="#" className={styles.termsLink}>
+        <Link href={ROUTES.termsOfService} className={styles.termsLink}>
           Terms of Service
         </Link>{' '}
         and{' '}
-        <Link href="#" className={styles.termsLink}>
+        <Link href={ROUTES.privacyPolicy} className={styles.termsLink}>
           Privacy Policy
         </Link>
         .
