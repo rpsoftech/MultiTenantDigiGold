@@ -1,0 +1,47 @@
+@use '@/styles/mixins' as *;
+
+// No spacing of its own: each slot decides, so the dashboard sections sit exactly as they
+// did when the home page rendered them directly.
+.layout {
+  display: block;
+}
+
+// New blocks (hero, rate, quick actions, portfolio) share one width and gutter, so any
+// combination lines up the same way on phone, tablet and desktop.
+.slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  // Same side gutter as the dashboard sections (carousels, essentials), so every block's
+  // left and right edges line up down the page.
+  // Vertical padding matches the dashboard sections, so every band has the same rhythm.
+  padding: var(--space-6) var(--space-2);
+  min-width: 0;
+
+  @include lg {
+    padding: var(--space-8) var(--space-4);
+  }
+
+  // The dashboard sections (carousels, essentials, trending, buy card) carry their own
+  // width, padding and margins, so the slot adds nothing around them.
+  &.slotFullBleed {
+    display: block;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  // A block that renders nothing (the header block, a hidden action list) leaves no gap.
+  &:empty {
+    display: none;
+  }
+}
+
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}

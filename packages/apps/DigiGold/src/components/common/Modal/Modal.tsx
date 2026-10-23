@@ -11,12 +11,21 @@ export type ModalProps = {
   onOpenChange: (open: boolean) => void;
   title?: string;
   description?: string;
+  // 'lg' is for dialogs that hold a whole form or flow, such as buying gold.
+  size?: 'md' | 'lg';
   children: ReactNode;
 };
 
 // Centered dialog on desktop, bottom sheet on mobile — same API, presentation swaps via
 // the shared useMediaQuery breakpoint hook.
-export function Modal({ open, onOpenChange, title, description, children }: ModalProps) {
+export function Modal({
+  open,
+  onOpenChange,
+  title,
+  description,
+  size = 'md',
+  children,
+}: ModalProps) {
   const isDesktop = useMediaQuery('(min-width: 768px)');
 
   return (
@@ -24,7 +33,11 @@ export function Modal({ open, onOpenChange, title, description, children }: Moda
       <Dialog.Portal>
         <Dialog.Overlay className={styles.overlay} />
         <Dialog.Content
-          className={cn(styles.content, isDesktop ? styles.centered : styles.bottomSheet)}
+          className={cn(
+            styles.content,
+            isDesktop ? styles.centered : styles.bottomSheet,
+            isDesktop && size === 'lg' && styles.large
+          )}
         >
           {title && <Dialog.Title className={styles.title}>{title}</Dialog.Title>}
           {description && (

@@ -12,6 +12,7 @@ import {
 import { useCategories } from '@/features/marketplace/hooks/useCategories';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useTenantResolved } from '@/features/tenant/hooks/useTenantResolved';
+import type { CategoryCarouselProps } from '@/features/layout/layout.sections';
 import { useCategoryCarouselConfig } from './useCategoryCarouselConfig';
 import { CategoryCard } from './CategoryCard';
 import styles from './CategoryCarousel.module.scss';
@@ -22,26 +23,32 @@ const SCROLL_END_THRESHOLD = 4;
 
 // Jewellery categories: hidden (and not fetched) when the jewellery catalogue is off for this
 // tenant or this build (NEXT_PUBLIC_ENABLE_JEWELLERY=false in production).
-export function CategoryCarousel() {
+export function CategoryCarousel(props: CategoryCarouselProps = {}) {
   const tenantConfig = useTenantConfig();
   // Wait for this host's tenant config, so a tenant with ecommerce off never sees it.
   const tenantResolved = useTenantResolved();
   if (!tenantResolved || !(tenantConfig?.activeModules.ecommerce ?? true))
     return null;
-  return <CategoryCarouselSection />;
+  return <CategoryCarouselSection {...props} />;
 }
 
-function CategoryCarouselSection() {
+// Title and categories normally come from the frontend config and the marketplace feature;
+// a published layout block can supply the tenant's own, which skips the marketplace fetch.
+function CategoryCarouselSection({
+  title: titleOverride,
+  categories: categoriesOverride,
+}: CategoryCarouselProps) {
   const config = useCategoryCarouselConfig();
   const {
-    data: categories,
+    data: fetchedCategories,
     isLoading,
     isError,
     isSuccess,
     error,
     isFetching,
     refetch,
-  } = useCategories();
+  } = useCategories({ enabled: !categoriesOverride });
+  const categories = categoriesOverride ?? fetchedCategories;
   const trackRef = useRef<HTMLDivElement>(null);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
@@ -99,7 +106,7 @@ function CategoryCarouselSection() {
 
   return (
     <section className={styles.section}>
-      <h2 className={styles.heading}>{config.title}</h2>
+      <h2 className={styles.heading}>{titleOverride ?? config.title}</h2>
 
       {isLoading && (
         <div className={styles.loaderWrap}>
@@ -162,7 +169,7 @@ function CategoryCarouselSection() {
         </div>
       )}
 
-      {isSuccess && categories.length === 0 && (
+      {isSuccess && categories?.length === 0 && (
         <p className={styles.emptyState}>No categories available right now.</p>
       )}
     </section>

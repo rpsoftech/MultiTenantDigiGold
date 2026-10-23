@@ -105,6 +105,11 @@
   }
 }
 
+button.primaryAction {
+  border: 0;
+  cursor: pointer;
+}
+
 .secondaryAction {
   background: transparent;
   border: 1px solid var(--color-border);

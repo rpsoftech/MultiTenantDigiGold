@@ -39,6 +39,11 @@
   }
 }
 
+.large {
+  width: min(92vw, 680px);
+  padding: var(--space-8);
+}
+
 .bottomSheet {
   left: 0;
   right: 0;

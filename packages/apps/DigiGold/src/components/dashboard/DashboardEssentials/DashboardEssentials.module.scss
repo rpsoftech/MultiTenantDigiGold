@@ -1,7 +1,6 @@
 @use '@/styles/mixins' as *;
 
 .section {
-  background: var(--color-surface);
   padding: var(--space-6) var(--space-2);
   max-width: 1280px;
   margin-inline: auto;
@@ -24,8 +23,10 @@
   grid-template-columns: 1fr;
   gap: var(--space-4);
 
+  // Three cards per row from tablet up, as before; a tenant that publishes two or four
+  // cards still fills the row instead of leaving an empty column.
   @include md {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   }
 }
 

@@ -1,6 +1,7 @@
 import { makeStore } from '@/store';
 import { DEFAULT_TENANT_CONFIG } from '@/features/tenant/tenant.defaults';
 import {
+  selectLayoutStatus,
   selectTenantConfig,
   selectTenantResolved,
   tenantConfigReceived,
@@ -49,5 +50,56 @@ describe('tenant slice', () => {
     expect(selectTenantConfig(store.getState())?.displayName).toBe(
       DEFAULT_TENANT_CONFIG.displayName,
     );
+  });
+
+  describe('layout status', () => {
+    const published = { ...DEFAULT_TENANT_CONFIG, tenantId: 't', layout: [] };
+
+    it('is loading until a tenant response has been read', () => {
+      const store = makeStore({
+        tenant: { config: DEFAULT_TENANT_CONFIG, resolved: false },
+      });
+
+      expect(selectLayoutStatus(store.getState())).toBe('loading');
+    });
+
+    it('is ready once the tenant arrives, even with nothing published', () => {
+      const store = makeStore({
+        tenant: { config: DEFAULT_TENANT_CONFIG, resolved: false },
+      });
+
+      store.dispatch(tenantConfigReceived(published));
+
+      expect(selectLayoutStatus(store.getState())).toBe('ready');
+    });
+
+    it('is unavailable when the first load fails', () => {
+      const store = makeStore({
+        tenant: { config: DEFAULT_TENANT_CONFIG, resolved: false },
+      });
+
+      store.dispatch(tenantConfigUnavailable());
+
+      expect(selectLayoutStatus(store.getState())).toBe('unavailable');
+    });
+
+    it('stays ready when a later refresh fails', () => {
+      const store = makeStore({ tenant: { config: published } });
+
+      store.dispatch(tenantConfigUnavailable());
+
+      expect(selectLayoutStatus(store.getState())).toBe('ready');
+    });
+
+    it('recovers when a retry succeeds', () => {
+      const store = makeStore({
+        tenant: { config: DEFAULT_TENANT_CONFIG, resolved: false },
+      });
+
+      store.dispatch(tenantConfigUnavailable());
+      store.dispatch(tenantConfigReceived(published));
+
+      expect(selectLayoutStatus(store.getState())).toBe('ready');
+    });
   });
 });

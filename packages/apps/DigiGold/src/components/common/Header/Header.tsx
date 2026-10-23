@@ -7,6 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { useModuleShown } from '@/features/tenant/hooks/useModuleShown';
 import { useSession } from '@/features/auth/hooks/useSession';
+import { selectHeaderOverride } from '@/features/layout/headerOverride';
 import { Logo } from '@/components/common/Logo/Logo';
 import { ProfileMenu } from '@/components/common/ProfileMenu/ProfileMenu';
 import { ArrowLeftIcon, MenuIcon } from '@/components/common/icons/Icons';
@@ -33,7 +34,14 @@ export function Header() {
 
   const showBackButton = BACK_NAVIGABLE_ROUTES.includes(pathname);
   const brandName = tenantConfig?.displayName ?? 'DigiGold';
-  const { logo } = headerConfig;
+  // A published Header block brands this one header (name and logo) instead of adding a
+  // second header to the page.
+  const override = selectHeaderOverride(tenantConfig?.layout);
+  const logo = {
+    ...headerConfig.logo,
+    ...(override?.logoUrl ? { image: override.logoUrl } : {}),
+    ...(override?.brandName ? { text: override.brandName } : {}),
+  };
   // "Sign In" only makes sense to a logged-out visitor — header.config.json is static
   // site config with no session awareness, so filter it here instead of in the config.
   const actions = headerConfig.actions.filter(
@@ -62,7 +70,7 @@ export function Header() {
             {logo.image ? (
               <Image
                 src={logo.image}
-                alt={logo.text || brandName}
+                alt={override?.brandName || logo.text || brandName}
                 width={196}
                 height={38}
                 className={styles.logoImage}

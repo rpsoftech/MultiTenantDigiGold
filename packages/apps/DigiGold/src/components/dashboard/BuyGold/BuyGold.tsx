@@ -38,6 +38,9 @@ import { cn } from '@/lib/utils/cn';
 import { ROUTES } from '@/lib/constants/routes';
 import styles from './BuyGold.module.scss';
 
+// Buy actions elsewhere on the page (the hero button, the Buy quick action) scroll here.
+export const BUY_GOLD_SECTION_ID = 'buy-gold';
+
 const QUICK_ADD_GRAMS = [0.5, 1, 5, 10];
 const QUICK_ADD_INR = [1000, 5000, 10000, 25000];
 const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
@@ -62,7 +65,9 @@ function startPaymentErrorTitle(error: Partial<NormalizedApiError>): string {
   return 'Could not start payment';
 }
 
-export function BuyGold() {
+// `embedded` drops the page-section chrome and heading when the purchase card is shown
+// inside a dialog that already carries its own title.
+export function BuyGold({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const tenantConfig = useTenantConfig();
   const { showToast } = useToast();
@@ -298,8 +303,12 @@ export function BuyGold() {
   if (tenantConfig && !tenantConfig.activeModules.trading) return null;
 
   return (
-    <section className={styles.section}>
-      <h2 className={styles.heading}>Buy Gold</h2>
+    <section
+      id={embedded ? undefined : BUY_GOLD_SECTION_ID}
+      tabIndex={embedded ? undefined : -1}
+      className={cn(styles.section, embedded && styles.embedded)}
+    >
+      {!embedded && <h2 className={styles.heading}>Buy Gold</h2>}
 
       <Card className={styles.card}>
         <div className={styles.headerRow}>

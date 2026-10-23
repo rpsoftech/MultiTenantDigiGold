@@ -1,0 +1,63 @@
+@use '@/styles/mixins' as *;
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+
+  @include md {
+    gap: var(--space-4);
+  }
+}
+
+// Only a hero with a tenant colour is a filled panel; otherwise its text sits directly on
+// the page and lines up with the headings of the sections around it.
+.filled {
+  padding: var(--space-6) var(--space-4);
+  border-radius: var(--radius-lg);
+
+  @include md {
+    padding: var(--space-8);
+  }
+
+  @include lg {
+    padding: var(--space-8) calc(var(--space-8) * 2);
+  }
+}
+
+.title {
+  font-family: var(--font-headline);
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0;
+  max-width: 32ch;
+
+  @include md {
+    font-size: 2rem;
+  }
+
+  @include lg {
+    font-size: 2.5rem;
+  }
+}
+
+.subtitle {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 60ch;
+
+  @include md {
+    font-size: 1.125rem;
+  }
+}
+
+.cta {
+  min-height: 44px;
+  white-space: normal;
+}

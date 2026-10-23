@@ -6,6 +6,8 @@ import { applyTenantTheme } from '@/features/tenant/applyTenantTheme';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import { emitSessionExpired } from '@/lib/auth/sessionEvents';
+import { useAppSelector } from '@/store/hooks';
+import { selectLayoutStatus } from '@/store/tenant/tenant.slice';
 import { Providers } from './providers';
 
 const push = jest.fn();
@@ -31,8 +33,10 @@ const FUTURE = Math.floor(Date.now() / 1000) + 3600;
 function Probe() {
   const { user, isAuthenticated } = useSession();
   const tenant = useTenantConfig();
+  const status = useAppSelector(selectLayoutStatus);
   return (
     <div>
+      <span data-testid="layout-status">{status}</span>
       <span data-testid="tenant">{tenant?.displayName}</span>
       <span data-testid="user">{user?.userId ?? 'none'}</span>
       <span data-testid="auth">{String(isAuthenticated)}</span>
@@ -55,6 +59,7 @@ describe('Providers', () => {
     mockedResolve.mockResolvedValue({
       ...DEFAULT_TENANT_CONFIG,
       displayName: 'Acme Jewellers',
+      layout: [],
     });
   });
 
@@ -89,6 +94,44 @@ describe('Providers', () => {
 
     await waitFor(() => expect(mockedResolve).toHaveBeenCalled());
     expect(screen.getByTestId('tenant').textContent).toBe('DigiGold');
+  });
+
+  it('reports the layout as loading, then ready once the tenant is read', async () => {
+    renderProviders();
+    expect(screen.getByTestId('layout-status').textContent).toBe('loading');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('layout-status').textContent).toBe('ready'),
+    );
+  });
+
+  it('reports the layout as unavailable when the tenant API keeps failing', async () => {
+    mockedResolve.mockRejectedValue(new Error('offline'));
+    renderProviders();
+
+    await waitFor(
+      () => expect(screen.getByTestId('layout-status').textContent).toBe('unavailable'),
+      { timeout: 6000 },
+    );
+  });
+
+  it('picks up a republished layout when the tab regains focus', async () => {
+    renderProviders();
+    await waitFor(() => expect(mockedResolve).toHaveBeenCalledTimes(1));
+    mockedResolve.mockResolvedValue({
+      ...DEFAULT_TENANT_CONFIG,
+      displayName: 'Republished',
+      layout: [],
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('tenant').textContent).toBe('Republished'),
+    );
   });
 
   it('starts logged out when there is no stored token', () => {

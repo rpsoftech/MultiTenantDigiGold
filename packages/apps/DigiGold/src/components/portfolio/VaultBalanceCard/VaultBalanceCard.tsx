@@ -16,9 +16,12 @@ import styles from './VaultBalanceCard.module.scss';
 
 type VaultBalanceCardProps = {
   portfolio: Portfolio;
+  // On a page that has its own buy flow (the home page), Buy Gold starts it right there
+  // instead of navigating to the home page.
+  onBuy?: () => void;
 };
 
-export function VaultBalanceCard({ portfolio }: VaultBalanceCardProps) {
+export function VaultBalanceCard({ portfolio, onBuy }: VaultBalanceCardProps) {
   const { balanceGrams, currentValuationInr } = portfolio;
   const hasHolding = balanceGrams > 0;
   const valuationUnavailable =
@@ -68,10 +71,17 @@ export function VaultBalanceCard({ portfolio }: VaultBalanceCardProps) {
       </p>
 
       <div className={styles.actions}>
-        <Link href={ROUTES.home} className={styles.primaryAction}>
-          <CoinsIcon width={16} height={16} />
-          {hasHolding ? 'Buy More Gold' : 'Buy Gold'}
-        </Link>
+        {onBuy ? (
+          <button type="button" className={styles.primaryAction} onClick={onBuy}>
+            <CoinsIcon width={16} height={16} />
+            {hasHolding ? 'Buy More Gold' : 'Buy Gold'}
+          </button>
+        ) : (
+          <Link href={ROUTES.home} className={styles.primaryAction}>
+            <CoinsIcon width={16} height={16} />
+            {hasHolding ? 'Buy More Gold' : 'Buy Gold'}
+          </Link>
+        )}
       </div>
     </Card>
   );

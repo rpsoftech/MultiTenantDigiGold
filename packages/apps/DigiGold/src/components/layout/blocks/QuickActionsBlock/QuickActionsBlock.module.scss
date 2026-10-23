@@ -1,0 +1,35 @@
+@use '@/styles/mixins' as *;
+
+// The grid and card visuals come from the Dashboard Essentials styles; this only resets the
+// list and makes the Buy button fill its cell like the link cards do.
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  > * {
+    flex: 1;
+  }
+}
+
+.action {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}

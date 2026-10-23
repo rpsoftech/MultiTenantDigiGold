@@ -32,4 +32,5 @@ export const mockTenantConfig: TenantConfig = {
     vault: true,
     ecommerce: true,
   },
+  layout: [],
 };

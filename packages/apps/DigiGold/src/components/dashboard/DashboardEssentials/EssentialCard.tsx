@@ -4,7 +4,7 @@ import type { EssentialItem } from './DashboardEssentials.types';
 import { ICON_REGISTRY } from './iconRegistry';
 import styles from './DashboardEssentials.module.scss';
 
-export function EssentialCard({ item }: { item: EssentialItem }) {
+export function EssentialCard({ item }: { item: Omit<EssentialItem, 'enabled' | 'order'> }) {
   const Icon = ICON_REGISTRY[item.icon];
 
   return (

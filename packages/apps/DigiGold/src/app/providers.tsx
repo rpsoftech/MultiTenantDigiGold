@@ -21,9 +21,11 @@ import {
   tenantConfigReceived,
   tenantConfigUnavailable,
 } from '@/store/tenant/tenant.slice';
+import { useTenantConfig } from '@/features/tenant/hooks/useTenantConfig';
 import {
   QueryClient,
   QueryClientProvider,
+  useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -35,11 +37,44 @@ type ProvidersProps = {
   initialTenantConfig: TenantConfig;
 };
 
-function TenantThemeSync({ config }: { config: TenantConfig }) {
+function TenantThemeSync({ fallback }: { fallback: TenantConfig }) {
+  const config = useTenantConfig() ?? fallback;
+
   useEffect(() => {
     // Keeps the static default theme reactive when the browser resolves a tenant config.
     applyTenantTheme(config);
   }, [config]);
+
+  return null;
+}
+
+export const TENANT_CONFIG_QUERY_KEY = ['tenant', 'config'] as const;
+// A published layout reaches an open storefront within this window (or sooner, when the
+// tab regains focus).
+export const TENANT_CONFIG_REFETCH_MS = 60_000;
+
+// Reads the tenant on mount and keeps re-reading it, so publishing a new layout (or theme)
+// reaches customers already on the page. Query structural sharing keeps `data` referentially
+// stable while nothing changed, so an unchanged poll dispatches nothing and re-renders nothing.
+function TenantConfigSync({ store }: { store: AppStore }) {
+  const { data, isError } = useQuery({
+    queryKey: TENANT_CONFIG_QUERY_KEY,
+    queryFn: resolveTenantConfig,
+    refetchInterval: TENANT_CONFIG_REFETCH_MS,
+    refetchOnWindowFocus: true,
+    retry: 1,
+    retryDelay: 2_000,
+  });
+
+  useEffect(() => {
+    if (data) store.dispatch(tenantConfigReceived(data));
+  }, [data, store]);
+
+  useEffect(() => {
+    // Keep the build-time default (and any layout already read) when the tenant API is
+    // unavailable; the flag only lets the homepage stop waiting on a layout that won't come.
+    if (isError) store.dispatch(tenantConfigUnavailable());
+  }, [isError, store]);
 
   return null;
 }
@@ -97,32 +132,13 @@ export function Providers({ children, initialTenantConfig }: ProvidersProps) {
     makeStore({ tenant: { config: initialTenantConfig, resolved: false } }),
   );
   const [queryClient] = useState(() => new QueryClient());
-  const [tenantConfig, setTenantConfig] = useState(initialTenantConfig);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void resolveTenantConfig()
-      .then((config) => {
-        if (cancelled) return;
-        setTenantConfig(config);
-        store.dispatch(tenantConfigReceived(config));
-      })
-      .catch(() => {
-        // Keep the build-time default theme when the tenant API is unavailable.
-        if (!cancelled) store.dispatch(tenantConfigUnavailable());
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [store]);
 
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
-          <TenantThemeSync config={tenantConfig} />
+          <TenantThemeSync fallback={initialTenantConfig} />
+          <TenantConfigSync store={store} />
           <SessionLifecycle store={store} />
           {children}
         </ToastProvider>

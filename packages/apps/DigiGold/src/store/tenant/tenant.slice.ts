@@ -4,6 +4,7 @@ import {
   type PayloadAction,
 } from '@reduxjs/toolkit';
 import { applyBuildSwitches } from '@/features/tenant/buildSwitches';
+import type { LayoutStatus } from '@/features/layout/layout.types';
 import type { TenantConfig } from '@/features/tenant/tenant.types';
 import type { RootState } from '@/store';
 
@@ -51,3 +52,10 @@ export const selectTenantConfig = createSelector(
   // Reselect's dev-mode check would otherwise warn that the selector is an identity.
   { devModeChecks: { identityFunctionCheck: 'never' } },
 );
+
+// Whether the tenant's published layout is known. A failed refresh never downgrades a
+// layout that was already read: the last good one keeps rendering.
+export const selectLayoutStatus = (state: RootState): LayoutStatus => {
+  if (state.tenant.config?.layout) return 'ready';
+  return state.tenant.resolved === false ? 'loading' : 'unavailable';
+};

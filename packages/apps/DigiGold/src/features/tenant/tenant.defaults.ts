@@ -3,7 +3,10 @@ import type { TenantConfig } from './tenant.types';
 // Generic, brand-neutral fallback. Used only when `/tenant/info` is unreachable (e.g. a
 // server-side render before MainServer is up) or a tenant's ui_json_config is missing
 // fields — never as a stand-in for real tenant data on the happy path.
-export const DEFAULT_TENANT_UI: Pick<TenantConfig, 'brandLogo' | 'theme' | 'activeModules'> = {
+export const DEFAULT_TENANT_UI: Pick<
+  TenantConfig,
+  'brandLogo' | 'theme' | 'activeModules'
+> = {
   brandLogo: { url: '/brand/logo.svg', alt: 'DigiGold' },
   theme: {
     colors: {
@@ -34,4 +37,5 @@ export const DEFAULT_TENANT_CONFIG: TenantConfig = {
   subdomain: null,
   kycMode: 'just_in_time',
   ...DEFAULT_TENANT_UI,
+  layout: null,
 };

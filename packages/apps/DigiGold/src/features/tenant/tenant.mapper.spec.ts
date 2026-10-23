@@ -56,6 +56,37 @@ describe('mapPublicTenantInfoToConfig', () => {
     },
   );
 
+  describe('layout', () => {
+    it('reads a published array of blocks', () => {
+      const config = mapPublicTenantInfoToConfig(
+        makeInfo([{ id: 'a', type: 'Hero', variant: '1', props: {} }]),
+      );
+
+      expect(config.layout?.map((block) => block.type)).toEqual(['Hero']);
+      // An array has no theme: those fall back to the defaults.
+      expect(config.theme).toEqual(DEFAULT_TENANT_UI.theme);
+    });
+
+    it('reads blocks stored next to the theme', () => {
+      const config = mapPublicTenantInfoToConfig(
+        makeInfo({
+          theme: { colors: { primary: '#112233' } },
+          layout: [{ id: 'a', type: 'LiveRate' }],
+        }),
+      );
+
+      expect(config.layout).toHaveLength(1);
+      expect(config.theme.colors.primary).toBe('#112233');
+    });
+
+    it.each([[undefined], [null], [{}], ['x']])(
+      'is an empty (read, but nothing published) layout for %p',
+      (ui) => {
+        expect(mapPublicTenantInfoToConfig(makeInfo(ui)).layout).toEqual([]);
+      },
+    );
+  });
+
   describe('brand logo', () => {
     it('uses the configured logo and alt text', () => {
       const config = mapPublicTenantInfoToConfig(

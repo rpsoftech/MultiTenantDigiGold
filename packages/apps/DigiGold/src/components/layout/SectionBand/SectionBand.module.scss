@@ -1,0 +1,13 @@
+.band {
+  width: 100%;
+  background: var(--color-surface-secondary);
+
+  &.white {
+    background: var(--color-surface);
+  }
+
+  // A band whose block drew nothing (a hidden action list) leaves no empty stripe.
+  &:has(> :empty) {
+    display: none;
+  }
+}

@@ -1,4 +1,5 @@
 // Frontend presentation model, adapted from MainServer's public tenant metadata.
+import type { LayoutBlock } from '@/features/layout/layout.types';
 
 export type TenantColorRole = 'primary' | 'secondary' | 'tertiary' | 'neutral';
 
@@ -40,4 +41,7 @@ export type TenantConfig = {
     vault: boolean;
     ecommerce: boolean;
   };
+  // The tenant's published homepage blocks. null means the server response has not been
+  // read yet (the build-time default); [] means it was read and nothing is published.
+  layout: LayoutBlock[] | null;
 };

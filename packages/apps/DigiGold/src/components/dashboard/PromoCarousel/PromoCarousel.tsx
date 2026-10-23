@@ -5,15 +5,29 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useModuleShown } from '@/features/tenant/hooks/useModuleShown';
 import { usePromoCarouselConfig } from './usePromoCarouselConfig';
+import type { PromoCarouselProps } from '@/features/layout/layout.sections';
 import { cn } from '@/lib/utils/cn';
 import styles from './PromoCarousel.module.scss';
 
-export function PromoCarousel() {
-  const { slides: configuredSlides, autoplayIntervalMs } =
-    usePromoCarouselConfig();
+// Slides and timing normally come from the frontend config; a published layout block can
+// supply the tenant's own.
+export function PromoCarousel({
+  slides: slidesOverride,
+  autoplayIntervalMs: intervalOverride,
+}: PromoCarouselProps = {}) {
+  const config = usePromoCarouselConfig();
   const moduleShown = useModuleShown();
-  const slides = configuredSlides.filter((slide) => moduleShown(slide.module));
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Configured slides can belong to a module the tenant has off; published ones are the
+  // tenant's own and carry no module.
+  const slides =
+    slidesOverride ??
+    config.slides.filter((slide) => moduleShown(slide.module));
+  const autoplayIntervalMs = intervalOverride ?? config.autoplayIntervalMs;
+  const [requestedIndex, setActiveIndex] = useState(0);
+  // A republished layout can have fewer slides than the one that was showing.
+  const activeIndex = slides.length
+    ? Math.min(requestedIndex, slides.length - 1)
+    : 0;
 
   useEffect(() => {
     if (slides.length < 2) return;

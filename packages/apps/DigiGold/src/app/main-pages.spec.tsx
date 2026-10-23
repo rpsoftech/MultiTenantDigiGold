@@ -5,23 +5,8 @@ import KycPage from './(main)/kyc/page';
 import RedemptionsPage from './(main)/vault/redemptions/page';
 import MainLayout from './(main)/layout';
 
-jest.mock('@/components/dashboard/PromoCarousel/PromoCarousel', () => ({
-  PromoCarousel: () => <div>promo carousel</div>,
-}));
-jest.mock('@/components/dashboard/CategoryCarousel/CategoryCarousel', () => ({
-  CategoryCarousel: () => <div>category carousel</div>,
-}));
-jest.mock(
-  '@/components/dashboard/DashboardEssentials/DashboardEssentials',
-  () => ({
-    DashboardEssentials: () => <div>dashboard essentials</div>,
-  }),
-);
-jest.mock('@/components/dashboard/TrendingJewelry/TrendingJewelry', () => ({
-  TrendingJewelry: () => <div>trending jewelry</div>,
-}));
-jest.mock('@/components/dashboard/BuyGold/BuyGold', () => ({
-  BuyGold: () => <div>buy gold</div>,
+jest.mock('@/components/layout/HomeContent/HomeContent', () => ({
+  HomeContent: () => <div>home content</div>,
 }));
 jest.mock('@/components/vault/Passbook/Passbook', () => ({
   Passbook: () => <div>passbook</div>,
@@ -39,19 +24,12 @@ jest.mock('@/components/main/MainShell/MainShell', () => ({
 }));
 
 describe('main app pages', () => {
-  // Which sections the home page shows, not their order: arranging them is a layout choice.
-  it('home shows every dashboard section', () => {
+  // What the home page draws (published layout or the default storefront) is HomeContent's
+  // job and is covered in HomeContent.spec.tsx.
+  it('home renders the tenant-driven home content', () => {
     render(<HomePage />);
 
-    for (const section of [
-      'promo carousel',
-      'category carousel',
-      'dashboard essentials',
-      'trending jewelry',
-      'buy gold',
-    ]) {
-      expect(screen.getByText(section)).toBeTruthy();
-    }
+    expect(screen.getByText('home content')).toBeTruthy();
   });
 
   it('passbook page shows the passbook', () => {

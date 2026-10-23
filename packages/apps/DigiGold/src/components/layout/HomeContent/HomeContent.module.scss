@@ -1,0 +1,16 @@
+@use '@/styles/mixins' as *;
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding: var(--space-6) var(--space-4);
+
+  @include lg {
+    padding: var(--space-8);
+  }
+}

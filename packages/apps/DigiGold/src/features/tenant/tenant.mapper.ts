@@ -1,5 +1,10 @@
+import { parseLayout } from '@/features/layout/layout.parser';
 import { DEFAULT_TENANT_UI } from './tenant.defaults';
-import type { PublicTenantInfo, TenantConfig, TenantColorRole } from './tenant.types';
+import type {
+  PublicTenantInfo,
+  TenantConfig,
+  TenantColorRole,
+} from './tenant.types';
 
 // ui_json_config is arbitrary JSONB — it may be an array (layout data), a string, or null,
 // so only a plain object is read as config.
@@ -20,7 +25,10 @@ function hexColor(value: unknown): string | null {
 
 // A tenant without a logo gets its own name as text (Logo's fallback) — never the default
 // DigiGold artwork, which would brand a real tenant as someone else.
-function pickBrandLogo(uiConfig: unknown, displayName: string): TenantConfig['brandLogo'] {
+function pickBrandLogo(
+  uiConfig: unknown,
+  displayName: string,
+): TenantConfig['brandLogo'] {
   const raw = isRecord(uiConfig) ? uiConfig['brandLogo'] : undefined;
   if (!isRecord(raw)) return { url: '', alt: displayName };
   return { url: text(raw.url) ?? '', alt: text(raw.alt) ?? displayName };
@@ -57,13 +65,17 @@ function pickActiveModules(uiConfig: unknown): TenantConfig['activeModules'] {
   return modules;
 }
 
-export function mapPublicTenantInfoToConfig(info: PublicTenantInfo): TenantConfig {
+export function mapPublicTenantInfoToConfig(
+  info: PublicTenantInfo,
+): TenantConfig {
   // Without an identity every tenant-scoped request would be ambiguous — fail loudly so
   // Providers keeps the neutral default instead of half-applying this response.
   const tenantId = text(info.tenant_uuid);
-  if (!tenantId) throw new Error('Tenant API returned an invalid tenant identity.');
+  if (!tenantId)
+    throw new Error('Tenant API returned an invalid tenant identity.');
 
-  const displayName = text(info.full_name) ?? text(info.short_name) ?? 'DigiGold';
+  const displayName =
+    text(info.full_name) ?? text(info.short_name) ?? 'DigiGold';
 
   return {
     tenantId,
@@ -75,5 +87,6 @@ export function mapPublicTenantInfoToConfig(info: PublicTenantInfo): TenantConfi
     brandLogo: pickBrandLogo(info.ui_json_config, displayName),
     theme: pickTheme(info.ui_json_config),
     activeModules: pickActiveModules(info.ui_json_config),
+    layout: parseLayout(info.ui_json_config),
   };
 }

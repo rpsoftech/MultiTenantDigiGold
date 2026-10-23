@@ -12,7 +12,11 @@ export function ProductCard({
   product,
   config,
 }: {
-  product: Product;
+  // `href` is set for a product the tenant published in its layout; catalogue products
+  // link to their own detail page.
+  product: Pick<Product, 'id' | 'title' | 'imageUrl' | 'imageAlt' | 'price' | 'currency' | 'isNew'> & {
+    href?: string;
+  };
   config: TrendingJewelryConfig;
 }) {
   return (
@@ -37,7 +41,7 @@ export function ProductCard({
       </span>
 
       <Link
-        href={jewelleryProductHref(product.id)}
+        href={product.href ?? jewelleryProductHref(product.id)}
         className={styles.viewDetailsLink}
       >
         {config.viewDetailsLabel}

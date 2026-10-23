@@ -125,4 +125,46 @@ describe('Header', () => {
       expect(drawer.queryByRole('button', { name: 'Account menu' })).toBeNull();
     });
   });
+
+  describe('published Header block', () => {
+    const branded = (props: Record<string, unknown>) => ({
+      preloaded: {
+        tenant: {
+          config: {
+            ...DEFAULT_TENANT_CONFIG,
+            layout: [{ id: 'h', type: 'Header', variant: '1', props, children: [] }],
+          },
+        },
+      },
+    });
+
+    it('brands the single header with the published name', () => {
+      renderWithProviders(<Header />, { user: null, ...branded({ brandName: 'Acme Gold' }) });
+
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.getAllByText('Acme Gold').length).toBeGreaterThan(0);
+    });
+
+    it('uses a safe published logo', () => {
+      renderWithProviders(<Header />, {
+        user: null,
+        ...branded({ brandName: 'Acme Gold', logoUrl: 'https://cdn.example.com/l.png' }),
+      });
+
+      const logo = screen.getByRole('img', { name: 'Acme Gold' });
+      expect(logo.getAttribute('src')).toBe('https://cdn.example.com/l.png');
+    });
+
+    it('ignores an unsafe logo URL', () => {
+      renderWithProviders(<Header />, {
+        user: null,
+        ...branded({ logoUrl: 'javascript:alert(1)' }),
+      });
+
+      // The tenant's own logo is kept instead.
+      for (const image of screen.queryAllByRole('img')) {
+        expect(image.getAttribute('src')).not.toContain('javascript');
+      }
+    });
+  });
 });
