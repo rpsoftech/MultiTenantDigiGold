@@ -33,23 +33,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	tp, err := otel_setup.InitTracer(ctx, "digigold-api")
-	if err != nil {
-		log.Printf("⚠️ OpenTelemetry failed to initialize: %v (Proceeding without tracing)\n", err)
-	} else {
-		defer func() {
-			if err := tp.Shutdown(context.Background()); err != nil {
-				log.Printf("Error shutting down tracer provider: %v", err)
-			}
-		}()
-	}
-
-	mp, err := otel_setup.InitMeter(ctx, "digigold-api")
-	if err != nil {
-		log.Printf("⚠️ OpenTelemetry metrics failed to initialize: %v (Proceeding without metrics)\n", err)
-	} else {
-		defer func() { _ = mp.Shutdown(context.Background()) }()
-	}
+	// Traces and metrics go to OTEL_EXPORTER_OTLP_ENDPOINT; export is off when it is not set.
+	shutdownOtel := otel_setup.Init(ctx, "digigold-api")
+	defer shutdownOtel(context.Background())
 
 	// 2. The 5-Minute OTA Updater Daemon
 	// 2. The 5-Minute OTA Updater Daemon

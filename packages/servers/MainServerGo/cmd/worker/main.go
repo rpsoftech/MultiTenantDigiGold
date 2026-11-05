@@ -30,17 +30,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// Traces and metrics go to the OTLP collector (OTEL_EXPORTER_OTLP_ENDPOINT, default localhost:4317).
-	if tp, err := otel_setup.InitTracer(ctx, "digigold-worker"); err != nil {
-		log.Printf("⚠️ OpenTelemetry failed to initialize: %v (Proceeding without tracing)\n", err)
-	} else {
-		defer func() { _ = tp.Shutdown(context.Background()) }()
-	}
-	if mp, err := otel_setup.InitMeter(ctx, "digigold-worker"); err != nil {
-		log.Printf("⚠️ OpenTelemetry metrics failed to initialize: %v (Proceeding without metrics)\n", err)
-	} else {
-		defer func() { _ = mp.Shutdown(context.Background()) }()
-	}
+	// Traces and metrics go to OTEL_EXPORTER_OTLP_ENDPOINT; export is off when it is not set.
+	shutdownOtel := otel_setup.Init(ctx, "digigold-worker")
+	defer shutdownOtel(context.Background())
 
 	// 2. The 5-Minute OTA Updater Daemon (Worker Target)
 	if env.Env.APP_ENV == env.APP_ENV_PRODUCTION || env.Env.APP_ENV == env.APP_ENV_STAGING {

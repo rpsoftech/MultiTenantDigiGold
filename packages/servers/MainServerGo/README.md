@@ -238,7 +238,7 @@ process environment.
 | `REDIS_DB_DATABASE`                                                            | yes      | Redis DB index (0-100)                                                                |
 | `REDIS_DEFAULT_KEY`                                                            | yes      | Prefix for app keys (e.g. `digiGold:`)                                                |
 | `REDIS_DEFAULT_CHANNEL`                                                        | yes      | Prefix for event channels (e.g. `digiGold:`)                                          |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                  | no       | OTLP gRPC collector for traces and metrics (default `localhost:4317`)                 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                  | no       | OTLP gRPC collector for traces and metrics. Unset = export off                         |
 | `CORS_ALLOW_ORIGINS`                                                           | prod     | Comma-separated frontend origins. Unset allows `*`; PRODUCTION won't start without it |
 | `ENABLE_MOCK_LP_HEDGING`                                                       | no       | `true` runs the hedging cron with simulated LP fills. Ignored in PRODUCTION           |
 
@@ -511,7 +511,9 @@ To add a test: put a `//go:build integration` file in `internal/integration/`, t
 
 ## Monitoring
 
-The API and worker export traces and metrics over OTLP gRPC (`OTEL_EXPORTER_OTLP_ENDPOINT`).
+The API and worker export traces and metrics over OTLP gRPC to `OTEL_EXPORTER_OTLP_ENDPOINT`
+(`http://host:4317` for a plain collector, `https://...` for TLS). When the variable is not set,
+export is off and nothing tries to connect; critical errors are still logged.
 Report anything that needs a human with `monitoring.Critical(ctx, kind, err)`: it logs the
 error, marks the current span failed, and increments `digigold.critical_errors{kind}`.
 
